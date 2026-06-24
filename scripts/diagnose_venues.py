@@ -25,6 +25,13 @@ def main() -> None:
         from boardroom.brokers.kraken import KrakenBroker
 
         kb = KrakenBroker()
+        # Scan the loaded key/secret for non-ASCII characters (copy-paste gremlins).
+        for nm, val in (
+            ("API key", s.kraken_api_key.get_secret_value() if s.kraken_api_key else ""),
+            ("API secret", s.kraken_api_secret.get_secret_value() if s.kraken_api_secret else ""),
+        ):
+            bad = [(i, hex(ord(c))) for i, c in enumerate(val) if ord(c) > 127]
+            print(f"{nm}: len={len(val)} ascii={val.isascii()}" + (f" NON-ASCII at {bad[:8]}" if bad else ""))
         bal = kb._private("Balance")
         print("OK. Balance keys:", list(bal.keys()))
         print("CAD (ZCAD):", bal.get("ZCAD", "0"))
@@ -45,7 +52,11 @@ def main() -> None:
         if s.snaptrade_account_id not in ids:
             print("first few ids:", ids[:5])
     except Exception as e:  # noqa: BLE001
-        print("ERROR:", repr(e)[:900])
+        print("ERROR type:", type(e).__name__)
+        for attr in ("status", "reason"):
+            print(f"  {attr}:", getattr(e, attr, None))
+        body = getattr(e, "body", None)
+        print("  body:", (str(body)[:600] if body else "(none)"))
 
 
 if __name__ == "__main__":
