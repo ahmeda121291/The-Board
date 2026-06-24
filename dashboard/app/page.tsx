@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { Empty, Pill, Section, Stat, Table } from "@/components/ui";
 import { Refresher } from "@/components/Refresher";
+import { Countdown } from "@/components/Countdown";
 import { calibrationMean, loadDashboard, rollupOutcomes, type Decision } from "@/lib/data";
 import { deposits } from "@/lib/deposits";
+import { nextCheckpointIso } from "@/lib/schedule";
 import { ago, cad, num, pct, when } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -111,6 +113,13 @@ export default async function Page() {
   const isFresh = d.decisions.length === 0 && d.pitches.length === 0 && d.outcomes.length === 0;
   const asOf = new Date().toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" });
 
+  const checkpointUtc = process.env.CHECKPOINT_UTC || "21:00";
+  const hb = d.audit.find((a) => a.event === "scheduler_heartbeat");
+  const hbNext = (hb?.payload as any)?.next_run_at as string | undefined;
+  const targetIso =
+    hbNext && new Date(hbNext).getTime() > Date.now() ? hbNext : nextCheckpointIso(checkpointUtc);
+  const schedulerActive = hb ? Date.now() - new Date(hb.created_at).getTime() < 26 * 3600 * 1000 : false;
+
   return (
     <main className="mx-auto max-w-6xl px-5 py-8">
       {/* Header */}
@@ -147,6 +156,32 @@ export default async function Page() {
       {d.error ? (
         <div className="glass mt-4 border border-rose-400/30 p-3 text-sm text-rose-300">Query error: {d.error}</div>
       ) : null}
+
+      {/* Next checkpoint countdown */}
+      <div className="glass hud mt-5 flex flex-wrap items-center gap-x-8 gap-y-3 p-4">
+        <div>
+          <div className="label">Next daily checkpoint</div>
+          <div className="mt-1 text-4xl font-bold">
+            <Countdown targetIso={targetIso} />
+          </div>
+        </div>
+        <div className="text-xs leading-relaxed text-slate-400">
+          <div>
+            convenes <span className="text-slate-200">{checkpointUtc} UTC</span> daily
+          </div>
+          <div>
+            last checkpoint:{" "}
+            <span className="text-slate-200">{latest ? ago(latest.created_at) : "never"}</span>
+          </div>
+        </div>
+        <div className="ml-auto">
+          {schedulerActive ? (
+            <Pill tone="good">● scheduler active</Pill>
+          ) : (
+            <Pill tone="warn">scheduler idle — run `boardroom run`</Pill>
+          )}
+        </div>
+      </div>
 
       {/* Hero — portfolio value */}
       <div className="glass hud mt-6 flex flex-wrap items-end justify-between gap-6 p-6">

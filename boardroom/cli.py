@@ -107,6 +107,56 @@ def _backtest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run(args: argparse.Namespace) -> int:
+    """Daily scheduler: convene the CEO once a day at CHECKPOINT_UTC, forever.
+
+    Writes a 'scheduler_heartbeat' with the next run time so the dashboard can
+    count down to it. Live execution still requires LIVE_TRADING=true AND
+    --confirm-live; otherwise every run is dry-run.
+    """
+    import time as _time
+    from datetime import datetime, timezone
+
+    from boardroom.factory import build_default_org
+    from boardroom.schedule import next_checkpoint
+
+    s = get_settings()
+    if args.confirm_live and not s.live_trading:
+        console.print("[red]--confirm-live passed but LIVE_TRADING is false. Aborting.[/red]")
+        return 2
+    live = bool(args.confirm_live and s.live_trading)
+
+    org = build_default_org(
+        data_mode="synthetic" if args.synthetic else "live",
+        prefer_live_brokers=not args.synthetic,
+    )
+    console.rule(f"[bold]Boardroom scheduler ({'LIVE' if live else 'dry-run'})")
+    console.print(f"Daily checkpoint at [bold]{s.checkpoint_utc} UTC[/bold]. Ctrl+C to stop.\n")
+
+    try:
+        while True:
+            nxt = next_checkpoint(datetime.now(timezone.utc), s.checkpoint_utc)
+            org.repo.audit(
+                "scheduler_heartbeat",
+                {"next_run_at": nxt.isoformat(), "checkpoint_utc": s.checkpoint_utc, "live": live},
+            )
+            console.print(f"[dim]next checkpoint: {nxt:%Y-%m-%d %H:%M UTC}[/dim]")
+            if not args.once:
+                while datetime.now(timezone.utc) < nxt:
+                    remaining = (nxt - datetime.now(timezone.utc)).total_seconds()
+                    _time.sleep(max(1.0, min(60.0, remaining)))
+            result = org.run_once()
+            d = result.decision
+            head = d.kind.value.upper() + (f" {d.division.value} {d.size_cad:.2f} CAD" if d.division else "")
+            console.print(f"[bold]checkpoint {datetime.now(timezone.utc):%H:%M UTC}[/bold] → {head}")
+            console.print(f"[italic dim]{d.rationale}[/italic dim]")
+            if args.once:
+                return 0
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Scheduler stopped.[/yellow]")
+        return 0
+
+
 def _preflight(args: argparse.Namespace) -> int:
     """Read-only go/no-go for live trading: venue connectivity + balances.
 
@@ -177,6 +227,11 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("doctor", help="check config and the safety rails")
     sub.add_parser("preflight", help="read-only venue connectivity + live go/no-go")
 
+    p_run = sub.add_parser("run", help="daily scheduler — convene the CEO at CHECKPOINT_UTC, forever")
+    p_run.add_argument("--synthetic", action="store_true", help="use offline synthetic data")
+    p_run.add_argument("--confirm-live", action="store_true", help="execute live (requires LIVE_TRADING=true)")
+    p_run.add_argument("--once", action="store_true", help="run one checkpoint now, then exit")
+
     p_decide = sub.add_parser("decide", help="run one daily decision loop")
     p_decide.add_argument("--synthetic", action="store_true", help="use offline synthetic data")
     p_decide.add_argument("--confirm-live", action="store_true", help="execute live (requires LIVE_TRADING=true)")
@@ -197,6 +252,8 @@ def main(argv: list[str] | None = None) -> int:
         return _doctor()
     if args.cmd == "preflight":
         return _preflight(args)
+    if args.cmd == "run":
+        return _run(args)
     if args.cmd == "decide":
         return _decide(args)
     if args.cmd == "backtest":

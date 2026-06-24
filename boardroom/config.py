@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     # live equity is wired in.
     starting_portfolio_cad: float = Field(default=200.0, alias="STARTING_PORTFOLIO_CAD")
 
+    # Daily checkpoint time (UTC, "HH:MM") — when the CEO convenes once a day.
+    checkpoint_utc: str = Field(default="21:00", alias="CHECKPOINT_UTC")
+
     # ---- LLM (the agents' brain) --------------------------------------------
     anthropic_api_key: SecretStr | None = Field(default=None, alias="ANTHROPIC_API_KEY")
     llm_model: str = Field(default="claude-opus-4-8", alias="BOARDROOM_LLM_MODEL")

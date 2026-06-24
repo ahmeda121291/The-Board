@@ -36,6 +36,7 @@ FIELDS = [
     ("MAX_DRAWDOWN_PCT", "Peak-to-trough drawdown that trips the circuit breaker (0.15 = 15%)", "0.15", False),
     ("FEE_DRAG_LIMIT_PCT", "Cumulative cost-drag ceiling (0.05 = 5%)", "0.05", False),
     ("STARTING_PORTFOLIO_CAD", "Reference portfolio value for resolving caps until live equity is wired", "200", False),
+    ("CHECKPOINT_UTC", "Daily checkpoint time the CEO convenes, HH:MM in UTC (21:00 = ~5pm ET)", "21:00", False),
 ]
 
 
