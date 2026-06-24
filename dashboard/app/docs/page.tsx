@@ -124,19 +124,48 @@ export default function DocsPage() {
         </p>
       </Section>
 
-      <Section title="The three loops" desc="Nested feedback at different speeds.">
+      <Section
+        title="Two asset classes, one checkpoint"
+        desc="Each daily run scans crypto and stocks together, then the CEO ranks across them."
+      >
+        <Table head={["Asset class", "Venue", "Divisions"]}>
+          <tr className="hover:bg-white/[0.02]">
+            <td className="px-4 py-3 font-medium">Crypto</td>
+            <td className="px-4 py-3 text-slate-300">Kraken</td>
+            <td className="px-4 py-3"><Pill tone="good">Yield (floor)</Pill> <Pill tone="warn">Event</Pill></td>
+          </tr>
+          <tr className="hover:bg-white/[0.02]">
+            <td className="px-4 py-3 font-medium">Stocks / ETFs</td>
+            <td className="px-4 py-3 text-slate-300">Wealthsimple (via SnapTrade)</td>
+            <td className="px-4 py-3"><Pill tone="cyan">Directional</Pill></td>
+          </tr>
+        </Table>
+        <p className="mt-3 pl-1 text-sm text-slate-400">
+          At every checkpoint, Directional pulls equity data, Event pulls crypto data, and Yield
+          reports carry — all at once. The CEO then compares them on common terms (excess over the
+          floor, per unit of risk, net of cost) and funds the single best, or holds. One run, both
+          markets, ranked head-to-head.
+        </p>
+      </Section>
+
+      <Section title="The three loops" desc="Nested feedback at different speeds — this is the engine.">
         <div className="grid gap-3 md:grid-cols-3">
           {[
-            ["Decision (daily)", "Divisions pull data → compute → pitch/abstain → cost gate → risk manager → CEO decides FUND / FUND_NONE / HOLD → execute (live behind the flag) → log."],
-            ["Performance (daily + weekly)", "ROI vs the floor and vs buy-and-hold, attribution, drawdown, cost drag. Trips circuit breakers when limits are crossed."],
-            ["Learning (per outcome + weekly)", "The Critic scores each resolved decision; calibration updates trust + leashes; the model re-fits within guardrails; broken divisions are benched."],
+            ["① Decision loop — daily", "Each division pulls fresh real data → computes features + model outputs → pitches in the standard schema or abstains. Expected cost is a gate (a pitch that can't clear its round-trip cost is dropped). The risk manager adversarially challenges survivors. The CEO ranks what's left against the floor, weighted by demonstrated calibration, and emits exactly one of FUND / FUND_NONE / HOLD — then executes (live behind the flag) and logs the whole session."],
+            ["② Performance loop — daily + weekly", "Snapshots net ROI vs the floor AND vs buy-and-hold, per-division attribution, risk-adjusted return, drawdown, and cumulative fee/FX drag. If drawdown, daily loss, or cost drag crosses a limit, it trips a circuit breaker and forces all capital back to the floor."],
+            ["③ Learning loop — per resolved outcome + weekly", "The Critic scores every resolved decision: predicted vs realized, calibration, and a process-vs-luck tag (reward good process even when unlucky). Calibration updates the CEO's trust and each division's risk leash; the model re-fits within anti-overfit guardrails; persistently broken divisions are benched. New components run in shadow mode until they earn in."],
           ].map(([t, d]) => (
-            <div key={t} className="glass p-4">
-              <div className="text-sm font-semibold text-sky-300">{t}</div>
+            <div key={t} className="glass hud p-4">
+              <div className="text-sm font-semibold text-sky-300 glow-cyan">{t}</div>
               <p className="mt-2 text-xs leading-relaxed text-slate-300">{d}</p>
             </div>
           ))}
         </div>
+        <p className="mt-3 pl-1 text-sm text-slate-400">
+          The loops run at <b className="text-slate-200">different speeds on purpose</b>: review often
+          (cheap), act rarely (consequential), and only learn from a decision once it has actually
+          resolved and can be scored.
+        </p>
       </Section>
 
       <Section title="Safety rails" desc="In code, outside any agent.">
