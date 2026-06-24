@@ -108,6 +108,8 @@ def cmd_register(args: argparse.Namespace) -> None:
 
 
 def cmd_accounts(args: argparse.Namespace) -> None:
+    import json
+
     client = _client()
     try:
         resp = client.account_information.list_user_accounts(
@@ -121,10 +123,24 @@ def cmd_accounts(args: argparse.Namespace) -> None:
     if not accounts:
         print("No accounts yet — finish the connection step in the browser first.")
         return
-    print("\nConnected accounts:")
+
+    print(f"\n{len(accounts)} account(s). Look for the one whose number contains 'HQ4'")
+    print("and/or that holds your balance:\n")
     for a in accounts:
-        print(f"  SNAPTRADE_ACCOUNT_ID={a.get('id')}  "
-              f"[{a.get('institution_name')} · {a.get('name')} · {a.get('number')}]")
+        bal = a.get("balance") or {}
+        total = bal.get("total") if isinstance(bal, dict) else bal
+        meta = a.get("meta") or {}
+        # The brokerage's real account number often lives in meta.
+        meta_num = meta.get("number") or meta.get("account_number") or meta.get("accountNumber")
+        print(f"- id={a.get('id')}")
+        print(f"    type/name : {a.get('name')}")
+        print(f"    snap number: {a.get('number')}")
+        print(f"    brokerage #: {meta_num or '(see meta below)'}")
+        print(f"    balance    : {json.dumps(total) if total is not None else 'n/a'}")
+        print(f"    status     : {a.get('sync_status') or a.get('status')}")
+        if not meta_num and meta:
+            print(f"    meta       : {json.dumps(meta)[:300]}")
+        print()
 
 
 def cmd_delete_user(args: argparse.Namespace) -> None:
