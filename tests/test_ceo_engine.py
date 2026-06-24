@@ -1,7 +1,12 @@
-"""The CEO decision spine: sizing, hurdle, null-default, cost gate, trust."""
+"""The CEO decision spine: sizing, hurdle, null-default, cost gate, trust.
+
+Caps are percentages of portfolio value; PV=200 reproduces the original dollar
+ceilings (0.20*200=40/trade, 0.05*200=10 event, 0.80*200=160 deployable).
+"""
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 
 import pytest
@@ -14,20 +19,21 @@ from boardroom.config import RiskCaps
 from boardroom.schemas import (
     ComputedSignals,
     DataSnapshot,
-    Decision,
     DecisionKind,
     Division,
     Pitch,
     Venue,
 )
 
+PV = 200.0
+
 
 def _caps() -> RiskCaps:
     return RiskCaps(
-        total_deployable_cad=160,
-        per_trade_max_cad=40,
-        event_hard_cap_cad=10,
-        daily_loss_limit_cad=12,
+        total_deployable_pct=0.80,
+        per_trade_max_pct=0.20,
+        event_hard_cap_pct=0.05,
+        daily_loss_limit_pct=0.06,
         max_drawdown_pct=0.15,
         fee_drag_limit_pct=0.05,
     )
@@ -44,7 +50,7 @@ def _pitch(
     horizon=5.0,
 ) -> Pitch:
     snap = DataSnapshot(
-        symbol="X", venue=venue, as_of=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+        symbol="X", venue=venue, as_of=dt.datetime.now(dt.timezone.utc),
         age_seconds=10, is_fresh=True, rows=60, content_hash="h", source="test",
     )
     sig = ComputedSignals(
@@ -59,34 +65,43 @@ def _pitch(
     )
 
 
+# ---- percent-based caps -----------------------------------------------------
+def test_caps_scale_with_portfolio():
+    caps = _caps()
+    assert caps.per_trade_cad(200) == 40
+    assert caps.per_trade_cad(2000) == 400  # same 20%, 10x the account
+    assert caps.cap_for("event", 200) == 10
+    assert caps.deployable_cad(200) == 160
+
+
 # ---- sizing -----------------------------------------------------------------
 def test_conviction_size_zero_on_no_edge():
     assert conviction_size(
         division=Division.DIRECTIONAL, edge=0.0, win_probability=0.7,
-        risk_unit_fraction=0.2, caps=_caps(), deployed_cad=0.0,
+        risk_unit_fraction=0.2, caps=_caps(), deployed_cad=0.0, portfolio_value_cad=PV,
     ) == 0.0
 
 
 def test_conviction_size_respects_per_trade_cap():
     size = conviction_size(
         division=Division.DIRECTIONAL, edge=0.5, win_probability=0.9,
-        risk_unit_fraction=0.05, caps=_caps(), deployed_cad=0.0, leash=1.0,
+        risk_unit_fraction=0.05, caps=_caps(), deployed_cad=0.0, portfolio_value_cad=PV, leash=1.0,
     )
-    assert size <= _caps().per_trade_max_cad
+    assert size <= _caps().per_trade_cad(PV)
 
 
 def test_event_hard_cap_binds():
     size = conviction_size(
         division=Division.EVENT, edge=0.9, win_probability=0.9,
-        risk_unit_fraction=0.05, caps=_caps(), deployed_cad=0.0, leash=1.0,
+        risk_unit_fraction=0.05, caps=_caps(), deployed_cad=0.0, portfolio_value_cad=PV, leash=1.0,
     )
-    assert size <= _caps().event_hard_cap_cad
+    assert size <= _caps().cap_for("event", PV)
 
 
 def test_sizing_clamped_by_headroom():
     size = conviction_size(
         division=Division.DIRECTIONAL, edge=0.5, win_probability=0.9,
-        risk_unit_fraction=0.05, caps=_caps(), deployed_cad=155.0, leash=1.0,
+        risk_unit_fraction=0.05, caps=_caps(), deployed_cad=155.0, portfolio_value_cad=PV, leash=1.0,
     )
     assert size <= 5.0 + 1e-9
 
@@ -105,16 +120,15 @@ def test_risk_adjusted_score_negative_when_below_floor():
 # ---- engine -----------------------------------------------------------------
 def test_null_default_when_no_pitches():
     eng = CEODecisionEngine(caps=_caps())
-    decision, ranked = eng.decide([], hurdle_rate=0.0001)
+    decision, ranked = eng.decide([], hurdle_rate=0.0001, portfolio_value_cad=PV)
     assert decision.kind == DecisionKind.HOLD
     assert ranked == []
 
 
 def test_cost_gate_rejects_uneconomic_pitch():
-    # edge in CAD = 30 * 0.02 = 0.6; cost 5.0 -> fails cost gate
     p = _pitch(expected_return=0.02, capital=30.0, expected_cost=5.0)
     eng = CEODecisionEngine(caps=_caps())
-    decision, ranked = eng.decide([p], hurdle_rate=0.0001)
+    decision, ranked = eng.decide([p], hurdle_rate=0.0001, portfolio_value_cad=PV)
     assert decision.kind in (DecisionKind.FUND_NONE, DecisionKind.HOLD)
     assert ranked[0].rejected_reason is not None
 
@@ -127,16 +141,15 @@ def test_strong_pitch_gets_funded():
         leashes={"directional": 1.0},
         deviation_threshold=0.0,
     )
-    decision, ranked = eng.decide([p], hurdle_rate=0.0002, deployed_cad=0.0)
+    decision, ranked = eng.decide([p], hurdle_rate=0.0002, deployed_cad=0.0, portfolio_value_cad=PV)
     assert decision.kind == DecisionKind.FUND
     assert decision.division == Division.DIRECTIONAL
     assert decision.size_cad > 0
 
 
 def test_trust_discounts_overclaiming_division():
-    # A division that says 0.9 but is demonstrated to hit ~0.4 should be distrusted.
     poor = CalibrationPosterior("directional", alpha=4.0, beta=6.0)  # mean 0.4, n=8
     eng = CEODecisionEngine(caps=_caps(), posteriors={"directional": poor}, leashes={"directional": 1.0})
     p = _pitch(expected_return=0.06, confidence=0.9)
-    _, ranked = eng.decide([p], hurdle_rate=0.0002)
+    _, ranked = eng.decide([p], hurdle_rate=0.0002, portfolio_value_cad=PV)
     assert ranked[0].trust < 0.9

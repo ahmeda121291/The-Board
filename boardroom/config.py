@@ -29,14 +29,23 @@ class Settings(BaseSettings):
     # flipped true *after* the accounts are funded.
     live_trading: bool = Field(default=False, alias="LIVE_TRADING")
 
-    # ---- Hard caps (CAD) — the CEO cannot override these ---------------------
+    # ---- Hard caps — PERCENT of the current total portfolio value -------------
+    # The CEO cannot override these. They are fractions of live portfolio value,
+    # NOT fixed dollar amounts, so every ceiling scales automatically as the
+    # account grows (a $40 cap at $200 becomes $400 at $2,000 — same 20%). They
+    # are resolved to CAD at decision time against current equity.
+    # See docs/RISK_MODEL.md.
     account_base_currency: str = Field(default="CAD", alias="ACCOUNT_BASE_CURRENCY")
-    total_deployable_cad: float = Field(default=160.0, alias="TOTAL_DEPLOYABLE_CAD")
-    per_trade_max_cad: float = Field(default=40.0, alias="PER_TRADE_MAX_CAD")
-    event_hard_cap_cad: float = Field(default=10.0, alias="EVENT_HARD_CAP_CAD")
-    daily_loss_limit_cad: float = Field(default=12.0, alias="DAILY_LOSS_LIMIT_CAD")
+    total_deployable_pct: float = Field(default=0.80, alias="TOTAL_DEPLOYABLE_PCT")
+    per_trade_max_pct: float = Field(default=0.20, alias="PER_TRADE_MAX_PCT")
+    event_hard_cap_pct: float = Field(default=0.05, alias="EVENT_HARD_CAP_PCT")
+    daily_loss_limit_pct: float = Field(default=0.06, alias="DAILY_LOSS_LIMIT_PCT")
     max_drawdown_pct: float = Field(default=0.15, alias="MAX_DRAWDOWN_PCT")
     fee_drag_limit_pct: float = Field(default=0.05, alias="FEE_DRAG_LIMIT_PCT")
+    # Reference portfolio value, used when live equity isn't supplied (CLI
+    # display, dry-run). Your funding baseline — caps resolve against this until
+    # live equity is wired in.
+    starting_portfolio_cad: float = Field(default=200.0, alias="STARTING_PORTFOLIO_CAD")
 
     # ---- LLM (the agents' brain) --------------------------------------------
     anthropic_api_key: SecretStr | None = Field(default=None, alias="ANTHROPIC_API_KEY")
@@ -70,10 +79,10 @@ class Settings(BaseSettings):
     @property
     def caps(self) -> "RiskCaps":
         return RiskCaps(
-            total_deployable_cad=self.total_deployable_cad,
-            per_trade_max_cad=self.per_trade_max_cad,
-            event_hard_cap_cad=self.event_hard_cap_cad,
-            daily_loss_limit_cad=self.daily_loss_limit_cad,
+            total_deployable_pct=self.total_deployable_pct,
+            per_trade_max_pct=self.per_trade_max_pct,
+            event_hard_cap_pct=self.event_hard_cap_pct,
+            daily_loss_limit_pct=self.daily_loss_limit_pct,
             max_drawdown_pct=self.max_drawdown_pct,
             fee_drag_limit_pct=self.fee_drag_limit_pct,
         )
@@ -90,42 +99,58 @@ class Settings(BaseSettings):
 
 
 class RiskCaps:
-    """Immutable snapshot of the hard caps, passed to the risk layer.
+    """Immutable snapshot of the hard caps as FRACTIONS of portfolio value.
 
-    Kept as a plain object (not a Settings subset) so it can be constructed in
-    tests without touching the environment.
+    Every cap is a percentage of the *current* total portfolio value, resolved
+    to CAD against live equity at decision time — so a growing account gets
+    proportionally larger (never stale) ceilings. Kept as a plain object (not a
+    Settings subset) so it can be constructed in tests without the environment.
     """
 
     __slots__ = (
-        "total_deployable_cad",
-        "per_trade_max_cad",
-        "event_hard_cap_cad",
-        "daily_loss_limit_cad",
+        "total_deployable_pct",
+        "per_trade_max_pct",
+        "event_hard_cap_pct",
+        "daily_loss_limit_pct",
         "max_drawdown_pct",
         "fee_drag_limit_pct",
     )
 
     def __init__(
         self,
-        total_deployable_cad: float,
-        per_trade_max_cad: float,
-        event_hard_cap_cad: float,
-        daily_loss_limit_cad: float,
+        total_deployable_pct: float,
+        per_trade_max_pct: float,
+        event_hard_cap_pct: float,
+        daily_loss_limit_pct: float,
         max_drawdown_pct: float,
         fee_drag_limit_pct: float,
     ) -> None:
-        self.total_deployable_cad = total_deployable_cad
-        self.per_trade_max_cad = per_trade_max_cad
-        self.event_hard_cap_cad = event_hard_cap_cad
-        self.daily_loss_limit_cad = daily_loss_limit_cad
+        self.total_deployable_pct = total_deployable_pct
+        self.per_trade_max_pct = per_trade_max_pct
+        self.event_hard_cap_pct = event_hard_cap_pct
+        self.daily_loss_limit_pct = daily_loss_limit_pct
         self.max_drawdown_pct = max_drawdown_pct
         self.fee_drag_limit_pct = fee_drag_limit_pct
 
-    def cap_for(self, division: str) -> float:
-        """The maximum a single division may be sized to, in CAD."""
+    # ---- resolve fractions to CAD against the current portfolio value -------
+    def deployable_cad(self, portfolio_value_cad: float) -> float:
+        """Max CAD the agents may deploy out of the floor."""
+        return self.total_deployable_pct * max(0.0, portfolio_value_cad)
+
+    def per_trade_cad(self, portfolio_value_cad: float) -> float:
+        return self.per_trade_max_pct * max(0.0, portfolio_value_cad)
+
+    def daily_loss_limit_cad(self, portfolio_value_cad: float) -> float:
+        return self.daily_loss_limit_pct * max(0.0, portfolio_value_cad)
+
+    def cap_for(self, division: str, portfolio_value_cad: float) -> float:
+        """The maximum a single division may be sized to, in CAD, at this
+        portfolio value. Event is hard-capped to the smaller of its own cap and
+        the per-trade cap."""
+        pv = max(0.0, portfolio_value_cad)
         if division == "event":
-            return min(self.event_hard_cap_cad, self.per_trade_max_cad)
-        return self.per_trade_max_cad
+            return min(self.event_hard_cap_pct, self.per_trade_max_pct) * pv
+        return self.per_trade_max_pct * pv
 
 
 @lru_cache(maxsize=1)

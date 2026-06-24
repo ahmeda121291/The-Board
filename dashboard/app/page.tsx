@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Empty, Pill, Section, Stat, Table } from "@/components/ui";
 import { Refresher } from "@/components/Refresher";
 import { calibrationMean, loadDashboard, rollupOutcomes, type Decision } from "@/lib/data";
@@ -133,6 +134,9 @@ export default async function Page() {
         <div className="ml-auto flex flex-col items-end gap-2">
           <DepositLedger />
           <div className="flex items-center gap-2 text-[11px] text-slate-500">
+            <Link href="/docs" className="rounded-full border border-white/15 px-2.5 py-1 text-slate-300 hover:border-sky-400/40 hover:text-sky-300">
+              📖 Docs
+            </Link>
             <span>as of {asOf}</span>
             <span className="text-slate-600">·</span>
             <Refresher />

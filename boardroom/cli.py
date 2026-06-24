@@ -30,13 +30,15 @@ def _doctor() -> int:
     console.print(f"Supabase configured  : {'yes' if s.supabase_configured() else '[yellow]no (in-memory repo)[/yellow]'}")
     console.print(f"Kraken creds         : {'set' if s.kraken_api_key else 'not set (Milestone 6)'}")
     console.print(f"IBKR account         : {s.ibkr_account_id or 'not set (Milestone 6)'}")
-    console.print("\n[bold]Hard caps (CAD)[/bold]")
-    console.print(f"  total deployable   : {s.total_deployable_cad}")
-    console.print(f"  per-trade max      : {s.per_trade_max_cad}")
-    console.print(f"  event hard cap     : {s.event_hard_cap_cad}")
-    console.print(f"  daily loss limit   : {s.daily_loss_limit_cad}")
+    pv = s.starting_portfolio_cad
+    console.print(f"\n[bold]Hard caps — % of portfolio[/bold] [dim](resolved at {pv:.0f} CAD)[/dim]")
+    console.print(f"  total deployable   : {s.total_deployable_pct:.0%}  = {s.total_deployable_pct * pv:.2f} CAD")
+    console.print(f"  per-trade max      : {s.per_trade_max_pct:.0%}  = {s.per_trade_max_pct * pv:.2f} CAD")
+    console.print(f"  event hard cap     : {s.event_hard_cap_pct:.0%}  = {s.event_hard_cap_pct * pv:.2f} CAD")
+    console.print(f"  daily loss limit   : {s.daily_loss_limit_pct:.0%}  = {s.daily_loss_limit_pct * pv:.2f} CAD")
     console.print(f"  max drawdown       : {s.max_drawdown_pct:.0%}")
-    console.print("\n[dim]Reminder: venue keys must be scoped trade-only; withdrawals DISABLED.[/dim]")
+    console.print(f"  fee drag limit     : {s.fee_drag_limit_pct:.0%}")
+    console.print("\n[dim]Caps scale with the portfolio (percent-based). Venue keys: trade-only, withdrawals DISABLED.[/dim]")
     return 0
 
 

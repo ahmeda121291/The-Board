@@ -78,11 +78,13 @@ class Orchestrator:
             pitches.append(pitch)
         return pitches
 
-    def risk_review(self, pitches: list[Pitch]) -> tuple[list[Pitch], dict[str, RiskChallenge]]:
+    def risk_review(
+        self, pitches: list[Pitch], portfolio_value_cad: float = 200.0
+    ) -> tuple[list[Pitch], dict[str, RiskChallenge]]:
         survivors: list[Pitch] = []
         challenges: dict[str, RiskChallenge] = {}
         for p in pitches:
-            ch = self.risk_manager.challenge(p)
+            ch = self.risk_manager.challenge(p, portfolio_value_cad)
             challenges[p.pitch_id] = ch
             if ch.approved:
                 survivors.append(p)
@@ -101,9 +103,18 @@ class Orchestrator:
             )
             self.engine.leashes[div.division.value] = 0.0 if st.retired else st.leash
 
-    def decide(self, pitches: list[Pitch], hurdle_rate: float, deployed_cad: float) -> tuple[Decision, list]:
+    def decide(
+        self,
+        pitches: list[Pitch],
+        hurdle_rate: float,
+        deployed_cad: float,
+        portfolio_value_cad: float = 200.0,
+    ) -> tuple[Decision, list]:
         decision, ranked = self.engine.decide(
-            pitches, hurdle_rate=hurdle_rate, deployed_cad=deployed_cad
+            pitches,
+            hurdle_rate=hurdle_rate,
+            deployed_cad=deployed_cad,
+            portfolio_value_cad=portfolio_value_cad,
         )
         decision.rationale = write_rationale(decision, ranked, self.llm)
         return decision, ranked
@@ -134,14 +145,26 @@ class Orchestrator:
         return fills
 
     # ---- the whole loop ------------------------------------------------------
-    def run_once(self, *, bankroll_cad: float | None = None, deployed_cad: float = 0.0) -> LoopResult:
-        bankroll = bankroll_cad if bankroll_cad is not None else self.settings.total_deployable_cad
+    def run_once(
+        self,
+        *,
+        portfolio_value_cad: float | None = None,
+        bankroll_cad: float | None = None,  # deprecated alias for portfolio_value_cad
+        deployed_cad: float = 0.0,
+    ) -> LoopResult:
+        portfolio = (
+            portfolio_value_cad
+            if portfolio_value_cad is not None
+            else bankroll_cad
+            if bankroll_cad is not None
+            else self.settings.starting_portfolio_cad
+        )
         self.load_adaptive_state()
         hurdle_rate = self.yield_division.hurdle_for(horizon_days=1.0)
 
-        pitches = self.gather_pitches(bankroll)
-        survivors, challenges = self.risk_review(pitches)
-        decision, ranked = self.decide(survivors, hurdle_rate, deployed_cad)
+        pitches = self.gather_pitches(portfolio)
+        survivors, challenges = self.risk_review(pitches, portfolio)
+        decision, ranked = self.decide(survivors, hurdle_rate, deployed_cad, portfolio)
 
         ranking_payload = [
             {
@@ -168,21 +191,24 @@ def build_decision_graph(orch: Orchestrator):
     """
     from langgraph.graph import END, START, StateGraph
 
+    def _pv(state: dict) -> float:
+        return state.get("portfolio_value_cad", state.get("bankroll_cad", 200.0))
+
     def n_gather(state: dict) -> dict:
         orch.load_adaptive_state()
         state["hurdle_rate"] = orch.yield_division.hurdle_for(1.0)
-        state["pitches"] = orch.gather_pitches(state["bankroll_cad"])
+        state["pitches"] = orch.gather_pitches(_pv(state))
         return state
 
     def n_risk(state: dict) -> dict:
-        survivors, challenges = orch.risk_review(state["pitches"])
+        survivors, challenges = orch.risk_review(state["pitches"], _pv(state))
         state["survivors"] = survivors
         state["challenges"] = challenges
         return state
 
     def n_decide(state: dict) -> dict:
         decision, ranked = orch.decide(
-            state["survivors"], state["hurdle_rate"], state.get("deployed_cad", 0.0)
+            state["survivors"], state["hurdle_rate"], state.get("deployed_cad", 0.0), _pv(state)
         )
         state["decision"] = decision
         state["ranked"] = ranked

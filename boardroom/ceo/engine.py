@@ -39,7 +39,9 @@ class CEODecisionEngine:
     posteriors: dict[str, CalibrationPosterior] = field(default_factory=dict)
     leashes: dict[str, float] = field(default_factory=dict)
 
-    def _rank_one(self, pitch: Pitch, hurdle_rate: float, deployed_cad: float) -> RankedPitch:
+    def _rank_one(
+        self, pitch: Pitch, hurdle_rate: float, deployed_cad: float, portfolio_value_cad: float
+    ) -> RankedPitch:
         div = pitch.division.value
 
         # 1. Cost gate — drop anything whose edge doesn't clear its expected cost.
@@ -66,6 +68,7 @@ class CEODecisionEngine:
             risk_unit_fraction=risk_unit,
             caps=self.caps,
             deployed_cad=deployed_cad,
+            portfolio_value_cad=portfolio_value_cad,
             leash=self.leashes.get(div, 1.0),
         )
 
@@ -76,16 +79,23 @@ class CEODecisionEngine:
         return RankedPitch(pitch, trust, trusted_conf, size, score, reason)
 
     def decide(
-        self, pitches: list[Pitch], *, hurdle_rate: float, deployed_cad: float = 0.0
+        self,
+        pitches: list[Pitch],
+        *,
+        hurdle_rate: float,
+        deployed_cad: float = 0.0,
+        portfolio_value_cad: float = 200.0,
     ) -> tuple[Decision, list[RankedPitch]]:
         """Rank pitches and return the CEO's verdict + the full ranking.
 
         - No fundable pitch survived the gates  -> FUND_NONE.
         - Survivors exist but none clears the deviation threshold -> HOLD (floor).
         - Otherwise -> FUND the top-ranked pitch at its trust-adjusted size.
+
+        Hard caps resolve as percentages of ``portfolio_value_cad``.
         """
         ranked = sorted(
-            (self._rank_one(p, hurdle_rate, deployed_cad) for p in pitches),
+            (self._rank_one(p, hurdle_rate, deployed_cad, portfolio_value_cad) for p in pitches),
             key=lambda r: r.score,
             reverse=True,
         )

@@ -32,20 +32,29 @@ class CapVerdict:
 
 
 def clamp_size(
-    *, division: Division, requested_cad: float, caps: RiskCaps, deployed_cad: float
+    *,
+    division: Division,
+    requested_cad: float,
+    caps: RiskCaps,
+    deployed_cad: float,
+    portfolio_value_cad: float,
 ) -> CapVerdict:
-    """Clamp a requested position to the hard caps. Never raises; always returns
-    the largest *permitted* size (possibly 0) plus the reasons it was clamped.
+    """Clamp a requested position to the hard caps (percent of portfolio value).
+    Never raises; always returns the largest *permitted* size (possibly 0) plus
+    the reasons it was clamped.
     """
     reasons: list[str] = []
     size = max(0.0, requested_cad)
 
-    per_trade = caps.cap_for(division.value)
+    per_trade = caps.cap_for(division.value, portfolio_value_cad)
     if size > per_trade:
-        reasons.append(f"clamped to per-trade/division cap {per_trade:.2f} CAD")
+        reasons.append(
+            f"clamped to per-trade/division cap {per_trade:.2f} CAD "
+            f"({caps.per_trade_max_pct:.0%} of portfolio)"
+        )
         size = per_trade
 
-    headroom = max(0.0, caps.total_deployable_cad - deployed_cad)
+    headroom = max(0.0, caps.deployable_cad(portfolio_value_cad) - deployed_cad)
     if size > headroom:
         reasons.append(f"clamped to deployable headroom {headroom:.2f} CAD")
         size = headroom
@@ -57,13 +66,15 @@ def circuit_breaker_tripped(state: PortfolioState, caps: RiskCaps) -> list[str]:
     """Return the list of tripped breakers (empty == all clear).
 
     Any non-empty result means: force ALL capital to the floor immediately.
+    The daily-loss limit is a percent of current equity.
     """
     tripped: list[str] = []
 
-    if -state.realized_pnl_today_cad >= caps.daily_loss_limit_cad:
+    daily_limit = caps.daily_loss_limit_cad(state.equity_cad)
+    if -state.realized_pnl_today_cad >= daily_limit:
         tripped.append(
             f"daily loss {-state.realized_pnl_today_cad:.2f} CAD >= limit "
-            f"{caps.daily_loss_limit_cad:.2f}"
+            f"{daily_limit:.2f} ({caps.daily_loss_limit_pct:.0%} of equity)"
         )
 
     if state.peak_equity_cad > 0:

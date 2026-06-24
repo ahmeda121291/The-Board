@@ -40,8 +40,9 @@ class RiskManager:
     max_loss_fraction_ceiling: float = 0.6  # max_loss may not exceed this of capital
     llm: LLM | None = None
 
-    def challenge(self, pitch: Pitch) -> RiskChallenge:
+    def challenge(self, pitch: Pitch, portfolio_value_cad: float = 200.0) -> RiskChallenge:
         objections: list[str] = []
+        daily_limit = self.caps.daily_loss_limit_cad(portfolio_value_cad)
 
         # 1. Cost coverage — the edge must clear expected cost.
         if not pitch.clears_cost():
@@ -50,11 +51,11 @@ class RiskManager:
                 f"{pitch.expected_cost:.2f} CAD"
             )
 
-        # 2. Max loss vs the daily loss limit.
-        if pitch.max_loss > self.caps.daily_loss_limit_cad:
+        # 2. Max loss vs the daily loss limit (percent of portfolio).
+        if pitch.max_loss > daily_limit:
             objections.append(
                 f"max_loss {pitch.max_loss:.2f} exceeds daily loss limit "
-                f"{self.caps.daily_loss_limit_cad:.2f} CAD"
+                f"{daily_limit:.2f} CAD"
             )
 
         # 3. Stop integrity — max_loss shouldn't be most of the position.
@@ -68,8 +69,8 @@ class RiskManager:
         if liq is not None and liq < self.min_liquidity_cad:
             objections.append(f"insufficient liquidity: {liq:.0f} < {self.min_liquidity_cad:.0f}")
 
-        # 5. Hard cap on size for the division.
-        cap = self.caps.cap_for(pitch.division.value)
+        # 5. Hard cap on size for the division (percent of portfolio).
+        cap = self.caps.cap_for(pitch.division.value, portfolio_value_cad)
         recommended = min(pitch.capital_required, cap)
 
         concern = self._qualitative(pitch)

@@ -101,9 +101,11 @@ Three layers, three loops (scope §2, §10):
 
 - **`LIVE_TRADING` defaults `false`.** The full loop runs in dry-run until you
   flip it *after* funding. The CLI additionally requires `--confirm-live`.
-- **Hard caps the CEO can't widen:** total deployable, per-trade max, the Event
-  hard cap, daily-loss limit, max drawdown, fee-drag limit. A breach forces **all
-  capital back to the floor**.
+- **Hard caps the CEO can't widen** — expressed as **percent of portfolio value**
+  so they scale as the account grows (a $40 cap at $200 becomes $400 at $2,000):
+  total deployable (80%), per-trade max (20%), the Event hard cap (5%), daily-loss
+  limit (6%), max drawdown (15%), fee-drag limit (5%). A breach forces **all
+  capital back to the floor**. Full model: [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 - **Withdrawals disabled everywhere.** Brokers expose `supports_withdrawal` only
   so we can assert it is `False` at startup.
 - **Kraken and IBKR are isolated** accounts/sessions — a leak in one can't touch
