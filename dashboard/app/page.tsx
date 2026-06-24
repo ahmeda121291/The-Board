@@ -43,13 +43,26 @@ export default async function Page() {
   const d = await loadDashboard();
 
   if (!d.configured) {
+    const urlSet = Boolean(process.env.SUPABASE_URL);
+    const keySet = Boolean(process.env.SUPABASE_SERVICE_KEY);
+    const row = (name: string, ok: boolean) => (
+      <div className="flex items-center gap-2">
+        <span className={ok ? "text-good" : "text-bad"}>{ok ? "✓ set" : "✗ MISSING"}</span>
+        <code className="text-accent">{name}</code>
+      </div>
+    );
     return (
       <main className="mx-auto max-w-6xl px-5 py-10">
         <h1 className="text-2xl font-bold">Boardroom</h1>
-        <div className="card mt-6 text-sm text-muted">
-          Not connected to Supabase. Set <code className="text-accent">SUPABASE_URL</code> and{" "}
-          <code className="text-accent">SUPABASE_SERVICE_KEY</code> in the Vercel project’s environment
-          variables, then redeploy.
+        <div className="card mt-6 space-y-2 text-sm">
+          <div className="text-muted">Not connected to Supabase. Detected at runtime:</div>
+          {row("SUPABASE_URL", urlSet)}
+          {row("SUPABASE_SERVICE_KEY", keySet)}
+          <div className="pt-2 text-xs text-muted">
+            Add any MISSING variable in Vercel → Settings → Environment Variables with the{" "}
+            <b>Production</b> scope checked (exact names, no <code>NEXT_PUBLIC_</code> prefix), then
+            redeploy <b>Production</b> with build cache off.
+          </div>
         </div>
       </main>
     );
