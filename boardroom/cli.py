@@ -27,6 +27,13 @@ def _doctor() -> int:
     console.rule("[bold]Boardroom doctor")
     console.print(f"LIVE_TRADING         : {'[red]ON[/red]' if s.live_trading else '[green]off (safe)[/green]'}")
     console.print(f"Anthropic key        : {'set' if s.anthropic_api_key else '[yellow]missing (LLM falls back to templates)[/yellow]'}")
+    if s.anthropic_api_key:
+        from boardroom.agents.llm import LLM
+
+        ok, detail = LLM().ping()
+        console.print(f"LLM live ping        : {'[green]' + detail + '[/green]' if ok else '[red]' + detail + '[/red]'}")
+        if not ok:
+            console.print("[dim]  → agents fall back to templates. Set BOARDROOM_LLM_MODEL to a model your key can access.[/dim]")
     console.print(f"Supabase configured  : {'yes' if s.supabase_configured() else '[yellow]no (in-memory repo)[/yellow]'}")
     console.print(f"Kraken creds         : {'set' if s.kraken_api_key else 'not set (Milestone 6)'}")
     console.print(f"IBKR account         : {s.ibkr_account_id or 'not set (Milestone 6)'}")

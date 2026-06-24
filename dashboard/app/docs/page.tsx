@@ -96,6 +96,11 @@ export default function DocsPage() {
             <td className="px-4 py-3 text-slate-300">Scores each resolved decision: calibration, process-vs-luck.</td>
             <td className="px-4 py-3 text-xs text-slate-400">Calibration math deterministic; LLM writes post-mortem.</td>
           </tr>
+          <tr className="hover:bg-white/[0.02]">
+            <td className="px-4 py-3 font-medium">Strategist (CFO)</td>
+            <td className="px-4 py-3 text-slate-300">Studies the whole scoreboard and writes a strategic review + recommendations each checkpoint.</td>
+            <td className="px-4 py-3 text-xs text-slate-400">Standing + recommendations computed; LLM writes the analysis. Structural changes flagged for a human.</td>
+          </tr>
         </Table>
         <p className="mt-3 pl-1 text-sm text-slate-400">
           <b className="text-slate-200">Track-record-weighted trust:</b> the CEO keeps a live Beta
@@ -166,6 +171,55 @@ export default function DocsPage() {
           (cheap), act rarely (consequential), and only learn from a decision once it has actually
           resolved and can be scored.
         </p>
+      </Section>
+
+      <Section
+        title="Capital protection — the gains ratchet"
+        desc="Compounding wants you to reinvest everything; survival wants you to protect gains."
+      >
+        <div className="glass hud p-5 text-sm leading-relaxed text-slate-300">
+          When equity sets a new high-water mark, the ratchet sweeps <b className="text-slate-200">25% of
+          the gain above it into an untouchable reserve</b>. The reserve only ever grows and is
+          subtracted from the investable base the caps resolve against — so the agents{" "}
+          <b className="text-slate-200">structurally cannot re-risk it</b>. Most of the compounding
+          benefit, with ruin removed. The reserve shows in the dashboard hero (🔒).
+        </div>
+      </Section>
+
+      <Section title="Adaptation — who tunes the strategy" desc="Two layers: automatic math, and a reflective CFO.">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="glass p-4">
+            <div className="text-sm font-semibold text-sky-300">Automatic (deterministic)</div>
+            <p className="mt-2 text-xs leading-relaxed text-slate-300">
+              Calibration posteriors → CEO trust, per-division risk leashes, periodic model re-fits
+              (within anti-overfit guardrails), and division retirement. Fast, safe, parameter-level —
+              no agent rewriting itself.
+            </p>
+          </div>
+          <div className="glass p-4">
+            <div className="text-sm font-semibold text-sky-300">Reflective (the CFO)</div>
+            <p className="mt-2 text-xs leading-relaxed text-slate-300">
+              The Strategist agent reads performance + calibration + recurring errors and writes a
+              plain-language strategic review with recommendations. Parameter tweaks are tagged{" "}
+              <b className="text-slate-200">auto</b>; structural changes (new signals/divisions,
+              mandate or cap changes) are tagged <b className="text-slate-200">needs you</b> — it
+              recommends, you ratify.
+            </p>
+          </div>
+        </div>
+      </Section>
+
+      <Section title="The cockpit (this dashboard)" desc="What you can watch, refreshing on its own every 45s.">
+        <div className="glass p-5 text-sm text-slate-300">
+          <ul className="list-disc space-y-1.5 pl-5">
+            <li><b className="text-slate-200">Equity curve</b> — deposits + cumulative realized P&amp;L over time.</li>
+            <li><b className="text-slate-200">Next-checkpoint countdown</b> — when the CEO next convenes (daily at CHECKPOINT_UTC).</li>
+            <li><b className="text-slate-200">CEO verdict + rationale</b> and the full <b className="text-slate-200">boardroom session</b> — every pitch, the risk-manager veto, the CEO ruling, with reasons.</li>
+            <li><b className="text-slate-200">Chief Strategist (CFO)</b> review + recommendations.</li>
+            <li><b className="text-slate-200">Divisions table</b> — calibration, leash, shadow/retired — where trust accrues.</li>
+            <li><b className="text-slate-200">Session history</b>, resolved outcomes, attribution, the reserve, and the audit log.</li>
+          </ul>
+        </div>
       </Section>
 
       <Section title="Safety rails" desc="In code, outside any agent.">

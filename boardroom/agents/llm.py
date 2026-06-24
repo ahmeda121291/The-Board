@@ -30,6 +30,25 @@ class LLM:
             self._client = anthropic.Anthropic(api_key=self._settings.require_anthropic())
         return self._client
 
+    def ping(self) -> tuple[bool, str]:
+        """Live check: actually call the model once and return (ok, detail).
+
+        Unlike ``complete``, this does NOT swallow the error — so ``doctor`` can
+        show exactly why the LLM layer is falling back to templated prose.
+        """
+        if not self.available:
+            return False, "no ANTHROPIC_API_KEY"
+        try:
+            client = self._ensure_client()
+            client.messages.create(
+                model=self.model,
+                max_tokens=5,
+                messages=[{"role": "user", "content": "ping"}],
+            )
+            return True, f"model {self.model} OK"
+        except Exception as e:
+            return False, f"{type(e).__name__}: {str(e)[:180]}"
+
     def complete(
         self,
         *,
