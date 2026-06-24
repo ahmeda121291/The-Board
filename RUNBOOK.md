@@ -99,8 +99,28 @@ password ever touches Boardroom. Put `SNAPTRADE_USER_ID`,
 
 ---
 
-## Safety reminders (enforced in code)
+## Running unattended (Windows Task Scheduler)
 
+Instead of leaving `boardroom run` open in a terminal, let Windows be the daily
+trigger — survives reboots, wakes the PC, no window to babysit.
+
+```powershell
+# from the repo root, once (set the time to your local equiv of CHECKPOINT_UTC)
+powershell -ExecutionPolicy Bypass -File .\install_scheduler.ps1 -Time 17:00
+```
+
+That registers a **Boardroom Daily** task that runs `run_boardroom.ps1` →
+`boardroom run --confirm-live --once` (one live checkpoint) each day, logging to
+`logs\scheduler.log`. It only runs while you're logged in to Windows; for fully
+headless operation, open Task Scheduler → Boardroom Daily → Properties → General
+→ "Run whether user is logged on or not" (stores your Windows password).
+
+Remove it with:
+```powershell
+Unregister-ScheduledTask -TaskName "Boardroom Daily" -Confirm:$false
+```
+
+## Safety reminders (enforced in code)
 - `LIVE_TRADING` defaults false; `decide` also requires `--confirm-live`.
 - Every venue credential must be **trade-only, withdrawals disabled**. The broker
   classes have no withdraw code path and assert `supports_withdrawal == False`.

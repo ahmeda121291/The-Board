@@ -32,4 +32,5 @@ class EffortDivision(Division):
     enabled: bool = False  # disabled at launch — the interface exists, the bet doesn't
 
     def propose(self, *, bars=None, bankroll_cad: float = 200.0) -> Pitch | None:
+        self.last_status = "disabled (Phase 3 — not yet activated)"
         return None

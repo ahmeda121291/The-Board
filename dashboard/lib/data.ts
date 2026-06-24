@@ -21,8 +21,39 @@ export type Decision = {
   size_cad: number;
   hurdle_rate: number;
   rationale: string | null;
-  ranked: any[];
+  ranked: any; // boardroom session: { hurdle_rate, portfolio_value_cad, pitches[], divisions[] }
   live: boolean;
+};
+
+export type SessionPitch = {
+  pitch_id: string;
+  division: string;
+  symbol: string;
+  venue: string;
+  expected_return: number;
+  confidence: number;
+  capital_required: number;
+  max_loss: number;
+  expected_cost: number;
+  horizon_days: number;
+  opportunity: string;
+  why_now: string;
+  features: Record<string, number>;
+  risk_approved: boolean | null;
+  risk_objections: string[];
+  risk_concern: string;
+  ceo_score: number | null;
+  ceo_trust: number | null;
+  ceo_size_cad: number | null;
+  status: "funded" | "vetoed" | "passed";
+  reason: string;
+};
+
+export type Session = {
+  hurdle_rate?: number;
+  portfolio_value_cad?: number;
+  pitches?: SessionPitch[];
+  divisions?: { division: string; status: string }[];
 };
 
 export type Pitch = {

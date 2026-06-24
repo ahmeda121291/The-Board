@@ -166,20 +166,68 @@ class Orchestrator:
         survivors, challenges = self.risk_review(pitches, portfolio)
         decision, ranked = self.decide(survivors, hurdle_rate, deployed_cad, portfolio)
 
-        ranking_payload = [
-            {
-                "pitch_id": r.pitch.pitch_id,
-                "division": r.pitch.division.value,
-                "score": r.score,
-                "trust": r.trust,
-                "trusted_size_cad": r.trusted_size_cad,
-                "rejected_reason": r.rejected_reason,
-            }
-            for r in ranked
-        ]
-        self.repo.save_decision(decision, ranking_payload)
+        session = self._build_session(decision, pitches, challenges, ranked, hurdle_rate, portfolio)
+        self.repo.save_decision(decision, session)
         fills = self.execute(decision, pitches)
         return LoopResult(decision, pitches, ranked, challenges, fills)
+
+    def _build_session(self, decision, pitches, challenges, ranked, hurdle_rate, portfolio) -> dict:
+        """The full boardroom session — every division's status, what it pitched,
+        the risk manager's verdict, and the CEO's ranking + reason. This is the
+        narrative the dashboard renders."""
+        ranked_by_id = {r.pitch.pitch_id: r for r in ranked}
+
+        pitch_rows = []
+        for p in pitches:
+            ch = challenges.get(p.pitch_id)
+            r = ranked_by_id.get(p.pitch_id)
+            if decision.pitch_id == p.pitch_id and decision.kind.value == "fund":
+                status, reason = "funded", "CEO funded — best risk-adjusted edge over the floor"
+            elif ch is not None and not ch.approved:
+                status, reason = "vetoed", "; ".join(ch.hard_objections) or "risk manager veto"
+            elif r is not None and r.rejected_reason:
+                status, reason = "passed", r.rejected_reason
+            else:
+                status, reason = "passed", "ranked below the deviation threshold (floor wins)"
+            pitch_rows.append(
+                {
+                    "pitch_id": p.pitch_id,
+                    "division": p.division.value,
+                    "symbol": p.symbol,
+                    "venue": p.venue.value,
+                    "expected_return": p.expected_return,
+                    "confidence": p.confidence,
+                    "capital_required": p.capital_required,
+                    "max_loss": p.max_loss,
+                    "expected_cost": p.expected_cost,
+                    "horizon_days": p.time_horizon_days,
+                    "opportunity": p.opportunity,
+                    "why_now": p.why_now,
+                    "features": p.signals.features,
+                    "risk_approved": (ch.approved if ch else None),
+                    "risk_objections": (ch.hard_objections if ch else []),
+                    "risk_concern": (ch.qualitative_concern if ch else ""),
+                    "ceo_score": (r.score if r else None),
+                    "ceo_trust": (r.trust if r else None),
+                    "ceo_size_cad": (r.trusted_size_cad if r else None),
+                    "status": status,
+                    "reason": reason,
+                }
+            )
+
+        self.yield_division.last_status = (
+            f"floor — resting state · carry {self.yield_division.carry_apr:.1%} APR"
+        )
+        division_rows = [
+            {"division": d.division.value, "status": getattr(d, "last_status", "idle")}
+            for d in [self.yield_division, *self.divisions]
+        ]
+        return {
+            "hurdle_rate": hurdle_rate,
+            "portfolio_value_cad": portfolio,
+            "pitches": pitch_rows,
+            "divisions": division_rows,
+        }
 
 
 def build_decision_graph(orch: Orchestrator):

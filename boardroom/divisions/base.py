@@ -33,6 +33,9 @@ class Division(abc.ABC):
     min_stop_fraction: float = 0.01
     stop_vol_multiple: float = 2.0
     cost_model: CostModel = field(default_factory=CostModel)
+    #: Human-readable outcome of the last propose() — for the boardroom session
+    #: feed (why a division abstained or what it pitched).
+    last_status: str = "idle"
 
     # ---- subclass hooks ------------------------------------------------------
     def needs_fx(self) -> bool:
@@ -57,32 +60,39 @@ class Division(abc.ABC):
     def propose(
         self, *, bars: Bars | None = None, bankroll_cad: float = 200.0
     ) -> Pitch | None:
-        """Produce a computed Pitch, or None to abstain."""
+        """Produce a computed Pitch, or None to abstain (recording why)."""
         if not self.enabled:
+            self.last_status = "disabled"
             return None
 
         try:
             bars = bars if bars is not None else (self.fetch() if self.fetch else None)
         except Exception:
+            self.last_status = "abstained — data feed unavailable"
             return None  # any data failure -> abstain (no trade on garbage)
         if bars is None:
+            self.last_status = "abstained — no data"
             return None
 
         try:
             snapshot = build_snapshot(
                 bars, max_age_seconds=self.max_age_seconds, min_rows=self.min_rows
             )
-        except SanityError:
+        except SanityError as e:
+            self.last_status = f"abstained — data failed sanity checks ({e})"
             return None
         if not snapshot.is_fresh:
+            self.last_status = f"abstained — stale data ({snapshot.age_seconds / 3600:.0f}h old)"
             return None  # stale data -> abstain
 
         output = self.model.predict(bars)
         if output.raw_confidence <= 0.0:
+            self.last_status = "abstained — no edge / trigger not fired"
             return None  # no edge / sentinel not fired -> abstain
 
         capital = self.base_size_cad(output, bankroll_cad)
         if capital <= 0.0:
+            self.last_status = "abstained — computed size rounds to zero"
             return None
 
         stop_frac = self.stop_fraction(output)
@@ -101,6 +111,7 @@ class Division(abc.ABC):
             horizon_days=output.horizon_days,
         )
 
+        self.last_status = "pitched"
         return Pitch(
             pitch_id=str(uuid.uuid4()),
             division=self.division,

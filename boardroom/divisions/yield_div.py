@@ -30,4 +30,5 @@ class YieldDivision(Division):
 
     def propose(self, *, bars=None, bankroll_cad: float = 200.0) -> Pitch | None:
         # The floor is the resting state; it does not pitch.
+        self.last_status = f"floor — resting state · carry {self.carry_apr:.1%} APR"
         return None

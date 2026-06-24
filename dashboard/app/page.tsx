@@ -2,7 +2,8 @@ import Link from "next/link";
 import { Empty, Pill, Section, Stat, Table } from "@/components/ui";
 import { Refresher } from "@/components/Refresher";
 import { Countdown } from "@/components/Countdown";
-import { calibrationMean, loadDashboard, rollupOutcomes, type Decision } from "@/lib/data";
+import { SessionView } from "@/components/Session";
+import { calibrationMean, loadDashboard, rollupOutcomes, type Decision, type Session } from "@/lib/data";
 import { deposits } from "@/lib/deposits";
 import { nextCheckpointIso } from "@/lib/schedule";
 import { ago, cad, num, pct, when } from "@/lib/format";
@@ -119,6 +120,10 @@ export default async function Page() {
   const targetIso =
     hbNext && new Date(hbNext).getTime() > Date.now() ? hbNext : nextCheckpointIso(checkpointUtc);
   const schedulerActive = hb ? Date.now() - new Date(hb.created_at).getTime() < 26 * 3600 * 1000 : false;
+  const latestSession: Session | null =
+    latest && latest.ranked && typeof latest.ranked === "object" && !Array.isArray(latest.ranked)
+      ? (latest.ranked as Session)
+      : null;
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-8">
@@ -223,6 +228,14 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
       {/* CEO */}
       <Section title="The CEO" desc="Latest verdict and rationale. Most days the right answer is HOLD.">
         <DecisionRationale decisions={d.decisions} />
+      </Section>
+
+      {/* Latest boardroom session — the full story */}
+      <Section
+        title="Latest boardroom session"
+        desc="What each division did, what was pitched, what the risk manager vetoed, and how the CEO ruled — with reasons."
+      >
+        <SessionView session={latestSession} />
       </Section>
 
       {/* Divisions */}
