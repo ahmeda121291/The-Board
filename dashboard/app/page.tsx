@@ -162,6 +162,13 @@ export default async function Page() {
   const checkpointUtc = process.env.CHECKPOINT_UTC || "21:00";
   const hb = d.audit.find((a) => a.event === "scheduler_heartbeat");
   const hbNext = (hb?.payload as any)?.next_run_at as string | undefined;
+  const hbLive = (hb?.payload as any)?.live === true;
+  const envArmed = (process.env.LIVE_TRADING || "").toLowerCase() === "true";
+  // Tri-state live status:
+  //   tradedLive — a real trade has actually executed and been logged
+  //   armedLive  — configured + scheduled for live, but no live trade yet
+  const tradedLive = Boolean(latest?.live);
+  const armedLive = tradedLive || hbLive || envArmed;
   const targetIso =
     hbNext && new Date(hbNext).getTime() > Date.now() ? hbNext : nextCheckpointIso(checkpointUtc);
   const schedulerActive = hb ? Date.now() - new Date(hb.created_at).getTime() < 26 * 3600 * 1000 : false;
@@ -181,9 +188,25 @@ export default async function Page() {
             autonomous capital allocator
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-            <span className="flex items-center gap-2 rounded-full border border-white/10 px-2.5 py-1">
-              <span className={latest?.live ? "dot dot-live" : "dot"} />
-              {latest?.live ? "LIVE TRADING" : "dry-run · safe"}
+            <span
+              className="flex items-center gap-2 rounded-full border px-2.5 py-1"
+              style={{
+                borderColor: tradedLive
+                  ? "rgba(244,63,94,0.4)"
+                  : armedLive
+                  ? "rgba(16,185,129,0.4)"
+                  : "rgba(255,255,255,0.1)",
+              }}
+              title={
+                tradedLive
+                  ? "A live trade has executed and been logged."
+                  : armedLive
+                  ? `Configured & scheduled for live trading. No live trade yet — next checkpoint ${checkpointUtc} UTC.`
+                  : "No live trade logged and live mode not detected."
+              }
+            >
+              <span className={tradedLive || armedLive ? "dot dot-live" : "dot"} />
+              {tradedLive ? "LIVE TRADING" : armedLive ? "LIVE · ARMED" : "dry-run · safe"}
             </span>
             {breaker.length > 0 ? <Pill tone="bad">⚠ CIRCUIT BREAKER</Pill> : <Pill tone="good">breakers clear</Pill>}
             <Pill tone="cyan">{liveCount} live</Pill>
