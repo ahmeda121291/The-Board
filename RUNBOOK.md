@@ -78,14 +78,19 @@ SNAPTRADE_ACCOUNT_ID=<the connected Wealthsimple account id>
 
 ### One-time SnapTrade connection (to get USER_SECRET + ACCOUNT_ID)
 
-1. Register a user → returns `userId` + `userSecret` (keep the secret).
-2. Generate a connection-portal URL and open it in a browser; log into
-   Wealthsimple there. SnapTrade stores the link — no brokerage password ever
-   touches Boardroom.
-3. List the user's accounts → copy the Wealthsimple `accountId`.
+Use the helper (needs network to `api.snaptrade.com`, so run it locally):
 
-A small helper script for steps 1–3 can be added on request; it uses only the
-SnapTrade SDK and your clientId/consumerKey.
+```bash
+# 1. Register a SnapTrade user + print the Wealthsimple connect URL
+python scripts/snaptrade_connect.py register --user-id ahmed-boardroom
+# 2. Open the printed URL, log into Wealthsimple, finish linking.
+# 3. List accounts and copy the one you want to trade
+python scripts/snaptrade_connect.py accounts --user-id ahmed-boardroom --user-secret <secret>
+```
+
+It uses only your `SNAPTRADE_CLIENT_ID` + `SNAPTRADE_CONSUMER_KEY`; no brokerage
+password ever touches Boardroom. Put `SNAPTRADE_USER_ID`,
+`SNAPTRADE_USER_SECRET`, and `SNAPTRADE_ACCOUNT_ID` in `.env`.
 
 > **Wealthsimple caveat:** confirm SnapTrade trading is enabled for your
 > Wealthsimple account. If it's read-only, the Directional division still
