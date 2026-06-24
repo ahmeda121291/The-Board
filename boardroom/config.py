@@ -48,7 +48,11 @@ class Settings(BaseSettings):
     starting_portfolio_cad: float = Field(default=200.0, alias="STARTING_PORTFOLIO_CAD")
 
     # Daily checkpoint time (UTC, "HH:MM") — when the CEO convenes once a day.
-    checkpoint_utc: str = Field(default="21:00", alias="CHECKPOINT_UTC")
+    # 19:00 UTC ≈ 3pm ET (summer) — INSIDE the equities regular session (closes
+    # 4pm ET) so the Directional leg can actually fill. Crypto is 24/7. If you
+    # drive runs via Task Scheduler --once, the trigger's LOCAL time is what
+    # matters; set it to 15:00 local (always 1h before the 4pm-local close).
+    checkpoint_utc: str = Field(default="19:00", alias="CHECKPOINT_UTC")
 
     # ---- LLM (the agents' brain) --------------------------------------------
     anthropic_api_key: SecretStr | None = Field(default=None, alias="ANTHROPIC_API_KEY")

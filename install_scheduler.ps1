@@ -1,10 +1,13 @@
 # Boardroom — register the daily checkpoint as a Windows Scheduled Task.
-# Run once. Re-run to change the time. Default 17:00 local (~21:00 UTC in EDT,
-# matching CHECKPOINT_UTC so the dashboard countdown lines up).
+# Run once. Re-run to change the time. Default 15:00 LOCAL — always 1 hour before
+# the 4pm-local equities close, in summer AND winter, so the Directional (stock)
+# leg fires while the market is open and can actually fill. Crypto is 24/7.
+# (The run is launched with --once, so this local trigger time IS the execution
+# time; CHECKPOINT_UTC only drives the dashboard countdown.)
 #
 #   powershell -ExecutionPolicy Bypass -File .\install_scheduler.ps1
-#   powershell -ExecutionPolicy Bypass -File .\install_scheduler.ps1 -Time 16:30
-param([string]$Time = "17:00")
+#   powershell -ExecutionPolicy Bypass -File .\install_scheduler.ps1 -Time 15:00
+param([string]$Time = "15:00")
 
 $ErrorActionPreference = "Stop"
 $ps1 = Join-Path $PSScriptRoot "run_boardroom.ps1"

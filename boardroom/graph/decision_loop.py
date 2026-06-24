@@ -152,6 +152,25 @@ class Orchestrator:
         if broker is None:
             return fills
         live = self.settings.live_trading  # the hard gate
+
+        # Equities only fill during the regular session. If we'd go live on an
+        # equity venue while the market is closed, hold the leg rather than queue
+        # a blind after-hours order. Crypto (Kraken) is 24/7 and unaffected.
+        from boardroom.market import equities_session_open, is_equities_venue, session_note
+
+        if live and is_equities_venue(pitch.venue) and not equities_session_open():
+            decision.live = False
+            self.repo.audit(
+                "equity_market_closed",
+                {
+                    "decision_id": decision.decision_id,
+                    "venue": pitch.venue.value,
+                    "symbol": pitch.symbol,
+                    "reason": session_note(),
+                },
+            )
+            return fills
+
         order = Order(
             symbol=pitch.symbol,
             side=OrderSide.BUY,

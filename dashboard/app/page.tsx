@@ -159,7 +159,7 @@ export default async function Page() {
   const isFresh = d.decisions.length === 0 && d.pitches.length === 0 && d.outcomes.length === 0;
   const asOf = new Date().toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" });
 
-  const checkpointUtc = process.env.CHECKPOINT_UTC || "21:00";
+  const checkpointUtc = process.env.CHECKPOINT_UTC || "19:00";
   const hb = d.audit.find((a) => a.event === "scheduler_heartbeat");
   const hbNext = (hb?.payload as any)?.next_run_at as string | undefined;
   const hbLive = (hb?.payload as any)?.live === true;

@@ -105,9 +105,17 @@ Instead of leaving `boardroom run` open in a terminal, let Windows be the daily
 trigger — survives reboots, wakes the PC, no window to babysit.
 
 ```powershell
-# from the repo root, once (set the time to your local equiv of CHECKPOINT_UTC)
-powershell -ExecutionPolicy Bypass -File .\install_scheduler.ps1 -Time 17:00
+# from the repo root, once. 15:00 local = always 1h before the 4pm equities
+# close, so the stock leg fires while the market is open and can fill.
+powershell -ExecutionPolicy Bypass -File .\install_scheduler.ps1 -Time 15:00
 ```
+
+> **Why 15:00 local?** The run uses `--once`, so the Task Scheduler trigger time
+> *is* the execution time. Equities (Wealthsimple via SnapTrade) only fill during
+> the 9:30am–4:00pm ET regular session; 15:00 local is 1h before the close in both
+> summer and winter. Crypto (Kraken) is 24/7. As a backstop, a market-hours guard
+> auto-holds any live equity order placed while the market is closed (it logs an
+> `equity_market_closed` event rather than queuing a blind after-hours order).
 
 That registers a **Boardroom Daily** task that runs `run_boardroom.ps1` →
 `boardroom run --confirm-live --once` (one live checkpoint) each day, logging to

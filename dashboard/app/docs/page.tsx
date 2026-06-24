@@ -151,6 +151,14 @@ export default function DocsPage() {
           floor, per unit of risk, net of cost) and funds the single best, or holds. One run, both
           markets, ranked head-to-head.
         </p>
+        <p className="mt-3 pl-1 text-sm text-slate-400">
+          <b className="text-slate-200">Market hours.</b> Crypto trades 24/7, so the Event/Yield legs
+          fill at any checkpoint time. Stocks only fill during the regular session (9:30am–4:00pm ET),
+          so the daily run is scheduled for <b className="text-slate-200">3pm ET — 1 hour before the
+          close</b>. As a backstop, a market-hours guard <b>auto-holds</b> any live equity order placed
+          while the market is closed (logged as <code className="text-sky-300">equity_market_closed</code>)
+          rather than queuing a blind after-hours order at an unknown gap price.
+        </p>
       </Section>
 
       <Section title="The three loops" desc="Nested feedback at different speeds — this is the engine.">
