@@ -92,6 +92,28 @@ class Orchestrator:
                 self.repo.audit("risk_veto", {"pitch_id": p.pitch_id, "objections": ch.hard_objections})
         return survivors, challenges
 
+    def settle_and_ratchet(self) -> float:
+        """Mark equity to (deposits + realized P&L), run the gains ratchet, persist
+        the reserve, and return the INVESTABLE base (equity minus reserve) the caps
+        resolve against. The reserve is structurally out of the agents' reach."""
+        from boardroom.adaptive.ratchet import RatchetState, investable_cad, ratchet_update
+
+        baseline = self.settings.starting_portfolio_cad
+        outcomes = self.repo.recent_outcomes(limit=10000)
+        equity = baseline + sum(o.pnl_cad for o in outcomes)
+        s = self.repo.get_system_state()
+        # HWM never sits below the funded baseline — only gains above it are swept.
+        state = RatchetState(
+            reserve_cad=s.get("reserve_cad", 0.0),
+            hwm_cad=max(s.get("hwm_cad", 0.0), baseline),
+        )
+        new = ratchet_update(equity_cad=equity, state=state)
+        if new.reserve_cad != s.get("reserve_cad", 0.0) or new.hwm_cad != s.get("hwm_cad", 0.0):
+            self.repo.set_system_state(new.reserve_cad, new.hwm_cad)
+            if new.reserve_cad > s.get("reserve_cad", 0.0):
+                self.repo.audit("ratchet", {"reserve_cad": new.reserve_cad, "equity_cad": round(equity, 2)})
+        return investable_cad(equity, new.reserve_cad)
+
     def load_adaptive_state(self) -> None:
         """Hydrate the CEO engine with live calibration posteriors and leashes."""
         from boardroom.adaptive.calibration import CalibrationPosterior
@@ -157,7 +179,7 @@ class Orchestrator:
             if portfolio_value_cad is not None
             else bankroll_cad
             if bankroll_cad is not None
-            else self.settings.starting_portfolio_cad
+            else self.settle_and_ratchet()  # live equity minus the protected reserve
         )
         self.load_adaptive_state()
         hurdle_rate = self.yield_division.hurdle_for(horizon_days=1.0)

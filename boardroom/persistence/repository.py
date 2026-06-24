@@ -56,6 +56,20 @@ class Repository(abc.ABC):
     @abc.abstractmethod
     def audit(self, event: str, payload: dict) -> None: ...
 
+    @abc.abstractmethod
+    def get_system_state(self) -> dict: ...
+
+    @abc.abstractmethod
+    def set_system_state(self, reserve_cad: float, hwm_cad: float) -> None: ...
+
+    @abc.abstractmethod
+    def save_strategy_review(
+        self, headline: str, narrative: str, recommendations: list, standing: dict
+    ) -> None: ...
+
+    @abc.abstractmethod
+    def recent_strategy_reviews(self, limit: int = 10) -> list[dict]: ...
+
 
 @dataclass
 class InMemoryRepository(Repository):
@@ -68,6 +82,8 @@ class InMemoryRepository(Repository):
     performance: list[dict] = field(default_factory=list)
     weekly: list[tuple[str, dict]] = field(default_factory=list)
     audit_log: list[tuple[str, dict]] = field(default_factory=list)
+    system_state: dict = field(default_factory=lambda: {"reserve_cad": 0.0, "hwm_cad": 0.0})
+    strategy_reviews: list[dict] = field(default_factory=list)
 
     def save_pitch(self, pitch: Pitch) -> None:
         self.pitches.append(pitch)
@@ -102,6 +118,27 @@ class InMemoryRepository(Repository):
 
     def audit(self, event: str, payload: dict) -> None:
         self.audit_log.append((event, payload))
+
+    def get_system_state(self) -> dict:
+        return dict(self.system_state)
+
+    def set_system_state(self, reserve_cad: float, hwm_cad: float) -> None:
+        self.system_state = {"reserve_cad": reserve_cad, "hwm_cad": hwm_cad}
+
+    def save_strategy_review(
+        self, headline: str, narrative: str, recommendations: list, standing: dict
+    ) -> None:
+        self.strategy_reviews.append(
+            {
+                "headline": headline,
+                "narrative": narrative,
+                "recommendations": recommendations,
+                "standing": standing,
+            }
+        )
+
+    def recent_strategy_reviews(self, limit: int = 10) -> list[dict]:
+        return self.strategy_reviews[-limit:]
 
 
 def get_repository() -> Repository:

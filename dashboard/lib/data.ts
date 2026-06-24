@@ -92,6 +92,15 @@ export type Outcome = {
 export type PerfSnapshot = { id: number; created_at: string; payload: any };
 export type WeeklyReport = { id: number; created_at: string; report: string; payload: any };
 export type AuditRow = { id: number; created_at: string; event: string; payload: any };
+export type Recommendation = { area: string; suggestion: string; requires_human: boolean };
+export type StrategyReview = {
+  id: number;
+  created_at: string;
+  headline: string;
+  narrative: string;
+  recommendations: Recommendation[];
+  standing: any;
+};
 
 export type Dashboard = {
   configured: boolean;
@@ -103,6 +112,9 @@ export type Dashboard = {
   performance: PerfSnapshot | null;
   weekly: WeeklyReport | null;
   audit: AuditRow[];
+  strategist: StrategyReview | null;
+  reserve_cad: number;
+  hwm_cad: number;
 };
 
 export async function loadDashboard(): Promise<Dashboard> {
@@ -116,24 +128,31 @@ export async function loadDashboard(): Promise<Dashboard> {
     performance: null,
     weekly: null,
     audit: [],
+    strategist: null,
+    reserve_cad: 0,
+    hwm_cad: 0,
   };
 
   const sb = serverClient();
   if (!sb) return { ...empty, configured: false };
 
   try {
-    const [divisions, decisions, pitches, outcomes, perf, weekly, audit] = await Promise.all([
-      sb.from("division_state").select("*").order("division"),
-      sb.from("decisions").select("*").order("created_at", { ascending: false }).limit(50),
-      sb.from("pitches").select("*").order("created_at", { ascending: false }).limit(50),
-      sb.from("outcomes").select("*").order("resolved_at", { ascending: false }).limit(100),
-      sb.from("performance_snapshots").select("*").order("created_at", { ascending: false }).limit(1),
-      sb.from("weekly_reports").select("*").order("created_at", { ascending: false }).limit(1),
-      sb.from("audit_log").select("*").order("created_at", { ascending: false }).limit(50),
-    ]);
+    const [divisions, decisions, pitches, outcomes, perf, weekly, audit, strategist, sys] =
+      await Promise.all([
+        sb.from("division_state").select("*").order("division"),
+        sb.from("decisions").select("*").order("created_at", { ascending: false }).limit(50),
+        sb.from("pitches").select("*").order("created_at", { ascending: false }).limit(50),
+        sb.from("outcomes").select("*").order("resolved_at", { ascending: false }).limit(200),
+        sb.from("performance_snapshots").select("*").order("created_at", { ascending: false }).limit(1),
+        sb.from("weekly_reports").select("*").order("created_at", { ascending: false }).limit(1),
+        sb.from("audit_log").select("*").order("created_at", { ascending: false }).limit(50),
+        sb.from("strategist_reviews").select("*").order("created_at", { ascending: false }).limit(1),
+        sb.from("system_state").select("*").eq("id", 1).limit(1),
+      ]);
 
     const firstError =
       divisions.error || decisions.error || pitches.error || outcomes.error || perf.error || weekly.error || audit.error;
+    const sysRow = ((sys.data as any[]) ?? [])[0] ?? null;
 
     return {
       configured: true,
@@ -145,10 +164,26 @@ export async function loadDashboard(): Promise<Dashboard> {
       performance: ((perf.data as PerfSnapshot[]) ?? [])[0] ?? null,
       weekly: ((weekly.data as WeeklyReport[]) ?? [])[0] ?? null,
       audit: (audit.data as AuditRow[]) ?? [],
+      strategist: ((strategist.data as StrategyReview[]) ?? [])[0] ?? null,
+      reserve_cad: sysRow?.reserve_cad ?? 0,
+      hwm_cad: sysRow?.hwm_cad ?? 0,
     };
   } catch (e: any) {
     return { ...empty, configured: true, error: e?.message ?? "Unknown error" };
   }
+}
+
+// Equity curve: start + cumulative realized P&L over resolved outcomes (ascending).
+export function equitySeries(outcomes: Outcome[], start: number): { t: string; equity: number }[] {
+  const asc = [...outcomes].sort(
+    (a, b) => new Date(a.resolved_at).getTime() - new Date(b.resolved_at).getTime(),
+  );
+  let eq = start;
+  const pts = asc.map((o) => {
+    eq += o.pnl_cad || 0;
+    return { t: o.resolved_at, equity: Math.round(eq * 100) / 100 };
+  });
+  return pts;
 }
 
 // ---- derived helpers (deterministic; mirror the Python measurement layer) ----

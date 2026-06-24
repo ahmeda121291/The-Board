@@ -3,7 +3,17 @@ import { Empty, Pill, Section, Stat, Table } from "@/components/ui";
 import { Refresher } from "@/components/Refresher";
 import { Countdown } from "@/components/Countdown";
 import { SessionView } from "@/components/Session";
-import { calibrationMean, loadDashboard, rollupOutcomes, type Decision, type Session } from "@/lib/data";
+import { SessionHistory } from "@/components/SessionHistory";
+import { EquityChart } from "@/components/EquityChart";
+import {
+  calibrationMean,
+  equitySeries,
+  loadDashboard,
+  rollupOutcomes,
+  type Decision,
+  type Session,
+  type StrategyReview,
+} from "@/lib/data";
 import { deposits } from "@/lib/deposits";
 import { nextCheckpointIso } from "@/lib/schedule";
 import { ago, cad, num, pct, when } from "@/lib/format";
@@ -66,6 +76,40 @@ function DecisionRationale({ decisions }: { decisions: Decision[] }) {
   );
 }
 
+function StrategistPanel({ review }: { review: StrategyReview | null }) {
+  if (!review) {
+    return (
+      <Empty>
+        No CFO review yet — it’s written each checkpoint (or run <code className="text-sky-300">boardroom review</code>).
+      </Empty>
+    );
+  }
+  return (
+    <div className="glass hud p-5">
+      <div className="flex items-center gap-2">
+        <span className="text-lg">🧮</span>
+        <span className="label">Chief Strategist (CFO)</span>
+        <span className="ml-auto text-xs text-slate-500">{ago(review.created_at)}</span>
+      </div>
+      <div className="mt-2 text-sm font-semibold text-sky-300 glow-cyan">{review.headline}</div>
+      <p className="mt-2 text-sm leading-relaxed text-slate-200">{review.narrative}</p>
+      {review.recommendations?.length ? (
+        <div className="mt-4 space-y-2">
+          <div className="label">Recommendations</div>
+          {review.recommendations.map((r, i) => (
+            <div key={i} className="flex items-start gap-2 text-sm">
+              <Pill tone={r.requires_human ? "warn" : "good"}>
+                {r.requires_human ? "needs you" : "auto"}
+              </Pill>
+              <span className="text-slate-300">{r.suggestion}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default async function Page() {
   const d = await loadDashboard();
   const dep = deposits();
@@ -124,6 +168,7 @@ export default async function Page() {
     latest && latest.ranked && typeof latest.ranked === "object" && !Array.isArray(latest.ranked)
       ? (latest.ranked as Session)
       : null;
+  const series = equitySeries(d.outcomes, dep.total);
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-8">
@@ -193,7 +238,7 @@ export default async function Page() {
         <div>
           <div className="label">Estimated equity · deposits + realized P&amp;L</div>
           <div className="num mt-1 text-5xl font-bold text-white glow-cyan">{cad(equity)}</div>
-          <div className="mt-2 flex items-center gap-3 text-sm">
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
             <span className="text-slate-400">start {cad(dep.total)}</span>
             <span className={roll.pnl >= 0 ? "text-emerald-400" : "text-rose-400"}>
               {roll.pnl >= 0 ? "▲" : "▼"} {cad(Math.abs(roll.pnl))} realized
@@ -201,6 +246,9 @@ export default async function Page() {
             <span className={roiOnDeposit >= 0 ? "text-emerald-400" : "text-rose-400"}>
               {pct(roiOnDeposit)}
             </span>
+            {d.reserve_cad > 0 ? (
+              <span className="text-violet-300">🔒 reserve {cad(d.reserve_cad)}</span>
+            ) : null}
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -209,6 +257,12 @@ export default async function Page() {
           <Stat label="vs Buy&Hold" value={exBnh === null ? "—" : pct(exBnh)} tone={exBnh === null ? "default" : exBnh >= 0 ? "good" : "bad"} />
           <Stat label="Hit rate" value={roll.n ? pct(roll.hitRate, 0) : "—"} sub={`${roll.n} resolved`} tone="cyan" />
         </div>
+      </div>
+
+      {/* Equity curve + the CFO's standing review */}
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+        <EquityChart points={series} start={dep.total} />
+        <StrategistPanel review={d.strategist} />
       </div>
 
       {/* Onboarding when fresh */}
@@ -236,6 +290,11 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
         desc="What each division did, what was pitched, what the risk manager vetoed, and how the CEO ruled — with reasons."
       >
         <SessionView session={latestSession} />
+      </Section>
+
+      {/* Session history — scroll back through past checkpoints */}
+      <Section title="Session history" desc="The last several checkpoints at a glance.">
+        <SessionHistory decisions={d.decisions} />
       </Section>
 
       {/* Divisions */}

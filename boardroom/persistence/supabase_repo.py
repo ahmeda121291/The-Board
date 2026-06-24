@@ -109,6 +109,40 @@ class SupabaseRepository(Repository):
     def audit(self, event: str, payload: dict) -> None:
         self._t("audit_log").insert({"event": event, "payload": payload}).execute()
 
+    def get_system_state(self) -> dict:
+        res = self._t("system_state").select("*").eq("id", 1).limit(1).execute()
+        if res.data:
+            row = res.data[0]
+            return {"reserve_cad": row["reserve_cad"], "hwm_cad": row["hwm_cad"]}
+        return {"reserve_cad": 0.0, "hwm_cad": 0.0}
+
+    def set_system_state(self, reserve_cad: float, hwm_cad: float) -> None:
+        self._t("system_state").upsert(
+            {"id": 1, "reserve_cad": reserve_cad, "hwm_cad": hwm_cad}
+        ).execute()
+
+    def save_strategy_review(
+        self, headline: str, narrative: str, recommendations: list, standing: dict
+    ) -> None:
+        self._t("strategist_reviews").insert(
+            {
+                "headline": headline,
+                "narrative": narrative,
+                "recommendations": recommendations,
+                "standing": standing,
+            }
+        ).execute()
+
+    def recent_strategy_reviews(self, limit: int = 10) -> list[dict]:
+        res = (
+            self._t("strategist_reviews")
+            .select("*")
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return res.data or []
+
     # ---- reads ---------------------------------------------------------------
     def get_division_state(self, division: str) -> DivisionState:
         res = self._t("division_state").select("*").eq("division", division).limit(1).execute()

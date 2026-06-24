@@ -150,11 +150,38 @@ def _run(args: argparse.Namespace) -> int:
             head = d.kind.value.upper() + (f" {d.division.value} {d.size_cad:.2f} CAD" if d.division else "")
             console.print(f"[bold]checkpoint {datetime.now(timezone.utc):%H:%M UTC}[/bold] → {head}")
             console.print(f"[italic dim]{d.rationale}[/italic dim]")
+            # The CFO studies the scoreboard and writes a strategic review each run.
+            try:
+                from boardroom.agents.strategist import generate_and_save_review
+
+                review = generate_and_save_review(org.repo, org.llm, s.starting_portfolio_cad)
+                console.print(f"[bold cyan]CFO:[/bold cyan] {review.headline}")
+            except Exception as e:  # never let the review break the loop
+                console.print(f"[dim]CFO review skipped: {str(e)[:80]}[/dim]")
             if args.once:
                 return 0
     except KeyboardInterrupt:
         console.print("\n[yellow]Scheduler stopped.[/yellow]")
         return 0
+
+
+def _review(args: argparse.Namespace) -> int:
+    """Generate the CFO/Strategist review now and save it."""
+    from boardroom.agents.llm import LLM
+    from boardroom.agents.strategist import generate_and_save_review
+    from boardroom.persistence.repository import get_repository
+
+    s = get_settings()
+    review = generate_and_save_review(get_repository(), LLM(), s.starting_portfolio_cad)
+    console.rule("[bold]CFO / Strategist review")
+    console.print(f"[bold]{review.headline}[/bold]\n")
+    console.print(review.narrative)
+    if review.recommendations:
+        console.print("\n[bold]Recommendations[/bold]")
+        for r in review.recommendations:
+            tag = "[yellow]needs you[/yellow]" if r.get("requires_human") else "[green]auto[/green]"
+            console.print(f"  • ({tag}) {r['suggestion']}")
+    return 0
 
 
 def _preflight(args: argparse.Namespace) -> int:
@@ -226,6 +253,7 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("doctor", help="check config and the safety rails")
     sub.add_parser("preflight", help="read-only venue connectivity + live go/no-go")
+    sub.add_parser("review", help="generate the CFO/Strategist review now")
 
     p_run = sub.add_parser("run", help="daily scheduler — convene the CEO at CHECKPOINT_UTC, forever")
     p_run.add_argument("--synthetic", action="store_true", help="use offline synthetic data")
@@ -254,6 +282,8 @@ def main(argv: list[str] | None = None) -> int:
         return _preflight(args)
     if args.cmd == "run":
         return _run(args)
+    if args.cmd == "review":
+        return _review(args)
     if args.cmd == "decide":
         return _decide(args)
     if args.cmd == "backtest":
