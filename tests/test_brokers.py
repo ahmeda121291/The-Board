@@ -90,4 +90,47 @@ def test_make_brokers_defaults_to_stubs():
 
     brokers = make_brokers(prefer_live=False)
     assert isinstance(brokers[Venue.KRAKEN], StubBroker)
+    # Directional defaults to IBKR venue with a stub when no creds are set.
     assert isinstance(brokers[Venue.IBKR], StubBroker)
+
+
+# ---- SnapTrade --------------------------------------------------------------
+def test_snaptrade_market_order_uses_notional_value():
+    from boardroom.brokers.snaptrade import build_force_order_payload
+
+    body = build_force_order_payload(_order(symbol="XIC.TO", notional=30.0), account_id="acc-1")
+    assert body["account_id"] == "acc-1"
+    assert body["action"] == "BUY"
+    assert body["order_type"] == "Market"
+    assert body["notional_value"] == {"amount": 30.0, "currency": "CAD"}
+    assert "units" not in body
+
+
+def test_snaptrade_limit_order_uses_units():
+    from boardroom.brokers.snaptrade import build_force_order_payload
+
+    body = build_force_order_payload(_order(symbol="XIC.TO", notional=30.0, limit=30.0), account_id="a")
+    assert body["order_type"] == "Limit"
+    assert body["price"] == 30.0
+    assert body["units"] == 1.0
+
+
+def test_snaptrade_simulates_without_creds():
+    from boardroom.brokers.snaptrade import SnapTradeBroker
+
+    b = SnapTradeBroker()
+    assert b.supports_withdrawal is False
+    fill = b.place_order(_order(symbol="XIC.TO", limit=30.0), live=True)
+    assert fill.is_live is False
+    assert fill.raw == {"simulated": True}
+
+
+def test_snaptrade_fx_cost_punishes_usd():
+    from boardroom.risk.cost import CostModel
+
+    cm = CostModel()
+    cad = cm.round_trip_cost_cad(venue=Venue.SNAPTRADE, notional_cad=40, needs_fx=False)
+    usd = cm.round_trip_cost_cad(venue=Venue.SNAPTRADE, notional_cad=40, needs_fx=True)
+    # CAD-listed is cheap; USD pays ~1.5% each way -> the cost gate steers to CAD.
+    assert cad < usd
+    assert usd >= 40 * 0.03 * 0.99  # ~3% round-trip FX floor

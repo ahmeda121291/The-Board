@@ -105,6 +105,53 @@ def _backtest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _preflight(args: argparse.Namespace) -> int:
+    """Read-only go/no-go for live trading: venue connectivity + balances.
+
+    Places NO orders and does not require LIVE_TRADING. The one command to run
+    the moment credentials + network access are in place.
+    """
+    from boardroom.brokers import directional_execution_venue, make_brokers
+
+    s = get_settings()
+    console.rule("[bold]Boardroom preflight (read-only)")
+    ok = True
+
+    console.print(f"Anthropic key       : {'[green]set[/green]' if s.anthropic_api_key else '[yellow]missing[/yellow]'}")
+    console.print(f"Supabase            : {'[green]configured[/green]' if s.supabase_configured() else '[yellow]in-memory only[/yellow]'}")
+    console.print(f"Directional venue   : {directional_execution_venue(s).value}")
+    console.print(f"LIVE_TRADING        : {'[red]ON[/red]' if s.live_trading else 'off (safe)'}\n")
+
+    brokers = make_brokers(prefer_live=True)
+    for venue, broker in brokers.items():
+        broker.assert_no_withdrawal()
+        if type(broker).__name__ == "StubBroker":
+            # A stub means no real credentials for this venue -> not live-ready.
+            console.print(f"  {venue.value:<10} [yellow]stub (no live creds)[/yellow]")
+            ok = False
+            continue
+        try:
+            healthy = broker.health_check()
+        except Exception as e:  # noqa: BLE001
+            console.print(f"  {venue.value:<10} [red]error[/red]: {str(e)[:80]}")
+            ok = False
+            continue
+        if healthy:
+            try:
+                cash = broker.get_cash_cad()
+            except Exception:  # noqa: BLE001
+                cash = float("nan")
+            console.print(f"  {venue.value:<10} [green]reachable[/green]  cash≈{cash:.2f} CAD")
+        else:
+            console.print(f"  {venue.value:<10} [yellow]not authenticated[/yellow]")
+            ok = False
+
+    verdict = "[green]GO[/green]" if ok else "[yellow]NOT READY[/yellow]"
+    console.print(f"\nLive readiness: {verdict}")
+    console.print("[dim]Run `boardroom decide --confirm-live` only after this shows GO and LIVE_TRADING=true.[/dim]")
+    return 0 if ok else 1
+
+
 def _report(args: argparse.Namespace) -> int:
     from boardroom.graph.performance_loop import run_performance_loop
     from boardroom.risk.caps import PortfolioState
@@ -126,6 +173,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("doctor", help="check config and the safety rails")
+    sub.add_parser("preflight", help="read-only venue connectivity + live go/no-go")
 
     p_decide = sub.add_parser("decide", help="run one daily decision loop")
     p_decide.add_argument("--synthetic", action="store_true", help="use offline synthetic data")
@@ -145,6 +193,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.cmd == "doctor":
         return _doctor()
+    if args.cmd == "preflight":
+        return _preflight(args)
     if args.cmd == "decide":
         return _decide(args)
     if args.cmd == "backtest":

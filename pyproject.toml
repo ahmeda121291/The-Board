@@ -31,7 +31,7 @@ dev = [
 ]
 # Venue clients are isolated so the core installs/tests without them (Milestone 6).
 venues = [
-    "krakenex>=2.2",
+    "snaptrade-python-sdk>=11.0",
     "ib-insync>=0.9.86",
 ]
 

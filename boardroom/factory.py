@@ -47,18 +47,26 @@ def build_default_org(
         _live_fetchers() if data_mode == "live" else _synthetic_fetchers()
     )
 
+    from boardroom.brokers import StubBroker, directional_execution_venue, make_brokers
+
+    # The Directional leg's execution venue follows the configured credentials:
+    # SnapTrade (Wealthsimple) if set, else IBKR. The division is tagged with it
+    # so its pitches route to the matching broker.
+    dv = directional_execution_venue()
+
     yield_div = YieldDivision()
-    directional = DirectionalDivision(fetch=directional_fetch)
+    directional = DirectionalDivision(fetch=directional_fetch, venue=dv)
     event = EventDivision(fetch=event_fetch, enabled=enable_event)
     effort = EffortDivision()  # disabled
 
     divisions = [directional, event, effort]
 
-    # Real Kraken/IBKR adapters when requested + credentialed; stubs otherwise.
-    # Live execution still requires the LIVE_TRADING master switch regardless.
-    if prefer_live_brokers and "brokers" not in orch_kwargs:
-        from boardroom.brokers import make_brokers
-
-        orch_kwargs["brokers"] = make_brokers(prefer_live=True)
+    # Real adapters when requested + credentialed; stubs otherwise. Live
+    # execution still requires the LIVE_TRADING master switch regardless.
+    if "brokers" not in orch_kwargs:
+        if prefer_live_brokers:
+            orch_kwargs["brokers"] = make_brokers(prefer_live=True)
+        else:
+            orch_kwargs["brokers"] = {Venue.KRAKEN: StubBroker(Venue.KRAKEN), dv: StubBroker(dv)}
 
     return Orchestrator(divisions=divisions, yield_division=yield_div, **orch_kwargs)

@@ -44,10 +44,17 @@ pip install -e ".[dev]"          # core + test deps
 cp .env.example .env             # then paste your keys (see below)
 
 boardroom doctor                 # check config + the safety rails
+boardroom preflight              # read-only venue connectivity + live GO/NOT-READY
 boardroom backtest --synthetic   # run the backtest gate on offline data
 boardroom decide --synthetic     # run one daily decision loop, offline
 boardroom decide                 # same, using real keyless public data feeds
 ```
+
+**Going live:** see [`RUNBOOK.md`](RUNBOOK.md). The Directional leg executes via
+**SnapTrade → Wealthsimple** (preferred) or **IBKR**; Kraken handles crypto.
+Live trading from a sandboxed environment additionally needs egress to
+`api.kraken.com`, `api.snaptrade.com`, and `stooq.com` — easiest is to run on
+your own machine.
 
 `boardroom decide` prints the day's pitches, the trust-weighted ranking, the
 floor hurdle, and the CEO's verdict — one of **FUND / FUND_NONE / HOLD**. Most
