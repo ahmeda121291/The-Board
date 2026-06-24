@@ -1,11 +1,7 @@
 import { Empty, Pill, Section, Stat, Table } from "@/components/ui";
 import { Refresher } from "@/components/Refresher";
-import {
-  calibrationMean,
-  loadDashboard,
-  rollupOutcomes,
-  type Decision,
-} from "@/lib/data";
+import { calibrationMean, loadDashboard, rollupOutcomes, type Decision } from "@/lib/data";
+import { deposits } from "@/lib/deposits";
 import { ago, cad, num, pct, when } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -17,23 +13,50 @@ function kindTone(kind: string) {
   return "default";
 }
 
+function DepositLedger() {
+  const d = deposits();
+  const Row = ({ name, v, tone }: { name: string; v: number; tone: string }) => (
+    <div className="flex items-center justify-between gap-6">
+      <span className="flex items-center gap-1.5">
+        <span className={`inline-block h-1.5 w-1.5 rounded-full ${tone}`} />
+        <span className="text-[10px] uppercase tracking-widest text-slate-400">{name}</span>
+      </span>
+      <span className="num text-sm text-slate-200">{cad(v)}</span>
+    </div>
+  );
+  return (
+    <div className="glass hud p-3 min-w-[210px]">
+      <div className="label mb-2">Original deposits</div>
+      <div className="space-y-1.5">
+        <Row name="Kraken" v={d.kraken} tone="bg-sky-400" />
+        <Row name="Wealthsimple" v={d.wealthsimple} tone="bg-violet-400" />
+        <div className="my-1 h-px bg-white/10" />
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] uppercase tracking-widest text-slate-400">Start balance</span>
+          <span className="num text-sm font-semibold text-sky-300 glow-cyan">{cad(d.total)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DecisionRationale({ decisions }: { decisions: Decision[] }) {
   const latest = decisions[0];
   if (!latest) return <Empty>No decisions yet — the CEO hasn’t convened. Run a decision loop.</Empty>;
   return (
-    <div className="card">
-      <div className="flex items-center gap-2">
+    <div className="glass hud p-5">
+      <div className="flex flex-wrap items-center gap-2">
         <Pill tone={kindTone(latest.kind)}>{latest.kind.toUpperCase()}</Pill>
-        {latest.division ? <Pill tone="accent">{latest.division}</Pill> : null}
-        {latest.size_cad > 0 ? <span className="text-sm text-white">{cad(latest.size_cad)}</span> : null}
+        {latest.division ? <Pill tone="cyan">{latest.division}</Pill> : null}
+        {latest.size_cad > 0 ? <span className="num text-sm text-white">{cad(latest.size_cad)}</span> : null}
         <Pill tone={latest.live ? "bad" : "default"}>{latest.live ? "LIVE" : "dry-run"}</Pill>
-        <span className="ml-auto text-xs text-muted">{ago(latest.created_at)}</span>
+        <span className="ml-auto text-xs text-slate-500">{ago(latest.created_at)}</span>
       </div>
-      <p className="mt-3 text-sm leading-relaxed text-white/90">
+      <p className="mt-3 text-[15px] leading-relaxed text-slate-100">
         {latest.rationale || "(no rationale recorded)"}
       </p>
-      <div className="mt-3 text-xs text-muted">
-        Hurdle (floor) rate this horizon: {num(latest.hurdle_rate, 5)}
+      <div className="mt-3 text-xs text-slate-500">
+        Hurdle (floor) rate this horizon: <span className="num">{num(latest.hurdle_rate, 5)}</span>
       </div>
     </div>
   );
@@ -41,27 +64,27 @@ function DecisionRationale({ decisions }: { decisions: Decision[] }) {
 
 export default async function Page() {
   const d = await loadDashboard();
+  const dep = deposits();
 
   if (!d.configured) {
     const urlSet = Boolean(process.env.SUPABASE_URL);
     const keySet = Boolean(process.env.SUPABASE_SERVICE_KEY);
     const row = (name: string, ok: boolean) => (
       <div className="flex items-center gap-2">
-        <span className={ok ? "text-good" : "text-bad"}>{ok ? "✓ set" : "✗ MISSING"}</span>
-        <code className="text-accent">{name}</code>
+        <span className={ok ? "text-emerald-400" : "text-rose-400"}>{ok ? "✓ set" : "✗ MISSING"}</span>
+        <code className="text-sky-300">{name}</code>
       </div>
     );
     return (
       <main className="mx-auto max-w-6xl px-5 py-10">
-        <h1 className="text-2xl font-bold">Boardroom</h1>
-        <div className="card mt-6 space-y-2 text-sm">
-          <div className="text-muted">Not connected to Supabase. Detected at runtime:</div>
+        <h1 className="title-grad text-3xl font-bold">Boardroom</h1>
+        <div className="glass mt-6 space-y-2 p-5 text-sm">
+          <div className="text-slate-400">Not connected to Supabase. Detected at runtime:</div>
           {row("SUPABASE_URL", urlSet)}
           {row("SUPABASE_SERVICE_KEY", keySet)}
-          <div className="pt-2 text-xs text-muted">
+          <div className="pt-2 text-xs text-slate-500">
             Add any MISSING variable in Vercel → Settings → Environment Variables with the{" "}
-            <b>Production</b> scope checked (exact names, no <code>NEXT_PUBLIC_</code> prefix), then
-            redeploy <b>Production</b> with build cache off.
+            <b>Production</b> scope checked, then redeploy with build cache off.
           </div>
         </div>
       </main>
@@ -75,107 +98,96 @@ export default async function Page() {
   const exBnh = perf?.excess_vs_bnh ?? null;
   const costDrag = perf?.cost_drag_pct ?? (roll.n ? roll.cost / Math.max(1, Math.abs(roll.pnl)) : null);
   const breaker: string[] = perf?.breaker ?? [];
-
   const attribution = perf?.attribution ?? roll.attribution;
+
+  const equity = dep.total + roll.pnl; // start balance + realized P&L
+  const roiOnDeposit = dep.total > 0 ? roll.pnl / dep.total : 0;
 
   const liveCount = d.divisions.filter((x) => !x.retired && !x.shadow).length;
   const shadowCount = d.divisions.filter((x) => x.shadow && !x.retired).length;
   const retiredCount = d.divisions.filter((x) => x.retired).length;
   const latest = d.decisions[0] ?? null;
-  const isFresh =
-    d.decisions.length === 0 && d.pitches.length === 0 && d.outcomes.length === 0;
+  const isFresh = d.decisions.length === 0 && d.pitches.length === 0 && d.outcomes.length === 0;
   const asOf = new Date().toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" });
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-8">
       {/* Header */}
-      <header className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-bold tracking-tight">
-          Boardroom <span className="text-muted">/ autonomous capital allocator</span>
-        </h1>
-        <div className="ml-auto flex items-center gap-3">
-          {breaker.length > 0 ? (
-            <Pill tone="bad">CIRCUIT BREAKER</Pill>
-          ) : (
-            <Pill tone="good">breakers clear</Pill>
-          )}
-          <span className="text-xs text-muted">as of {asOf}</span>
-          <Refresher />
+      <header className="flex flex-wrap items-start gap-4">
+        <div>
+          <h1 className="title-grad text-3xl font-bold tracking-tight">BOARDROOM</h1>
+          <p className="mt-1 text-xs uppercase tracking-[0.25em] text-slate-500">
+            autonomous capital allocator
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <span className="flex items-center gap-2 rounded-full border border-white/10 px-2.5 py-1">
+              <span className={latest?.live ? "dot dot-live" : "dot"} />
+              {latest?.live ? "LIVE TRADING" : "dry-run · safe"}
+            </span>
+            {breaker.length > 0 ? <Pill tone="bad">⚠ CIRCUIT BREAKER</Pill> : <Pill tone="good">breakers clear</Pill>}
+            <Pill tone="cyan">{liveCount} live</Pill>
+            <Pill tone="warn">{shadowCount} shadow</Pill>
+            {retiredCount > 0 ? <Pill tone="bad">{retiredCount} benched</Pill> : null}
+          </div>
+        </div>
+        <div className="ml-auto flex flex-col items-end gap-2">
+          <DepositLedger />
+          <div className="flex items-center gap-2 text-[11px] text-slate-500">
+            <span>as of {asOf}</span>
+            <span className="text-slate-600">·</span>
+            <Refresher />
+          </div>
         </div>
       </header>
 
-      {/* Live status strip */}
-      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-        <Pill tone={latest?.live ? "bad" : "good"}>{latest?.live ? "LIVE TRADING" : "dry-run / safe"}</Pill>
-        <Pill tone="accent">{liveCount} live</Pill>
-        <Pill tone="warn">{shadowCount} shadow</Pill>
-        {retiredCount > 0 ? <Pill tone="bad">{retiredCount} benched</Pill> : null}
-        <span className="text-muted">
-          last checkpoint: {latest ? ago(latest.created_at) : "never"}
-          {latest ? ` · ${latest.kind.toUpperCase()}` : ""}
-        </span>
+      {d.error ? (
+        <div className="glass mt-4 border border-rose-400/30 p-3 text-sm text-rose-300">Query error: {d.error}</div>
+      ) : null}
+
+      {/* Hero — portfolio value */}
+      <div className="glass hud mt-6 flex flex-wrap items-end justify-between gap-6 p-6">
+        <div>
+          <div className="label">Estimated equity · deposits + realized P&amp;L</div>
+          <div className="num mt-1 text-5xl font-bold text-white glow-cyan">{cad(equity)}</div>
+          <div className="mt-2 flex items-center gap-3 text-sm">
+            <span className="text-slate-400">start {cad(dep.total)}</span>
+            <span className={roll.pnl >= 0 ? "text-emerald-400" : "text-rose-400"}>
+              {roll.pnl >= 0 ? "▲" : "▼"} {cad(Math.abs(roll.pnl))} realized
+            </span>
+            <span className={roiOnDeposit >= 0 ? "text-emerald-400" : "text-rose-400"}>
+              {pct(roiOnDeposit)}
+            </span>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Stat label="Net ROI" value={netRoi === null ? "—" : pct(netRoi)} tone={netRoi === null ? "default" : netRoi >= 0 ? "good" : "bad"} />
+          <Stat label="vs Floor" value={exFloor === null ? "—" : pct(exFloor)} tone={exFloor === null ? "default" : exFloor >= 0 ? "good" : "bad"} />
+          <Stat label="vs Buy&Hold" value={exBnh === null ? "—" : pct(exBnh)} tone={exBnh === null ? "default" : exBnh >= 0 ? "good" : "bad"} />
+          <Stat label="Hit rate" value={roll.n ? pct(roll.hitRate, 0) : "—"} sub={`${roll.n} resolved`} tone="cyan" />
+        </div>
       </div>
 
-      {/* Onboarding state when the system hasn't run yet */}
+      {/* Onboarding when fresh */}
       {isFresh ? (
-        <div className="card mt-6 border-accent/30">
-          <div className="text-sm font-semibold text-accent">The hub is wired and waiting.</div>
-          <p className="mt-2 text-sm text-white/80">
-            Supabase is connected, but the system hasn’t logged a decision yet. On your machine, run a
-            checkpoint and this page fills in automatically:
+        <div className="glass hud mt-6 p-5">
+          <div className="text-sm font-semibold text-sky-300 glow-cyan">The hub is wired and waiting.</div>
+          <p className="mt-2 text-sm text-slate-300">
+            Supabase is connected; the system hasn’t logged a decision yet. Run a checkpoint on your
+            machine and this fills in automatically:
           </p>
-          <pre className="card mt-3 bg-ink font-mono text-xs text-white/90">
+          <pre className="mt-3 rounded-xl border border-white/10 bg-black/40 p-3 font-mono text-xs text-slate-200">
 boardroom decide              # dry-run: pitches + the CEO’s call, no real money
-boardroom decide --confirm-live   # live (requires LIVE_TRADING=true + funded)</pre>
-          <p className="mt-2 text-xs text-muted">
-            You’ll then see the CEO’s rationale, per-division calibration, ROI vs the floor and
-            buy-and-hold, and every pitch/outcome here — refreshing on its own.
-          </p>
+boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
         </div>
       ) : null}
 
-      {d.error ? (
-        <div className="card mt-4 border-bad/40 text-sm text-bad">Query error: {d.error}</div>
-      ) : null}
-
-      {/* Top stats */}
-      <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat
-          label="Net ROI"
-          value={netRoi === null ? "—" : pct(netRoi)}
-          tone={netRoi === null ? "default" : netRoi >= 0 ? "good" : "bad"}
-          sub="net of fees, slippage, FX"
-        />
-        <Stat
-          label="vs Floor (carry)"
-          value={exFloor === null ? "—" : pct(exFloor)}
-          tone={exFloor === null ? "default" : exFloor >= 0 ? "good" : "bad"}
-          sub="excess over doing nothing"
-        />
-        <Stat
-          label="vs Buy & Hold"
-          value={exBnh === null ? "—" : pct(exBnh)}
-          tone={exBnh === null ? "default" : exBnh >= 0 ? "good" : "bad"}
-          sub="the brutal benchmark"
-        />
-        <Stat
-          label="Realized P&L"
-          value={cad(roll.pnl)}
-          tone={roll.pnl >= 0 ? "good" : "bad"}
-          sub={`${roll.n} resolved · hit ${pct(roll.hitRate, 0)}`}
-        />
-      </div>
-
-      {/* CEO decision */}
+      {/* CEO */}
       <Section title="The CEO" desc="Latest verdict and rationale. Most days the right answer is HOLD.">
         <DecisionRationale decisions={d.decisions} />
       </Section>
 
       {/* Divisions */}
-      <Section
-        title="Divisions"
-        desc="Trust = demonstrated calibration (Beta posterior mean), not stated confidence. Leash scales with it."
-      >
+      <Section title="Divisions" desc="Trust = demonstrated calibration (Beta posterior mean), not stated confidence.">
         {d.divisions.length === 0 ? (
           <Empty>No divisions registered yet.</Empty>
         ) : (
@@ -185,17 +197,15 @@ boardroom decide --confirm-live   # live (requires LIVE_TRADING=true + funded)</
               const status = x.retired ? "retired" : x.shadow ? "shadow" : "live";
               const tone = x.retired ? "bad" : x.shadow ? "warn" : "good";
               return (
-                <tr key={x.division}>
+                <tr key={x.division} className="hover:bg-white/[0.02]">
                   <td className="px-4 py-3 font-medium capitalize">{x.division}</td>
-                  <td className="px-4 py-3">
-                    <Pill tone={tone}>{status}</Pill>
+                  <td className="px-4 py-3"><Pill tone={tone}>{status}</Pill></td>
+                  <td className="num px-4 py-3">
+                    {pct(mean, 0)} <span className="text-slate-500">α{num(x.alpha, 1)}/β{num(x.beta, 1)}</span>
                   </td>
-                  <td className="px-4 py-3">
-                    {pct(mean, 0)} <span className="text-muted">α{num(x.alpha, 1)}/β{num(x.beta, 1)}</span>
-                  </td>
-                  <td className="px-4 py-3">{num(x.leash, 2)}</td>
-                  <td className="px-4 py-3">{x.n_resolved}</td>
-                  <td className={`px-4 py-3 ${x.net_vs_floor_cad >= 0 ? "text-good" : "text-bad"}`}>
+                  <td className="num px-4 py-3">{num(x.leash, 2)}</td>
+                  <td className="num px-4 py-3">{x.n_resolved}</td>
+                  <td className={`num px-4 py-3 ${x.net_vs_floor_cad >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                     {cad(x.net_vs_floor_cad)}
                   </td>
                 </tr>
@@ -205,7 +215,7 @@ boardroom decide --confirm-live   # live (requires LIVE_TRADING=true + funded)</
         )}
       </Section>
 
-      {/* Portfolio makeup (attribution) */}
+      {/* Attribution */}
       <Section title="Where return came from" desc="Per-division attribution of realized P&L.">
         {Object.keys(attribution).length === 0 ? (
           <Empty>No attribution yet — comes once decisions resolve.</Empty>
@@ -219,79 +229,75 @@ boardroom decide --confirm-live   # live (requires LIVE_TRADING=true + funded)</
         )}
       </Section>
 
-      {/* Decisions log */}
+      {/* Decisions */}
       <Section title="Decision log" desc="Every checkpoint: FUND / HOLD / FUND_NONE.">
         {d.decisions.length === 0 ? (
           <Empty>No decisions logged yet.</Empty>
         ) : (
           <Table head={["When", "Decision", "Division", "Size", "Hurdle", "Mode"]}>
             {d.decisions.map((x) => (
-              <tr key={x.decision_id}>
-                <td className="px-4 py-3 text-muted">{when(x.created_at)}</td>
-                <td className="px-4 py-3">
-                  <Pill tone={kindTone(x.kind)}>{x.kind}</Pill>
-                </td>
+              <tr key={x.decision_id} className="hover:bg-white/[0.02]">
+                <td className="px-4 py-3 text-slate-400">{when(x.created_at)}</td>
+                <td className="px-4 py-3"><Pill tone={kindTone(x.kind)}>{x.kind}</Pill></td>
                 <td className="px-4 py-3 capitalize">{x.division ?? "—"}</td>
-                <td className="px-4 py-3">{x.size_cad > 0 ? cad(x.size_cad) : "—"}</td>
-                <td className="px-4 py-3 text-muted">{num(x.hurdle_rate, 5)}</td>
-                <td className="px-4 py-3">
-                  <Pill tone={x.live ? "bad" : "default"}>{x.live ? "live" : "dry"}</Pill>
-                </td>
+                <td className="num px-4 py-3">{x.size_cad > 0 ? cad(x.size_cad) : "—"}</td>
+                <td className="num px-4 py-3 text-slate-400">{num(x.hurdle_rate, 5)}</td>
+                <td className="px-4 py-3"><Pill tone={x.live ? "bad" : "default"}>{x.live ? "live" : "dry"}</Pill></td>
               </tr>
             ))}
           </Table>
         )}
       </Section>
 
-      {/* Recent pitches */}
+      {/* Pitches */}
       <Section title="Recent pitches" desc="Computed numbers (code), narrative (LLM). Quant fields are never LLM guesses.">
         {d.pitches.length === 0 ? (
           <Empty>No pitches yet.</Empty>
         ) : (
           <Table head={["When", "Division", "Symbol", "Exp. return", "Win prob", "Size", "Max loss"]}>
             {d.pitches.map((p) => (
-              <tr key={p.pitch_id}>
-                <td className="px-4 py-3 text-muted">{ago(p.created_at)}</td>
+              <tr key={p.pitch_id} className="hover:bg-white/[0.02]">
+                <td className="px-4 py-3 text-slate-400">{ago(p.created_at)}</td>
                 <td className="px-4 py-3 capitalize">{p.division}</td>
-                <td className="px-4 py-3 font-mono">{p.symbol}</td>
-                <td className={`px-4 py-3 ${p.expected_return >= 0 ? "text-good" : "text-bad"}`}>
+                <td className="num px-4 py-3">{p.symbol}</td>
+                <td className={`num px-4 py-3 ${p.expected_return >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                   {pct(p.expected_return)}
                 </td>
-                <td className="px-4 py-3">{pct(p.confidence, 0)}</td>
-                <td className="px-4 py-3">{cad(p.capital_required)}</td>
-                <td className="px-4 py-3 text-muted">{cad(p.max_loss)}</td>
+                <td className="num px-4 py-3">{pct(p.confidence, 0)}</td>
+                <td className="num px-4 py-3">{cad(p.capital_required)}</td>
+                <td className="num px-4 py-3 text-slate-400">{cad(p.max_loss)}</td>
               </tr>
             ))}
           </Table>
         )}
       </Section>
 
-      {/* Resolved outcomes */}
+      {/* Outcomes */}
       <Section title="Resolved outcomes" desc="Predicted vs realized, and the process-vs-luck tag.">
         {d.outcomes.length === 0 ? (
           <Empty>Nothing resolved yet.</Empty>
         ) : (
           <Table head={["When", "Division", "Predicted", "Realized", "P&L", "Process×Luck"]}>
             {d.outcomes.slice(0, 25).map((o) => (
-              <tr key={o.id}>
-                <td className="px-4 py-3 text-muted">{ago(o.resolved_at)}</td>
+              <tr key={o.id} className="hover:bg-white/[0.02]">
+                <td className="px-4 py-3 text-slate-400">{ago(o.resolved_at)}</td>
                 <td className="px-4 py-3 capitalize">{o.division}</td>
-                <td className="px-4 py-3">{pct(o.predicted_return)}</td>
-                <td className={`px-4 py-3 ${o.realized_return >= 0 ? "text-good" : "text-bad"}`}>
+                <td className="num px-4 py-3">{pct(o.predicted_return)}</td>
+                <td className={`num px-4 py-3 ${o.realized_return >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                   {pct(o.realized_return)}
                 </td>
-                <td className={`px-4 py-3 ${o.pnl_cad >= 0 ? "text-good" : "text-bad"}`}>{cad(o.pnl_cad)}</td>
-                <td className="px-4 py-3 text-xs text-muted">{o.process_luck ?? "—"}</td>
+                <td className={`num px-4 py-3 ${o.pnl_cad >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{cad(o.pnl_cad)}</td>
+                <td className="px-4 py-3 text-xs text-slate-500">{o.process_luck ?? "—"}</td>
               </tr>
             ))}
           </Table>
         )}
       </Section>
 
-      {/* Weekly report */}
+      {/* Weekly */}
       {d.weekly ? (
         <Section title="Weekly readout" desc={`Generated ${when(d.weekly.created_at)}`}>
-          <pre className="card whitespace-pre-wrap font-mono text-xs leading-relaxed text-white/90">
+          <pre className="glass whitespace-pre-wrap p-4 font-mono text-xs leading-relaxed text-slate-200">
             {d.weekly.report}
           </pre>
         </Section>
@@ -302,21 +308,21 @@ boardroom decide --confirm-live   # live (requires LIVE_TRADING=true + funded)</
         {d.audit.length === 0 ? (
           <Empty>No events yet.</Empty>
         ) : (
-          <div className="card space-y-1 font-mono text-xs">
+          <div className="glass space-y-1 p-4 font-mono text-xs">
             {d.audit.map((a) => (
               <div key={a.id} className="flex gap-3">
-                <span className="text-muted">{when(a.created_at)}</span>
-                <span className="text-accent">{a.event}</span>
-                <span className="truncate text-muted">{JSON.stringify(a.payload)}</span>
+                <span className="text-slate-500">{when(a.created_at)}</span>
+                <span className="text-sky-300">{a.event}</span>
+                <span className="truncate text-slate-500">{JSON.stringify(a.payload)}</span>
               </div>
             ))}
           </div>
         )}
       </Section>
 
-      <footer className="mt-10 border-t border-edge pt-4 text-xs text-muted">
+      <footer className="mt-12 border-t border-white/10 pt-4 text-xs text-slate-500">
         Boardroom · the LLM reasons, code calculates · data from Supabase ·{" "}
-        <span className="text-accent">read-only</span>
+        <span className="text-sky-300">read-only</span>
       </footer>
     </main>
   );
