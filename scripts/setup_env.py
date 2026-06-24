@@ -28,6 +28,13 @@ FIELDS = [
     ("SNAPTRADE_USER_ID", "SnapTrade user id you'll register (e.g. ahmed-boardroom). Skip if not done yet", "", False),
     ("SNAPTRADE_USER_SECRET", "SnapTrade user secret (from the connect step). Skip for now if you don't have it", "", True),
     ("SNAPTRADE_ACCOUNT_ID", "SnapTrade account id (from the connect step). Skip for now if you don't have it", "", False),
+    # --- Hard risk caps (CAD). Defaults below are sized for a ~$100 start. ---
+    ("TOTAL_DEPLOYABLE_CAD", "Max CAD the agents may deploy out of the floor (keep below your total funding)", "80", False),
+    ("PER_TRADE_MAX_CAD", "Max CAD for any single trade", "20", False),
+    ("EVENT_HARD_CAP_CAD", "Absolute ceiling on the Event (lottery) division", "5", False),
+    ("DAILY_LOSS_LIMIT_CAD", "Daily realized-loss limit; breach forces all capital to the floor", "6", False),
+    ("MAX_DRAWDOWN_PCT", "Peak-to-trough drawdown that trips the circuit breaker (0.15 = 15%)", "0.15", False),
+    ("FEE_DRAG_LIMIT_PCT", "Cumulative cost-drag ceiling (0.05 = 5%)", "0.05", False),
 ]
 
 
