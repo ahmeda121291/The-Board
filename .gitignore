@@ -1,0 +1,39 @@
+# Secrets — NEVER commit a real .env (see .env.example)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Data / runtime artifacts
+data/cache/
+*.sqlite
+*.db
+logs/
+*.log
+
+# IBKR Client Portal Gateway session artifacts
+clientportal.gw/
+*.session
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

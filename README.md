@@ -1,0 +1,179 @@
+# Boardroom
+
+> An autonomous multi-agent **capital-allocation system** — a decision-making
+> organization, not a trading bot. Specialist *divisions* hunt opportunities
+> backed by **real computed math**, a single *CEO* agent decides where ~$200 CAD
+> goes each day (usually nowhere), and a *measurement* layer scores every
+> decision and feeds results back so the system adapts.
+>
+> Canada build · Kraken + Interactive Brokers · live-capable, gated behind a flag.
+
+**The governing law (scope §5): the LLM reasons; CODE calculates.** No
+quantitative field the system acts on is ever produced by an LLM's free-form
+judgment. Every number traces to a deterministic, unit-tested function on real
+market data. The language model only writes narrative and adjudicates genuinely
+qualitative calls.
+
+---
+
+## Status — what's built
+
+| Milestone | What | State |
+|---|---|---|
+| M0 | Repo, config, hard caps, schemas, broker/division interfaces | ✅ |
+| M1 | Skeleton decision loop (divisions → CEO → execute-stub), LangGraph wiring | ✅ |
+| M2 | Grounding: data layer, feature functions, prediction models, backtest gate | ✅ |
+| M3 | Adversarial risk manager (code-driven vetoes the LLM can't sweet-talk) | ✅ |
+| M4 | Measurement (ROI vs **floor** and **buy-and-hold**, Critic, cost gate) + Supabase | ✅ |
+| M5 | Adaptive engine (calibration → trust + leashes, refit guardrails, retirement, shadow) | ✅ |
+| **M6** | **Wire Kraken + IBKR live** | ⏸ **needs your API keys** |
+| M7–M10 | Event live · go-live floor-dominant · ratchet · Effort | later |
+
+**103 tests pass** across the spine (features, CEO logic, calibration math,
+measurement, caps, the full loop). Everything runs **offline in dry-run** today:
+`LIVE_TRADING` defaults `false` and execution is stubbed until you fund accounts
+and wire venues.
+
+---
+
+## Quickstart
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"          # core + test deps
+cp .env.example .env             # then paste your keys (see below)
+
+boardroom doctor                 # check config + the safety rails
+boardroom backtest --synthetic   # run the backtest gate on offline data
+boardroom decide --synthetic     # run one daily decision loop, offline
+boardroom decide                 # same, using real keyless public data feeds
+```
+
+`boardroom decide` prints the day's pitches, the trust-weighted ranking, the
+floor hurdle, and the CEO's verdict — one of **FUND / FUND_NONE / HOLD**. Most
+days the right answer is HOLD (stay in the floor); that is by design, not a bug.
+
+---
+
+## Architecture
+
+Three layers, three loops (scope §2, §10):
+
+```
+ Divisions (sensory organs)        CEO (the cortex)            Measurement (conscience)
+ ─────────────────────────         ─────────────────          ────────────────────────
+ Yield  → the floor/hurdle         price vs the floor          Performance: ROI vs floor
+ Directional → equities (IBKR)     null default = HOLD           AND vs buy-and-hold
+ Event  → asymmetric crypto        trust = demonstrated        Critic: calibration,
+ Effort → non-market (disabled)      calibration, not vibes      process-vs-luck
+                                   conviction sizing
+        every pitch is COMPUTED ───────────►  ◄─────────── Adaptive engine feeds back
+```
+
+- **`boardroom/data`** — pull real fresh data (Kraken public OHLC, Stooq daily),
+  freshness/sanity-check it, hash it. Stale/insane data → the division abstains.
+- **`boardroom/features`** — pure, unit-tested signal functions (momentum, vol,
+  mean-reversion z, RSI, liquidity, …). The numbers start here.
+- **`boardroom/models`** — explicit, inspectable feature→(expected_return,
+  win_probability) maps. Backtest-fittable. Versioned.
+- **`boardroom/divisions`** — pitch-or-abstain machinery; computed fields only.
+- **`boardroom/agents`** — the thin LLM layer: a narrator, the CEO's rationale,
+  the adversarial risk manager, the Critic's post-mortems. **Prose only.**
+- **`boardroom/ceo`** — deterministic hurdle, trust-weighting, conviction sizing,
+  ranking, and the null-default arbitration.
+- **`boardroom/risk`** — the cost model (a *decision input*), and the hard caps +
+  circuit breakers the CEO **cannot** override.
+- **`boardroom/measurement`** — the two scorers, the two benchmarks.
+- **`boardroom/adaptive`** — calibration posteriors, risk leashes, division
+  retirement, model re-fit — all behind anti-overfitting guardrails.
+- **`boardroom/graph`** — the LangGraph decision loop + the performance/learning loops.
+
+---
+
+## The safety rails (in code, outside any agent's control)
+
+- **`LIVE_TRADING` defaults `false`.** The full loop runs in dry-run until you
+  flip it *after* funding. The CLI additionally requires `--confirm-live`.
+- **Hard caps the CEO can't widen:** total deployable, per-trade max, the Event
+  hard cap, daily-loss limit, max drawdown, fee-drag limit. A breach forces **all
+  capital back to the floor**.
+- **Withdrawals disabled everywhere.** Brokers expose `supports_withdrawal` only
+  so we can assert it is `False` at startup.
+- **Kraken and IBKR are isolated** accounts/sessions — a leak in one can't touch
+  the other.
+- **Secrets via env only.** `.env` is gitignored; `.env.example` is the template.
+
+---
+
+## Credentials — and exactly how to scope them
+
+Generated by **you**, pasted into `.env` only — never a prompt, never the repo.
+Scope each to the **minimum** permission. A trading key with withdrawal
+permission is the single most dangerous thing in this project; don't create one.
+
+| Env var | Powers | Scope it to |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | every agent's reasoning | n/a (usage-billed) |
+| `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` | state + metrics | data only, **no** trading power |
+| `KRAKEN_API_KEY` + `KRAKEN_API_SECRET` | Yield + Event | **trade + staking; DISABLE withdraw** |
+| `IBKR_*` session | Directional | **trading on; transfers/withdrawals off** |
+| `MARKET_DATA_API_KEY` | richer Directional signals | read-only (optional) |
+
+> The system runs **without** the Anthropic key (agents fall back to templated
+> prose) and **without** Supabase (it uses an in-memory repository). Those are
+> for development; production wants both.
+
+---
+
+## Supabase
+
+State lives in a dedicated **`boardroom`** Postgres schema on the project at
+`https://qyaekaifodgiaxyztpdt.supabase.co` (the `public` schema is untouched).
+Tables: `division_state`, `pitches`, `decisions`, `outcomes`,
+`performance_snapshots`, `weekly_reports`, `audit_log`. Migrations are in
+[`supabase/migrations`](supabase/migrations). RLS is **enabled with no policies**
+— anon/public access is denied; the backend's service key bypasses RLS.
+
+If the Python client can't see the schema (`PGRST106`), add `boardroom` to
+**Dashboard → Settings → API → Exposed schemas** (it's already set via SQL, but
+the dashboard toggle is the durable home for it).
+
+---
+
+## Wiring the venues (Milestone 6 — paused for your keys)
+
+The broker interface (`boardroom/brokers/base.py`) is venue-agnostic. To go live
+we add `KrakenBroker` and `IBKRBroker` implementations and inject them into the
+`Orchestrator`. That needs:
+
+1. **Kraken** API key/secret scoped **trade + staking, withdrawals disabled**.
+2. **Interactive Brokers** — a running **Client Portal Gateway** you authenticate
+   (session-based), trading enabled, transfers disabled, plus your account id.
+
+Paste them into `.env`, then we implement and smoke-test with the smallest
+possible real orders before flipping `LIVE_TRADING`.
+
+---
+
+## Reading the weekly report
+
+`boardroom report` produces a plain-language readout: ROI **vs the floor** and
+**vs buy-and-hold**, per-division attribution, calibration movement, what the
+adaptive engine re-weighted or benched, and the circuit-breaker status. It is
+your dashboard and your trust-check on the machine.
+
+---
+
+## Tests
+
+```bash
+pytest -q          # 103 tests: features, CEO logic, calibration, measurement, caps, the loop
+```
+
+The spine — feature functions, CEO decision logic, and the calibration math — is
+the most heavily tested by design (scope §13).
+
+---
+
+*Personal learning project. Goal: a disciplined, grounded, self-measuring,
+adaptive decision system that operates with real stakes — not "beat the market."*

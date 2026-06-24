@@ -1,0 +1,158 @@
+"""Boardroom command line.
+
+    boardroom doctor              # check config & the safety rails
+    boardroom decide [--synthetic] [--confirm-live]
+    boardroom backtest [--synthetic]
+    boardroom report ...          # print a weekly readout from stored outcomes
+
+The CLI refuses to trade live unless BOTH the LIVE_TRADING env flag is true AND
+``--confirm-live`` is passed — defense in depth around the one switch that spends
+real money.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+
+from rich.console import Console
+
+from boardroom.config import get_settings
+
+console = Console()
+
+
+def _doctor() -> int:
+    s = get_settings()
+    console.rule("[bold]Boardroom doctor")
+    console.print(f"LIVE_TRADING         : {'[red]ON[/red]' if s.live_trading else '[green]off (safe)[/green]'}")
+    console.print(f"Anthropic key        : {'set' if s.anthropic_api_key else '[yellow]missing (LLM falls back to templates)[/yellow]'}")
+    console.print(f"Supabase configured  : {'yes' if s.supabase_configured() else '[yellow]no (in-memory repo)[/yellow]'}")
+    console.print(f"Kraken creds         : {'set' if s.kraken_api_key else 'not set (Milestone 6)'}")
+    console.print(f"IBKR account         : {s.ibkr_account_id or 'not set (Milestone 6)'}")
+    console.print("\n[bold]Hard caps (CAD)[/bold]")
+    console.print(f"  total deployable   : {s.total_deployable_cad}")
+    console.print(f"  per-trade max      : {s.per_trade_max_cad}")
+    console.print(f"  event hard cap     : {s.event_hard_cap_cad}")
+    console.print(f"  daily loss limit   : {s.daily_loss_limit_cad}")
+    console.print(f"  max drawdown       : {s.max_drawdown_pct:.0%}")
+    console.print("\n[dim]Reminder: venue keys must be scoped trade-only; withdrawals DISABLED.[/dim]")
+    return 0
+
+
+def _decide(args: argparse.Namespace) -> int:
+    from boardroom.factory import build_default_org
+
+    s = get_settings()
+    if args.confirm_live and not s.live_trading:
+        console.print("[red]--confirm-live passed but LIVE_TRADING env flag is false. Aborting.[/red]")
+        return 2
+    live = bool(args.confirm_live and s.live_trading)
+
+    org = build_default_org(data_mode="synthetic" if args.synthetic else "live")
+    console.rule(f"[bold]Decision loop ({'LIVE' if live else 'dry-run'})")
+    result = org.run_once()
+    d = result.decision
+
+    console.print(f"\n[bold]Pitches gathered:[/bold] {len(result.pitches)}")
+    vetoed = [p for p in result.pitches if not result.challenges[p.pitch_id].approved]
+    for p in vetoed:
+        ch = result.challenges[p.pitch_id]
+        console.print(
+            f"  [red]VETOED[/red] {p.division.value:<12} {p.symbol:<8} "
+            f"[dim]{'; '.join(ch.hard_objections)}[/dim]"
+        )
+    for r in result.ranked:
+        flag = "" if not r.rejected_reason else f"  [dim]({r.rejected_reason})[/dim]"
+        console.print(
+            f"  {r.pitch.division.value:<12} {r.pitch.symbol:<8} "
+            f"score={r.score:+.3f} trust={r.trust:.2f} size={r.trusted_size_cad:.2f}{flag}"
+        )
+    console.print(f"\n[bold]Hurdle (floor) rate:[/bold] {d.hurdle_rate:.5f}")
+    color = {"fund": "green", "hold": "yellow", "fund_none": "yellow"}.get(d.kind.value, "white")
+    head = f"[{color}]{d.kind.value.upper()}[/{color}]"
+    if d.division:
+        head += f"  {d.division.value}  {d.size_cad:.2f} CAD"
+    console.print(f"\n[bold]CEO decision:[/bold] {head}")
+    console.print(f"[italic]{d.rationale}[/italic]")
+    return 0
+
+
+def _backtest(args: argparse.Namespace) -> int:
+    from boardroom.backtest import backtest_division
+    from boardroom.models.directional import DirectionalModel
+    from boardroom.schemas import Venue
+
+    if args.synthetic:
+        from boardroom.data.sources import synthetic_bars
+
+        bars = synthetic_bars("SPY.US", Venue.IBKR, n=400, seed=3, drift=0.0006, vol=0.012)
+    else:
+        from boardroom.data.sources import fetch_stooq_daily
+
+        bars = fetch_stooq_daily("spy.us")
+
+    res = backtest_division(
+        division="directional", venue=Venue.IBKR, model=DirectionalModel(), bars=bars, needs_fx=True
+    )
+    console.rule("[bold]Backtest gate — Directional")
+    console.print(res.summary())
+    console.print(
+        "[green]Gate: PASS — may deploy capital.[/green]"
+        if res.passes_gate
+        else "[yellow]Gate: FAIL — division stays in shadow until it shows edge net of cost.[/yellow]"
+    )
+    return 0
+
+
+def _report(args: argparse.Namespace) -> int:
+    from boardroom.graph.performance_loop import run_performance_loop
+    from boardroom.risk.caps import PortfolioState
+
+    portfolio = PortfolioState(
+        equity_cad=args.equity, peak_equity_cad=args.peak,
+        realized_pnl_today_cad=0.0, cumulative_cost_cad=0.0, cumulative_gross_return_cad=0.0,
+    )
+    readout = run_performance_loop(
+        carry_apr=args.carry, period_days=args.days, bnh_start=args.bnh_start,
+        bnh_end=args.bnh_end, starting_equity_cad=args.equity, portfolio=portfolio,
+    )
+    console.print(readout.text)
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="boardroom", description="Autonomous capital allocator.")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    sub.add_parser("doctor", help="check config and the safety rails")
+
+    p_decide = sub.add_parser("decide", help="run one daily decision loop")
+    p_decide.add_argument("--synthetic", action="store_true", help="use offline synthetic data")
+    p_decide.add_argument("--confirm-live", action="store_true", help="execute live (requires LIVE_TRADING=true)")
+
+    p_bt = sub.add_parser("backtest", help="run the backtest gate")
+    p_bt.add_argument("--synthetic", action="store_true")
+
+    p_rep = sub.add_parser("report", help="weekly performance readout from stored outcomes")
+    p_rep.add_argument("--carry", type=float, default=0.04)
+    p_rep.add_argument("--days", type=float, default=7.0)
+    p_rep.add_argument("--equity", type=float, default=200.0)
+    p_rep.add_argument("--peak", type=float, default=200.0)
+    p_rep.add_argument("--bnh-start", type=float, default=100.0)
+    p_rep.add_argument("--bnh-end", type=float, default=100.0)
+
+    args = parser.parse_args(argv)
+    if args.cmd == "doctor":
+        return _doctor()
+    if args.cmd == "decide":
+        return _decide(args)
+    if args.cmd == "backtest":
+        return _backtest(args)
+    if args.cmd == "report":
+        return _report(args)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
