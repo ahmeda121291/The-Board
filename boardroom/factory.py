@@ -37,7 +37,11 @@ def _synthetic_fetchers():
 
 
 def build_default_org(
-    *, data_mode: str = "live", enable_event: bool = True, **orch_kwargs
+    *,
+    data_mode: str = "live",
+    enable_event: bool = True,
+    prefer_live_brokers: bool = False,
+    **orch_kwargs,
 ) -> Orchestrator:
     directional_fetch, event_fetch = (
         _live_fetchers() if data_mode == "live" else _synthetic_fetchers()
@@ -49,4 +53,12 @@ def build_default_org(
     effort = EffortDivision()  # disabled
 
     divisions = [directional, event, effort]
+
+    # Real Kraken/IBKR adapters when requested + credentialed; stubs otherwise.
+    # Live execution still requires the LIVE_TRADING master switch regardless.
+    if prefer_live_brokers and "brokers" not in orch_kwargs:
+        from boardroom.brokers import make_brokers
+
+        orch_kwargs["brokers"] = make_brokers(prefer_live=True)
+
     return Orchestrator(divisions=divisions, yield_division=yield_div, **orch_kwargs)

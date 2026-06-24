@@ -26,7 +26,7 @@ qualitative calls.
 | M3 | Adversarial risk manager (code-driven vetoes the LLM can't sweet-talk) | ✅ |
 | M4 | Measurement (ROI vs **floor** and **buy-and-hold**, Critic, cost gate) + Supabase | ✅ |
 | M5 | Adaptive engine (calibration → trust + leashes, refit guardrails, retirement, shadow) | ✅ |
-| **M6** | **Wire Kraken + IBKR live** | ⏸ **needs your API keys** |
+| M6 | Kraken + IBKR adapters behind the broker interface (live-gated) | ✅ code · ⏸ live smoke test needs keys |
 | M7–M10 | Event live · go-live floor-dominant · ratchet · Effort | later |
 
 **103 tests pass** across the spine (features, CEO logic, calibration math,
@@ -140,18 +140,27 @@ the dashboard toggle is the durable home for it).
 
 ---
 
-## Wiring the venues (Milestone 6 — paused for your keys)
+## Wiring the venues (Milestone 6)
 
-The broker interface (`boardroom/brokers/base.py`) is venue-agnostic. To go live
-we add `KrakenBroker` and `IBKRBroker` implementations and inject them into the
-`Orchestrator`. That needs:
+The broker interface (`boardroom/brokers/base.py`) is venue-agnostic.
+`KrakenBroker` and `IBKRBroker` are **implemented** (`boardroom/brokers/`), behind
+two hard safety properties each: `supports_withdrawal` is `False` with no
+withdraw/transfer code path, and a live order is placed **only** when the
+per-call `live` flag **and** the global `LIVE_TRADING` flag **and** credentials
+are all present — otherwise it simulates (no network, no money). `make_brokers`
+selects real adapters vs stubs; `build_default_org(prefer_live_brokers=True)`
+injects them.
 
-1. **Kraken** API key/secret scoped **trade + staking, withdrawals disabled**.
+To run the **live smoke test** (smallest possible real order), set in the
+environment / `.env`:
+
+1. **Kraken** — `KRAKEN_API_KEY` + `KRAKEN_API_SECRET`, scoped **trade + staking,
+   withdrawals disabled**.
 2. **Interactive Brokers** — a running **Client Portal Gateway** you authenticate
-   (session-based), trading enabled, transfers disabled, plus your account id.
+   (session-based), trading enabled / transfers disabled, plus `IBKR_ACCOUNT_ID`.
 
-Paste them into `.env`, then we implement and smoke-test with the smallest
-possible real orders before flipping `LIVE_TRADING`.
+Then flip `LIVE_TRADING=true` and run `boardroom decide --confirm-live`. Until
+then the same code runs fully in dry-run.
 
 ---
 
