@@ -1,4 +1,5 @@
 import { Empty, Pill, Section, Stat, Table } from "@/components/ui";
+import { Refresher } from "@/components/Refresher";
 import {
   calibrationMean,
   loadDashboard,
@@ -64,6 +65,14 @@ export default async function Page() {
 
   const attribution = perf?.attribution ?? roll.attribution;
 
+  const liveCount = d.divisions.filter((x) => !x.retired && !x.shadow).length;
+  const shadowCount = d.divisions.filter((x) => x.shadow && !x.retired).length;
+  const retiredCount = d.divisions.filter((x) => x.retired).length;
+  const latest = d.decisions[0] ?? null;
+  const isFresh =
+    d.decisions.length === 0 && d.pitches.length === 0 && d.outcomes.length === 0;
+  const asOf = new Date().toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" });
+
   return (
     <main className="mx-auto max-w-6xl px-5 py-8">
       {/* Header */}
@@ -71,15 +80,46 @@ export default async function Page() {
         <h1 className="text-2xl font-bold tracking-tight">
           Boardroom <span className="text-muted">/ autonomous capital allocator</span>
         </h1>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-3">
           {breaker.length > 0 ? (
             <Pill tone="bad">CIRCUIT BREAKER</Pill>
           ) : (
             <Pill tone="good">breakers clear</Pill>
           )}
-          <span className="text-xs text-muted">updated {ago(d.performance?.created_at)}</span>
+          <span className="text-xs text-muted">as of {asOf}</span>
+          <Refresher />
         </div>
       </header>
+
+      {/* Live status strip */}
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+        <Pill tone={latest?.live ? "bad" : "good"}>{latest?.live ? "LIVE TRADING" : "dry-run / safe"}</Pill>
+        <Pill tone="accent">{liveCount} live</Pill>
+        <Pill tone="warn">{shadowCount} shadow</Pill>
+        {retiredCount > 0 ? <Pill tone="bad">{retiredCount} benched</Pill> : null}
+        <span className="text-muted">
+          last checkpoint: {latest ? ago(latest.created_at) : "never"}
+          {latest ? ` · ${latest.kind.toUpperCase()}` : ""}
+        </span>
+      </div>
+
+      {/* Onboarding state when the system hasn't run yet */}
+      {isFresh ? (
+        <div className="card mt-6 border-accent/30">
+          <div className="text-sm font-semibold text-accent">The hub is wired and waiting.</div>
+          <p className="mt-2 text-sm text-white/80">
+            Supabase is connected, but the system hasn’t logged a decision yet. On your machine, run a
+            checkpoint and this page fills in automatically:
+          </p>
+          <pre className="card mt-3 bg-ink font-mono text-xs text-white/90">
+boardroom decide              # dry-run: pitches + the CEO’s call, no real money
+boardroom decide --confirm-live   # live (requires LIVE_TRADING=true + funded)</pre>
+          <p className="mt-2 text-xs text-muted">
+            You’ll then see the CEO’s rationale, per-division calibration, ROI vs the floor and
+            buy-and-hold, and every pitch/outcome here — refreshing on its own.
+          </p>
+        </div>
+      ) : null}
 
       {d.error ? (
         <div className="card mt-4 border-bad/40 text-sm text-bad">Query error: {d.error}</div>
