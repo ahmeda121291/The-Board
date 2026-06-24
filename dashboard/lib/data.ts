@@ -1,0 +1,137 @@
+import { serverClient } from "./supabase";
+
+export type DivisionState = {
+  division: string;
+  alpha: number;
+  beta: number;
+  leash: number;
+  retired: boolean;
+  shadow: boolean;
+  n_resolved: number;
+  net_vs_floor_cad: number;
+  updated_at: string;
+};
+
+export type Decision = {
+  decision_id: string;
+  created_at: string;
+  kind: string;
+  division: string | null;
+  pitch_id: string | null;
+  size_cad: number;
+  hurdle_rate: number;
+  rationale: string | null;
+  ranked: any[];
+  live: boolean;
+};
+
+export type Pitch = {
+  pitch_id: string;
+  division: string;
+  venue: string;
+  symbol: string;
+  created_at: string;
+  capital_required: number;
+  expected_return: number;
+  confidence: number;
+  time_horizon_days: number;
+  max_loss: number;
+  expected_cost: number;
+  opportunity: string | null;
+  why_now: string | null;
+  signals: any;
+};
+
+export type Outcome = {
+  id: number;
+  decision_id: string;
+  division: string;
+  resolved_at: string;
+  predicted_return: number;
+  realized_return: number;
+  predicted_confidence: number;
+  win: boolean;
+  pnl_cad: number;
+  cost_cad: number;
+  inside_band: boolean;
+  process_luck: string | null;
+  postmortem: string | null;
+};
+
+export type PerfSnapshot = { id: number; created_at: string; payload: any };
+export type WeeklyReport = { id: number; created_at: string; report: string; payload: any };
+export type AuditRow = { id: number; created_at: string; event: string; payload: any };
+
+export type Dashboard = {
+  configured: boolean;
+  error: string | null;
+  divisions: DivisionState[];
+  decisions: Decision[];
+  pitches: Pitch[];
+  outcomes: Outcome[];
+  performance: PerfSnapshot | null;
+  weekly: WeeklyReport | null;
+  audit: AuditRow[];
+};
+
+export async function loadDashboard(): Promise<Dashboard> {
+  const empty: Dashboard = {
+    configured: false,
+    error: null,
+    divisions: [],
+    decisions: [],
+    pitches: [],
+    outcomes: [],
+    performance: null,
+    weekly: null,
+    audit: [],
+  };
+
+  const sb = serverClient();
+  if (!sb) return { ...empty, configured: false };
+
+  try {
+    const [divisions, decisions, pitches, outcomes, perf, weekly, audit] = await Promise.all([
+      sb.from("division_state").select("*").order("division"),
+      sb.from("decisions").select("*").order("created_at", { ascending: false }).limit(50),
+      sb.from("pitches").select("*").order("created_at", { ascending: false }).limit(50),
+      sb.from("outcomes").select("*").order("resolved_at", { ascending: false }).limit(100),
+      sb.from("performance_snapshots").select("*").order("created_at", { ascending: false }).limit(1),
+      sb.from("weekly_reports").select("*").order("created_at", { ascending: false }).limit(1),
+      sb.from("audit_log").select("*").order("created_at", { ascending: false }).limit(50),
+    ]);
+
+    const firstError =
+      divisions.error || decisions.error || pitches.error || outcomes.error || perf.error || weekly.error || audit.error;
+
+    return {
+      configured: true,
+      error: firstError ? firstError.message : null,
+      divisions: (divisions.data as DivisionState[]) ?? [],
+      decisions: (decisions.data as Decision[]) ?? [],
+      pitches: (pitches.data as Pitch[]) ?? [],
+      outcomes: (outcomes.data as Outcome[]) ?? [],
+      performance: ((perf.data as PerfSnapshot[]) ?? [])[0] ?? null,
+      weekly: ((weekly.data as WeeklyReport[]) ?? [])[0] ?? null,
+      audit: (audit.data as AuditRow[]) ?? [],
+    };
+  } catch (e: any) {
+    return { ...empty, configured: true, error: e?.message ?? "Unknown error" };
+  }
+}
+
+// ---- derived helpers (deterministic; mirror the Python measurement layer) ----
+export function calibrationMean(d: DivisionState): number {
+  const denom = d.alpha + d.beta;
+  return denom > 0 ? d.alpha / denom : 0;
+}
+
+export function rollupOutcomes(outcomes: Outcome[]) {
+  const n = outcomes.length;
+  const pnl = outcomes.reduce((s, o) => s + (o.pnl_cad || 0), 0);
+  const cost = outcomes.reduce((s, o) => s + (o.cost_cad || 0), 0);
+  const wins = outcomes.filter((o) => o.win).length;
+  const attribution: Record<string, number> = {};
+  for (const o of outcomes) attribution[o.division] = (attribution[o.division] || 0) + (o.pnl_cad || 0);
+  return { n, pnl, cost, hitRate: n ? wins / n : 0, attribution };
+}
