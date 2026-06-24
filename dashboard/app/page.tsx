@@ -5,6 +5,7 @@ import { Countdown } from "@/components/Countdown";
 import { SessionView } from "@/components/Session";
 import { SessionHistory } from "@/components/SessionHistory";
 import { EquityChart } from "@/components/EquityChart";
+import { AskBoardroom } from "@/components/AskBoardroom";
 import {
   calibrationMean,
   equitySeries,
@@ -278,6 +279,11 @@ boardroom decide              # dry-run: pitches + the CEO’s call, no real mon
 boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
         </div>
       ) : null}
+
+      {/* Ask the Boardroom — talk to the CEO / CFO */}
+      <Section title="Ask the Boardroom" desc="Talk to the CEO or CFO about its decisions — grounded in the real data, read-only.">
+        <AskBoardroom />
+      </Section>
 
       {/* CEO */}
       <Section title="The CEO" desc="Latest verdict and rationale. Most days the right answer is HOLD.">
