@@ -99,6 +99,14 @@ plays with house money over time.
 
 > **Why once a day?** See §9.
 
+**On-demand runs.** Besides the daily 3pm checkpoint you can trigger a run yourself,
+two ways: a **"Run Boardroom Now" desktop shortcut** (fires a live checkpoint on the
+PC immediately), or a **"Run now" button on the dashboard**. The dashboard button
+only *requests* a run (inserts a row in `run_requests`) — it never trades, because
+the keys live only on the PC. A local **poller** (`boardroom poll`, a background
+scheduled task) claims the request and runs the checkpoint locally, preserving the
+dashboard's read-only safety property. The daily scheduler stays on alongside this.
+
 ---
 
 ## 6. The three loops (the engine)
@@ -152,6 +160,10 @@ checkpoints, without increasing entry frequency. Not warranted at current size.
 
 ## Changelog
 
+- **2026-06-25** — On-demand runs: dashboard "Run now" button + `run_requests`
+  queue + local `boardroom poll` poller, and a "Run Boardroom Now" desktop shortcut.
+  Daily 3pm scheduler unchanged. Durable `live_armed` flag so the live/armed badge
+  survives redeploys.
 - **2026-06-25** — Market-hours guard added; daily checkpoint moved to 3pm local so
   the equity leg fills in-session. Tri-state live status badge. This living scope
   created and linked from the dashboard.

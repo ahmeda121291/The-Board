@@ -44,6 +44,10 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   (summer & winter). **Market-hours guard** auto-holds any live equity order placed
   while the market is closed (logs `equity_market_closed`); crypto unaffected.
 - Off-days (weekends/holidays): checkpoint still convenes **crypto-only**.
+- **On-demand runs**: dashboard "Run now" button writes a `run_requests` row; the
+  local `boardroom poll` poller (a startup scheduled task on the PC) claims it and
+  runs the checkpoint locally (keys stay on PC; dashboard never trades). Also a
+  "Run Boardroom Now" desktop shortcut (`run_now.ps1`) for instant local runs.
 
 ## Live-armed state
 

@@ -6,6 +6,7 @@ import { SessionView } from "@/components/Session";
 import { SessionHistory } from "@/components/SessionHistory";
 import { EquityChart } from "@/components/EquityChart";
 import { AskBoardroom } from "@/components/AskBoardroom";
+import { RunNow } from "@/components/RunNow";
 import {
   calibrationMean,
   equitySeries,
@@ -258,6 +259,11 @@ export default async function Page() {
             <Pill tone="warn">scheduler idle — run `boardroom run`</Pill>
           )}
         </div>
+      </div>
+
+      {/* On-demand run — request a checkpoint now (executed on your PC) */}
+      <div className="mt-3">
+        <RunNow />
       </div>
 
       {/* Hero — portfolio value */}

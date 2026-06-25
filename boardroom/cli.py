@@ -176,6 +176,73 @@ def _run(args: argparse.Namespace) -> int:
         return 0
 
 
+def _poll(args: argparse.Namespace) -> int:
+    """Watch Supabase for dashboard 'Run now' requests and execute them locally.
+
+    The web dashboard can only REQUEST a run (it inserts a pending row); the
+    trading keys live here on the user's machine, so this poller is what turns a
+    button click into a real checkpoint. Runs alongside the daily scheduler.
+    """
+    import time as _time
+    from datetime import datetime, timezone
+
+    from boardroom.factory import build_default_org
+
+    s = get_settings()
+    if args.confirm_live and not s.live_trading:
+        console.print("[red]--confirm-live passed but LIVE_TRADING is false. Aborting.[/red]")
+        return 2
+    live = bool(args.confirm_live and s.live_trading)
+
+    org = build_default_org(
+        data_mode="synthetic" if args.synthetic else "live",
+        prefer_live_brokers=not args.synthetic,
+    )
+    console.rule(f"[bold]Boardroom poller ({'LIVE' if live else 'dry-run'})")
+    console.print(f"Watching for 'Run now' requests every {args.interval:.0f}s. Ctrl+C to stop.\n")
+    if live:
+        org.repo.set_live_armed(True)
+
+    try:
+        while True:
+            req = org.repo.claim_next_run_request()
+            if req is not None:
+                rid = req.get("id")
+                console.print(f"[bold]▶ run request #{rid}[/bold] ({req.get('source', '?')}) — convening")
+                try:
+                    result = org.run_once()
+                    d = result.decision
+                    head = d.kind.value.upper() + (
+                        f" {d.division.value} {d.size_cad:.2f} CAD" if d.division else ""
+                    )
+                    summary = {
+                        "kind": d.kind.value,
+                        "division": d.division.value if d.division else None,
+                        "size_cad": d.size_cad,
+                        "live": d.live,
+                        "rationale": d.rationale,
+                        "at": datetime.now(timezone.utc).isoformat(),
+                    }
+                    org.repo.complete_run_request(rid, "done", summary, d.decision_id)
+                    console.print(f"[bold]✓ #{rid} done[/bold] → {head}")
+                    try:
+                        from boardroom.agents.strategist import generate_and_save_review
+
+                        generate_and_save_review(org.repo, org.llm, s.starting_portfolio_cad)
+                    except Exception:
+                        pass
+                except Exception as e:  # never let one bad run kill the poller
+                    org.repo.complete_run_request(rid, "error", {"error": str(e)[:300]})
+                    console.print(f"[red]✗ #{rid} error: {str(e)[:120]}[/red]")
+                continue  # immediately check for more before sleeping
+            if args.once:
+                return 0
+            _time.sleep(max(2.0, args.interval))
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Poller stopped.[/yellow]")
+        return 0
+
+
 def _review(args: argparse.Namespace) -> int:
     """Generate the CFO/Strategist review now and save it."""
     from boardroom.agents.llm import LLM
@@ -275,6 +342,12 @@ def main(argv: list[str] | None = None) -> int:
     p_decide.add_argument("--synthetic", action="store_true", help="use offline synthetic data")
     p_decide.add_argument("--confirm-live", action="store_true", help="execute live (requires LIVE_TRADING=true)")
 
+    p_poll = sub.add_parser("poll", help="watch for dashboard 'Run now' requests and execute them")
+    p_poll.add_argument("--synthetic", action="store_true", help="use offline synthetic data")
+    p_poll.add_argument("--confirm-live", action="store_true", help="execute live (requires LIVE_TRADING=true)")
+    p_poll.add_argument("--interval", type=float, default=20.0, help="seconds between checks (default 20)")
+    p_poll.add_argument("--once", action="store_true", help="check once and exit (no loop)")
+
     p_bt = sub.add_parser("backtest", help="run the backtest gate")
     p_bt.add_argument("--synthetic", action="store_true")
 
@@ -297,6 +370,8 @@ def main(argv: list[str] | None = None) -> int:
         return _review(args)
     if args.cmd == "decide":
         return _decide(args)
+    if args.cmd == "poll":
+        return _poll(args)
     if args.cmd == "backtest":
         return _backtest(args)
     if args.cmd == "report":

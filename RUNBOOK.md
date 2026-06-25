@@ -128,6 +128,30 @@ Remove it with:
 Unregister-ScheduledTask -TaskName "Boardroom Daily" -Confirm:$false
 ```
 
+## Running on demand (besides the daily 3pm checkpoint)
+
+Two ways to fire a checkpoint yourself, in addition to the scheduler.
+
+**1. Desktop shortcut (instant, local).** Creates a "Run Boardroom Now" icon on your
+Desktop; double-click it any time to fire one live checkpoint.
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install_run_shortcut.ps1
+```
+
+**2. Dashboard "Run now" button (remote).** The button on the dashboard *requests* a
+run — it never trades (the keys live only here). A background **poller** on this PC
+claims the request and runs the checkpoint locally. Register it once; it starts at
+logon and keeps running:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install_poller.ps1
+Start-ScheduledTask -TaskName "Boardroom Poller"   # start now without logging off
+```
+The poller logs to `logs\poller.log`. Remove with
+`Unregister-ScheduledTask -TaskName "Boardroom Poller" -Confirm:$false`.
+
+> Both reuse the same `LIVE_TRADING=true` + `--confirm-live` gate and the
+> market-hours guard. The daily **Boardroom Daily** task is independent and stays on.
+
 ## Safety reminders (enforced in code)
 - `LIVE_TRADING` defaults false; `decide` also requires `--confirm-live`.
 - Every venue credential must be **trade-only, withdrawals disabled**. The broker

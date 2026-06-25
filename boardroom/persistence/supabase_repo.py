@@ -128,6 +128,45 @@ class SupabaseRepository(Repository):
     def set_live_armed(self, armed: bool) -> None:
         self._t("system_state").upsert({"id": 1, "live_armed": bool(armed)}).execute()
 
+    def claim_next_run_request(self) -> dict | None:
+        from datetime import datetime, timezone
+
+        res = (
+            self._t("run_requests")
+            .select("*")
+            .eq("status", "pending")
+            .order("created_at")
+            .limit(1)
+            .execute()
+        )
+        if not res.data:
+            return None
+        row = res.data[0]
+        # Conditional claim: only succeeds if it's still pending (guards against
+        # two pollers grabbing the same row).
+        upd = (
+            self._t("run_requests")
+            .update({"status": "running", "claimed_at": datetime.now(timezone.utc).isoformat()})
+            .eq("id", row["id"])
+            .eq("status", "pending")
+            .execute()
+        )
+        return upd.data[0] if upd.data else None
+
+    def complete_run_request(
+        self, request_id: int, status: str, result: dict, decision_id: str | None = None
+    ) -> None:
+        from datetime import datetime, timezone
+
+        self._t("run_requests").update(
+            {
+                "status": status,
+                "result": result,
+                "decision_id": decision_id,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", request_id).execute()
+
     def save_strategy_review(
         self, headline: str, narrative: str, recommendations: list, standing: dict
     ) -> None:

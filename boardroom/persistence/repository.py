@@ -72,6 +72,22 @@ class Repository(abc.ABC):
         ...
 
     @abc.abstractmethod
+    def claim_next_run_request(self) -> dict | None:
+        """Claim the oldest pending on-demand run request (status -> running).
+
+        Returns the claimed row, or None if none are pending. Used by the local
+        poller so a dashboard "Run now" click triggers a checkpoint on the PC.
+        """
+        ...
+
+    @abc.abstractmethod
+    def complete_run_request(
+        self, request_id: int, status: str, result: dict, decision_id: str | None = None
+    ) -> None:
+        """Mark a claimed run request done/error with a result summary."""
+        ...
+
+    @abc.abstractmethod
     def save_strategy_review(
         self, headline: str, narrative: str, recommendations: list, standing: dict
     ) -> None: ...
@@ -95,6 +111,7 @@ class InMemoryRepository(Repository):
         default_factory=lambda: {"reserve_cad": 0.0, "hwm_cad": 0.0, "live_armed": False}
     )
     strategy_reviews: list[dict] = field(default_factory=list)
+    run_requests: list[dict] = field(default_factory=list)
 
     def save_pitch(self, pitch: Pitch) -> None:
         self.pitches.append(pitch)
@@ -142,6 +159,23 @@ class InMemoryRepository(Repository):
 
     def set_live_armed(self, armed: bool) -> None:
         self.system_state["live_armed"] = bool(armed)
+
+    def claim_next_run_request(self) -> dict | None:
+        for req in self.run_requests:
+            if req.get("status") == "pending":
+                req["status"] = "running"
+                return dict(req)
+        return None
+
+    def complete_run_request(
+        self, request_id: int, status: str, result: dict, decision_id: str | None = None
+    ) -> None:
+        for req in self.run_requests:
+            if req.get("id") == request_id:
+                req["status"] = status
+                req["result"] = result
+                req["decision_id"] = decision_id
+                return
 
     def save_strategy_review(
         self, headline: str, narrative: str, recommendations: list, standing: dict
