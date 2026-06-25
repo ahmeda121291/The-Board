@@ -63,6 +63,15 @@ class Repository(abc.ABC):
     def set_system_state(self, reserve_cad: float, hwm_cad: float) -> None: ...
 
     @abc.abstractmethod
+    def set_live_armed(self, armed: bool) -> None:
+        """Persist whether the system is armed for live trading.
+
+        Durable (DB-backed) so the dashboard reflects live configuration even
+        before any live trade executes, and across redeploys.
+        """
+        ...
+
+    @abc.abstractmethod
     def save_strategy_review(
         self, headline: str, narrative: str, recommendations: list, standing: dict
     ) -> None: ...
@@ -82,7 +91,9 @@ class InMemoryRepository(Repository):
     performance: list[dict] = field(default_factory=list)
     weekly: list[tuple[str, dict]] = field(default_factory=list)
     audit_log: list[tuple[str, dict]] = field(default_factory=list)
-    system_state: dict = field(default_factory=lambda: {"reserve_cad": 0.0, "hwm_cad": 0.0})
+    system_state: dict = field(
+        default_factory=lambda: {"reserve_cad": 0.0, "hwm_cad": 0.0, "live_armed": False}
+    )
     strategy_reviews: list[dict] = field(default_factory=list)
 
     def save_pitch(self, pitch: Pitch) -> None:
@@ -123,7 +134,14 @@ class InMemoryRepository(Repository):
         return dict(self.system_state)
 
     def set_system_state(self, reserve_cad: float, hwm_cad: float) -> None:
-        self.system_state = {"reserve_cad": reserve_cad, "hwm_cad": hwm_cad}
+        self.system_state = {
+            "reserve_cad": reserve_cad,
+            "hwm_cad": hwm_cad,
+            "live_armed": self.system_state.get("live_armed", False),
+        }
+
+    def set_live_armed(self, armed: bool) -> None:
+        self.system_state["live_armed"] = bool(armed)
 
     def save_strategy_review(
         self, headline: str, narrative: str, recommendations: list, standing: dict

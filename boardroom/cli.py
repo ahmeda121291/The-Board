@@ -60,6 +60,8 @@ def _decide(args: argparse.Namespace) -> int:
 
     org = build_default_org(data_mode="synthetic" if args.synthetic else "live")
     console.rule(f"[bold]Decision loop ({'LIVE' if live else 'dry-run'})")
+    if live:
+        org.repo.set_live_armed(True)  # durable: dashboard shows LIVE-armed across redeploys
     result = org.run_once()
     d = result.decision
 
@@ -139,6 +141,8 @@ def _run(args: argparse.Namespace) -> int:
     )
     console.rule(f"[bold]Boardroom scheduler ({'LIVE' if live else 'dry-run'})")
     console.print(f"Daily checkpoint at [bold]{s.checkpoint_utc} UTC[/bold]. Ctrl+C to stop.\n")
+    if live:
+        org.repo.set_live_armed(True)  # durable: dashboard shows LIVE-armed across redeploys
 
     try:
         while True:

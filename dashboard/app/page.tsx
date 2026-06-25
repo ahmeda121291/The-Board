@@ -166,9 +166,12 @@ export default async function Page() {
   const envArmed = (process.env.LIVE_TRADING || "").toLowerCase() === "true";
   // Tri-state live status:
   //   tradedLive — a real trade has actually executed and been logged
-  //   armedLive  — configured + scheduled for live, but no live trade yet
+  //   armedLive  — configured for live, but no live trade yet
+  // The durable signal is d.live_armed (persisted in system_state, set whenever a
+  // live-confirmed run convenes) so the badge survives redeploys and never falls
+  // back to "dry-run" just because a recent heartbeat aged out of the log.
   const tradedLive = Boolean(latest?.live);
-  const armedLive = tradedLive || hbLive || envArmed;
+  const armedLive = tradedLive || d.live_armed || hbLive || envArmed;
   const targetIso =
     hbNext && new Date(hbNext).getTime() > Date.now() ? hbNext : nextCheckpointIso(checkpointUtc);
   const schedulerActive = hb ? Date.now() - new Date(hb.created_at).getTime() < 26 * 3600 * 1000 : false;
