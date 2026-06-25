@@ -34,6 +34,24 @@ export default function DocsPage() {
         </Link>
       </header>
 
+      <a
+        href="https://github.com/ahmeda121291/the-board/blob/main/docs/SCOPE.md"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="glass hud mt-6 flex items-center gap-3 p-4 transition hover:border-sky-400/40"
+      >
+        <span className="text-2xl">📜</span>
+        <div>
+          <div className="text-sm font-semibold text-sky-300 glow-cyan">
+            The living scope ↗
+          </div>
+          <div className="text-xs text-slate-400">
+            The canonical, continuously-updated spec — supersedes the original document and is kept
+            in sync with the code on every change. This is the full picture of how everything works.
+          </div>
+        </div>
+      </a>
+
       <div className="glass hud mt-6 p-5">
         <div className="text-sm font-semibold text-sky-300 glow-cyan">The grounding law</div>
         <p className="mt-2 text-sm leading-relaxed text-slate-200">
