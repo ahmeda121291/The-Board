@@ -27,6 +27,7 @@ class Division(abc.ABC):
     venue: Venue
     model: PredictionModel
     fetch: Callable[[], Bars] | None = None  # real data source; None -> needs injected bars
+    fetchers: list[Callable[[], Bars]] | None = None  # multi-symbol universe; one pitch each
     enabled: bool = True
     max_age_seconds: float = 60 * 60 * 36  # daily bars: ~1.5 days tolerance
     min_rows: int = 40
@@ -57,16 +58,55 @@ class Division(abc.ABC):
         return round(max(0.0, conf) * 0.15 * bankroll_cad, 2)
 
     # ---- the public entry point ---------------------------------------------
+    def propose_all(self, *, bankroll_cad: float = 200.0) -> list[Pitch]:
+        """Scan the division's whole universe; return one Pitch per qualifying symbol.
+
+        Uses ``self.fetchers`` (the multi-symbol universe) when set, else falls back
+        to the single ``fetch``. The CEO then ranks across everything returned and
+        funds at most the single best. More symbols = more chances something clears
+        the floor after cost — the same grounding rules apply per symbol.
+        """
+        if not self.enabled:
+            self.last_status = "disabled"
+            return []
+        fetchers = self.fetchers or ([self.fetch] if self.fetch else [])
+        if not fetchers:
+            return [p for p in [self.propose(bankroll_cad=bankroll_cad)] if p is not None]
+
+        pitches: list[Pitch] = []
+        last_reason = "abstained — no edge / trigger not fired"
+        for f in fetchers:
+            p = self.propose(fetch=f, bankroll_cad=bankroll_cad)
+            if p is not None:
+                pitches.append(p)
+            else:
+                last_reason = self.last_status
+        self.last_status = (
+            f"pitched {len(pitches)} of {len(fetchers)} scanned"
+            if pitches
+            else f"{last_reason} (scanned {len(fetchers)})"
+        )
+        return pitches
+
     def propose(
-        self, *, bars: Bars | None = None, bankroll_cad: float = 200.0
+        self,
+        *,
+        bars: Bars | None = None,
+        bankroll_cad: float = 200.0,
+        fetch: Callable[[], Bars] | None = None,
     ) -> Pitch | None:
-        """Produce a computed Pitch, or None to abstain (recording why)."""
+        """Produce a computed Pitch, or None to abstain (recording why).
+
+        ``fetch`` overrides the division's default source (used by ``propose_all``
+        to scan each symbol in the universe).
+        """
         if not self.enabled:
             self.last_status = "disabled"
             return None
 
+        source = fetch or self.fetch
         try:
-            bars = bars if bars is not None else (self.fetch() if self.fetch else None)
+            bars = bars if bars is not None else (source() if source else None)
         except Exception:
             self.last_status = "abstained — data feed unavailable"
             return None  # any data failure -> abstain (no trade on garbage)

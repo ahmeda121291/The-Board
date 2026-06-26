@@ -44,6 +44,14 @@ trade directly — they propose, and the CEO disposes.
 A pitch carries computed numbers (code) plus a short narrative (LLM). Quant fields
 are never LLM guesses.
 
+**Scanned universe.** Each checkpoint, Directional scans a basket of liquid ETFs and
+mega-caps (SPY, QQQ, IWM, DIA, sector ETFs, AAPL/MSFT/NVDA/AMZN/GOOGL/META) and Event
+scans the major crypto pairs (BTC, ETH, SOL, XRP, ADA, LINK, DOT). Every symbol runs
+the same grounded model + risk/cost gates; the CEO ranks across all of them and funds
+at most the single best. A wider universe means more chances something is a genuine,
+non-stretched, positive-edge buy — so the system actually deploys, rather than holding
+because its only candidate was overbought.
+
 ---
 
 ## 3. The agents (who decides)
@@ -160,6 +168,12 @@ checkpoints, without increasing entry frequency. Not warranted at current size.
 
 ## Changelog
 
+- **2026-06-26** — **Widened the scanned universe** from 1 ticker per division to a
+  basket (Directional: ~14 ETFs/mega-caps; Event: 7 crypto pairs). Each checkpoint
+  scores every symbol and the CEO funds the best — far more likely to find an
+  actionable buy than scanning a single (often overbought) instrument. Batch-file
+  launchers (`run_*.cmd`) replaced the `.ps1` ones that wouldn't launch from Task
+  Scheduler / Startup. On-demand "Run now" verified end-to-end.
 - **2026-06-25** — Daily **keep-alive cron** (Vercel → `/api/keepalive` → trivial
   Supabase read) so the free-tier project never idles out and gets paused. A paused
   project drops its `<ref>.supabase.co` DNS, which breaks every local run; the

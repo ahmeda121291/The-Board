@@ -18,22 +18,41 @@ from boardroom.graph.decision_loop import Orchestrator
 from boardroom.schemas import Venue
 
 
+# The scanned universe. More liquid names = more chances something is a genuine
+# positive-edge, non-stretched buy that clears the floor after cost. Every symbol
+# still runs the same grounded model + risk/cost gates; the CEO funds the best one.
+DIRECTIONAL_UNIVERSE = (
+    "spy.us", "qqq.us", "iwm.us", "dia.us",        # broad-market ETFs
+    "xlk.us", "xlf.us", "xle.us", "xlv.us",        # sector ETFs (rotation candidates)
+    "aapl.us", "msft.us", "nvda.us", "amzn.us",    # liquid mega-caps
+    "googl.us", "meta.us",
+)
+EVENT_UNIVERSE = (
+    "XBTUSD", "ETHUSD", "SOLUSD", "XRPUSD", "ADAUSD", "LINKUSD", "DOTUSD",
+)
+
+
 def _live_fetchers():
     from boardroom.data.sources import fetch_kraken_ohlc, fetch_stooq_daily
 
-    return (
-        partial(fetch_stooq_daily, "spy.us"),
-        partial(fetch_kraken_ohlc, "XBTUSD", 1440),
-    )
+    directional = [partial(fetch_stooq_daily, s) for s in DIRECTIONAL_UNIVERSE]
+    event = [partial(fetch_kraken_ohlc, p, 1440) for p in EVENT_UNIVERSE]
+    return directional, event
 
 
 def _synthetic_fetchers():
     from boardroom.data.sources import synthetic_bars
 
-    return (
+    # A small varied basket so offline/test runs still exercise multi-symbol ranking.
+    directional = [
         partial(synthetic_bars, "SPY.US", Venue.IBKR, n=160, seed=11, drift=0.0008, vol=0.012),
+        partial(synthetic_bars, "QQQ.US", Venue.IBKR, n=160, seed=12, drift=0.0011, vol=0.014),
+    ]
+    event = [
         partial(synthetic_bars, "XBTUSD", Venue.KRAKEN, n=160, seed=29, drift=0.0, vol=0.045),
-    )
+        partial(synthetic_bars, "ETHUSD", Venue.KRAKEN, n=160, seed=31, drift=0.0005, vol=0.05),
+    ]
+    return directional, event
 
 
 def build_default_org(
@@ -43,7 +62,7 @@ def build_default_org(
     prefer_live_brokers: bool = False,
     **orch_kwargs,
 ) -> Orchestrator:
-    directional_fetch, event_fetch = (
+    directional_fetchers, event_fetchers = (
         _live_fetchers() if data_mode == "live" else _synthetic_fetchers()
     )
 
@@ -55,8 +74,8 @@ def build_default_org(
     dv = directional_execution_venue()
 
     yield_div = YieldDivision()
-    directional = DirectionalDivision(fetch=directional_fetch, venue=dv)
-    event = EventDivision(fetch=event_fetch, enabled=enable_event)
+    directional = DirectionalDivision(fetchers=directional_fetchers, venue=dv)
+    event = EventDivision(fetchers=event_fetchers, enabled=enable_event)
     effort = EffortDivision()  # disabled
 
     divisions = [directional, event, effort]

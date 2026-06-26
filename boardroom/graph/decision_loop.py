@@ -70,12 +70,10 @@ class Orchestrator:
     def gather_pitches(self, bankroll_cad: float) -> list[Pitch]:
         pitches: list[Pitch] = []
         for div in self.divisions:
-            pitch = div.propose(bankroll_cad=bankroll_cad)
-            if pitch is None:
-                continue
-            pitch = narrate_pitch(pitch, self.llm)
-            self.repo.save_pitch(pitch)
-            pitches.append(pitch)
+            for pitch in div.propose_all(bankroll_cad=bankroll_cad):
+                pitch = narrate_pitch(pitch, self.llm)
+                self.repo.save_pitch(pitch)
+                pitches.append(pitch)
         return pitches
 
     def risk_review(
