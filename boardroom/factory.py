@@ -73,9 +73,18 @@ def build_default_org(
     # so its pitches route to the matching broker.
     dv = directional_execution_venue()
 
+    # Display names for the dashboard's tracked-universe table (live = real
+    # tickers; synthetic = the small offline basket).
+    dir_syms = list(DIRECTIONAL_UNIVERSE if data_mode == "live" else ("SPY", "QQQ"))
+    evt_syms = list(EVENT_UNIVERSE if data_mode == "live" else ("XBTUSD", "ETHUSD"))
+
     yield_div = YieldDivision()
-    directional = DirectionalDivision(fetchers=directional_fetchers, venue=dv)
-    event = EventDivision(fetchers=event_fetchers, enabled=enable_event)
+    directional = DirectionalDivision(
+        fetchers=directional_fetchers, venue=dv, universe_symbols=dir_syms
+    )
+    event = EventDivision(
+        fetchers=event_fetchers, enabled=enable_event, universe_symbols=evt_syms
+    )
     effort = EffortDivision()  # disabled
 
     divisions = [directional, event, effort]

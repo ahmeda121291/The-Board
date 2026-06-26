@@ -261,11 +261,17 @@ class Orchestrator:
             {"division": d.division.value, "status": getattr(d, "last_status", "idle")}
             for d in [self.yield_division, *self.divisions]
         ]
+        universe = {}
+        for d in self.divisions:
+            syms = getattr(d, "universe_symbols", None)
+            if syms:
+                universe[d.division.value] = {"venue": d.venue.value, "symbols": list(syms)}
         return {
             "hurdle_rate": hurdle_rate,
             "portfolio_value_cad": portfolio,
             "pitches": pitch_rows,
             "divisions": division_rows,
+            "universe": universe,
         }
 
 

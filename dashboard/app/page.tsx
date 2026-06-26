@@ -335,6 +335,31 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
         <SessionHistory decisions={d.decisions} />
       </Section>
 
+      {/* Tracked universe — what gets scanned every run */}
+      <Section title="Tracked universe" desc="Every symbol the divisions scan each checkpoint. The CEO ranks across all and funds the single best.">
+        {latestSession?.universe && Object.keys(latestSession.universe).length > 0 ? (
+          <div className="grid gap-3 md:grid-cols-3">
+            {Object.entries(latestSession.universe).map(([div, u]) => (
+              <div key={div} className="glass hud p-4">
+                <div className="flex items-center justify-between">
+                  <span className="label capitalize">{div}</span>
+                  <Pill tone="cyan">{u.symbols.length} · {u.venue}</Pill>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {u.symbols.map((s) => (
+                    <span key={s} className="num rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-xs text-slate-200">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <Empty>Universe appears after the next checkpoint runs.</Empty>
+        )}
+      </Section>
+
       {/* Divisions */}
       <Section title="Divisions" desc="Trust = demonstrated calibration (Beta posterior mean), not stated confidence.">
         {d.divisions.length === 0 ? (

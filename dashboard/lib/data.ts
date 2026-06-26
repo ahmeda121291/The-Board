@@ -54,6 +54,7 @@ export type Session = {
   portfolio_value_cad?: number;
   pitches?: SessionPitch[];
   divisions?: { division: string; status: string }[];
+  universe?: Record<string, { venue: string; symbols: string[] }>;
 };
 
 export type Pitch = {

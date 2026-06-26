@@ -28,6 +28,7 @@ class Division(abc.ABC):
     model: PredictionModel
     fetch: Callable[[], Bars] | None = None  # real data source; None -> needs injected bars
     fetchers: list[Callable[[], Bars]] | None = None  # multi-symbol universe; one pitch each
+    universe_symbols: list[str] = field(default_factory=list)  # display names of the scanned set
     enabled: bool = True
     max_age_seconds: float = 60 * 60 * 36  # daily bars: ~1.5 days tolerance
     min_rows: int = 40
