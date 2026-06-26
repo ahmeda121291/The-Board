@@ -201,11 +201,29 @@ def _poll(args: argparse.Namespace) -> int:
     console.rule(f"[bold]Boardroom poller ({'LIVE' if live else 'dry-run'})")
     console.print(f"Watching for 'Run now' requests every {args.interval:.0f}s. Ctrl+C to stop.\n")
     if live:
-        org.repo.set_live_armed(True)
+        try:
+            org.repo.set_live_armed(True)
+        except Exception as e:  # network blip at startup must not kill the poller
+            console.print(f"[dim]could not set live_armed yet ({str(e)[:60]}); will retry.[/dim]")
 
+    armed = False
     try:
         while True:
-            req = org.repo.claim_next_run_request()
+            # The whole network section is guarded — transient DNS/connection
+            # errors just log and retry next interval instead of crashing.
+            try:
+                if live and not armed:
+                    org.repo.set_live_armed(True)
+                    armed = True
+                req = org.repo.claim_next_run_request()
+            except KeyboardInterrupt:
+                raise
+            except Exception as e:
+                console.print(f"[yellow]network hiccup, retrying: {str(e)[:80]}[/yellow]")
+                if args.once:
+                    return 0
+                _time.sleep(max(2.0, args.interval))
+                continue
             if req is not None:
                 rid = req.get("id")
                 console.print(f"[bold]▶ run request #{rid}[/bold] ({req.get('source', '?')}) — convening")
@@ -232,8 +250,11 @@ def _poll(args: argparse.Namespace) -> int:
                     except Exception:
                         pass
                 except Exception as e:  # never let one bad run kill the poller
-                    org.repo.complete_run_request(rid, "error", {"error": str(e)[:300]})
                     console.print(f"[red]✗ #{rid} error: {str(e)[:120]}[/red]")
+                    try:
+                        org.repo.complete_run_request(rid, "error", {"error": str(e)[:300]})
+                    except Exception:
+                        pass  # if even the write-back fails (network), retry the row later
                 continue  # immediately check for more before sleeping
             if args.once:
                 return 0
