@@ -160,6 +160,11 @@ checkpoints, without increasing entry frequency. Not warranted at current size.
 
 ## Changelog
 
+- **2026-06-25** — Daily **keep-alive cron** (Vercel → `/api/keepalive` → trivial
+  Supabase read) so the free-tier project never idles out and gets paused. A paused
+  project drops its `<ref>.supabase.co` DNS, which breaks every local run; the
+  keep-alive runs on Vercel independent of the PC. Poller hardened to survive
+  transient DNS/connection errors instead of crashing.
 - **2026-06-25** — On-demand runs: dashboard "Run now" button + `run_requests`
   queue + local `boardroom poll` poller, and a "Run Boardroom Now" desktop shortcut.
   Daily 3pm scheduler unchanged. Durable `live_armed` flag so the live/armed badge
