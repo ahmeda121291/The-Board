@@ -22,10 +22,10 @@ from boardroom.schemas import Venue
 # positive-edge, non-stretched buy that clears the floor after cost. Every symbol
 # still runs the same grounded model + risk/cost gates; the CEO funds the best one.
 DIRECTIONAL_UNIVERSE = (
-    "spy.us", "qqq.us", "iwm.us", "dia.us",        # broad-market ETFs
-    "xlk.us", "xlf.us", "xle.us", "xlv.us",        # sector ETFs (rotation candidates)
-    "aapl.us", "msft.us", "nvda.us", "amzn.us",    # liquid mega-caps
-    "googl.us", "meta.us",
+    "SPY", "QQQ", "IWM", "DIA",          # broad-market ETFs
+    "XLK", "XLF", "XLE", "XLV",          # sector ETFs (rotation candidates)
+    "AAPL", "MSFT", "NVDA", "AMZN",      # liquid mega-caps
+    "GOOGL", "META",
 )
 EVENT_UNIVERSE = (
     "XBTUSD", "ETHUSD", "SOLUSD", "XRPUSD", "ADAUSD", "LINKUSD", "DOTUSD",
@@ -33,9 +33,9 @@ EVENT_UNIVERSE = (
 
 
 def _live_fetchers():
-    from boardroom.data.sources import fetch_kraken_ohlc, fetch_stooq_daily
+    from boardroom.data.sources import fetch_equity_daily, fetch_kraken_ohlc
 
-    directional = [partial(fetch_stooq_daily, s) for s in DIRECTIONAL_UNIVERSE]
+    directional = [partial(fetch_equity_daily, s) for s in DIRECTIONAL_UNIVERSE]
     event = [partial(fetch_kraken_ohlc, p, 1440) for p in EVENT_UNIVERSE]
     return directional, event
 

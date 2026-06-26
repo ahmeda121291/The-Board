@@ -22,6 +22,7 @@ from boardroom.schemas import Venue
 
 _KRAKEN_OHLC = "https://api.kraken.com/0/public/OHLC"
 _STOOQ_CSV = "https://stooq.com/q/d/l/"
+_YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/"
 
 
 # A browser-ish UA + Accept; free sources (esp. Stooq) often refuse the default
@@ -99,6 +100,67 @@ def fetch_stooq_daily(symbol: str = "spy.us", *, attempts: int = 3) -> Bars:
             if i < attempts - 1:
                 _time.sleep(1.0 * (i + 1))  # 1s, 2s — spreads the burst out
     raise RuntimeError(f"Stooq failed for {symbol} after {attempts} attempts: {last_err}")
+
+
+def fetch_yahoo_daily(ticker: str = "SPY", *, lookback_range: str = "1y", attempts: int = 3) -> Bars:
+    """Daily equity/ETF bars from Yahoo Finance's public chart API (keyless, JSON).
+
+    Tickers are bare symbols ("SPY", "AAPL"). More robust than Stooq for a
+    multi-symbol burst. Retries with backoff on transient 429/5xx.
+    """
+    import time as _time
+
+    last_err: Exception | None = None
+    for i in range(attempts):
+        try:
+            payload = _http_get(
+                _YAHOO_CHART + ticker, {"range": lookback_range, "interval": "1d"}
+            ).json()
+            chart = payload.get("chart") or {}
+            if chart.get("error"):
+                raise RuntimeError(f"Yahoo error for {ticker}: {chart['error']}")
+            results = chart.get("result") or []
+            if not results:
+                raise RuntimeError(f"Yahoo returned no result for {ticker}")
+            r = results[0]
+            ts = r.get("timestamp") or []
+            quote = ((r.get("indicators") or {}).get("quote") or [{}])[0]
+            if not ts or not quote.get("close"):
+                raise RuntimeError(f"Yahoo returned no candles for {ticker}")
+            df = pd.DataFrame(
+                {
+                    "time": pd.to_datetime(ts, unit="s", utc=True),
+                    "open": quote.get("open"),
+                    "high": quote.get("high"),
+                    "low": quote.get("low"),
+                    "close": quote.get("close"),
+                    "volume": quote.get("volume"),
+                }
+            ).dropna(subset=["open", "high", "low", "close"]).reset_index(drop=True)
+            if df.empty:
+                raise RuntimeError(f"Yahoo returned only empty candles for {ticker}")
+            df = df.astype({"open": float, "high": float, "low": float, "close": float})
+            df["volume"] = df["volume"].fillna(0).astype(float)
+            return Bars(symbol=ticker.upper(), venue=Venue.IBKR, df=df, source="yahoo_chart")
+        except Exception as e:
+            last_err = e
+            if i < attempts - 1:
+                _time.sleep(0.8 * (i + 1))
+    raise RuntimeError(f"Yahoo failed for {ticker} after {attempts} attempts: {last_err}")
+
+
+def fetch_equity_daily(ticker: str = "SPY") -> Bars:
+    """Equity/ETF daily bars: Yahoo primary, Stooq fallback.
+
+    ``ticker`` is a bare symbol ("SPY"); the Stooq fallback maps it to 'spy.us'.
+    """
+    try:
+        return fetch_yahoo_daily(ticker)
+    except Exception as ye:
+        try:
+            return fetch_stooq_daily(f"{ticker.lower()}.us")
+        except Exception as se:
+            raise RuntimeError(f"equity feed down for {ticker}: yahoo[{ye}] stooq[{se}]")
 
 
 def synthetic_bars(
