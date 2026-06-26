@@ -26,15 +26,30 @@ export async function POST(req: NextRequest) {
   const sb = serverClient();
   if (!sb) return NextResponse.json({ error: "Not connected to Supabase." }, { status: 503 });
 
-  // Don't stack requests — if one is already queued or running, return it.
+  // Don't stack requests — if one is genuinely active, return it. But a request
+  // stuck in "running" past 10 min means its poller died mid-run; auto-clear it
+  // so the button never jams forever.
   const { data: active } = await sb
     .from("run_requests")
     .select("*")
     .in("status", ["pending", "running"])
     .order("created_at", { ascending: false })
     .limit(1);
-  if (active && active.length > 0) {
-    return NextResponse.json({ queued: false, alreadyActive: true, request: active[0] });
+  const a = active?.[0];
+  if (a) {
+    const refMs = new Date(a.claimed_at ?? a.created_at).getTime();
+    const stale = a.status === "running" && Date.now() - refMs > 10 * 60 * 1000;
+    if (!stale) {
+      return NextResponse.json({ queued: false, alreadyActive: true, request: a });
+    }
+    await sb
+      .from("run_requests")
+      .update({
+        status: "error",
+        completed_at: new Date().toISOString(),
+        result: { error: "stale — no poller completed it within 10 min" },
+      })
+      .eq("id", a.id);
   }
 
   let note: string | undefined;
