@@ -123,8 +123,8 @@ class Division(abc.ABC):
         source = fetch or self.fetch
         try:
             bars = bars if bars is not None else (source() if source else None)
-        except Exception:
-            self.last_status = "abstained — data feed unavailable"
+        except Exception as e:
+            self.last_status = f"abstained — data feed unavailable ({str(e)[:90]})"
             return None  # any data failure -> abstain (no trade on garbage)
         if bars is None:
             self.last_status = "abstained — no data"

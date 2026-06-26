@@ -24,10 +24,21 @@ _KRAKEN_OHLC = "https://api.kraken.com/0/public/OHLC"
 _STOOQ_CSV = "https://stooq.com/q/d/l/"
 
 
-def _http_get(url: str, params: dict, timeout: float = 10.0):
+# A browser-ish UA + Accept; free sources (esp. Stooq) often refuse the default
+# python-httpx agent or throttle it harder.
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/csv,application/json,text/plain,*/*",
+}
+
+
+def _http_get(url: str, params: dict, timeout: float = 15.0):
     import httpx  # local import so the package imports without httpx in minimal envs
 
-    resp = httpx.get(url, params=params, timeout=timeout)
+    resp = httpx.get(url, params=params, timeout=timeout, headers=_HEADERS, follow_redirects=True)
     resp.raise_for_status()
     return resp
 
@@ -58,17 +69,36 @@ def fetch_kraken_ohlc(pair: str = "XBTUSD", interval_minutes: int = 1440) -> Bar
     return Bars(symbol=pair, venue=Venue.KRAKEN, df=df, source="kraken_public_ohlc")
 
 
-def fetch_stooq_daily(symbol: str = "spy.us") -> Bars:
-    """Daily equity/ETF bars from Stooq (keyless). Symbols like 'spy.us', 'qqq.us'."""
-    resp = _http_get(_STOOQ_CSV, {"s": symbol, "i": "d"})
-    df = pd.read_csv(io.StringIO(resp.text))
-    if df.empty or "Close" not in df.columns:
-        raise RuntimeError(f"Stooq returned no usable data for {symbol}")
-    df = df.rename(columns=str.lower)
-    df = df.assign(time=pd.to_datetime(df["date"], utc=True))[
-        ["time", "open", "high", "low", "close", "volume"]
-    ].astype({"open": float, "high": float, "low": float, "close": float, "volume": float})
-    return Bars(symbol=symbol.upper(), venue=Venue.IBKR, df=df, source="stooq_daily")
+def fetch_stooq_daily(symbol: str = "spy.us", *, attempts: int = 3) -> Bars:
+    """Daily equity/ETF bars from Stooq (keyless). Symbols like 'spy.us', 'qqq.us'.
+
+    Stooq throttles bursts (a multi-symbol scan hits it many times at once) and
+    answers a blocked request with a non-CSV body ("Exceeded the daily hits
+    limit") rather than an HTTP error. Retry with backoff, which also spaces the
+    burst out enough to recover. Raises with the real reason if it still fails.
+    """
+    import time as _time
+
+    last_err: Exception | None = None
+    for i in range(attempts):
+        try:
+            text = _http_get(_STOOQ_CSV, {"s": symbol, "i": "d"}).text.strip()
+            head = text.splitlines()[0] if text else ""
+            if not text or "Close" not in head:
+                raise RuntimeError(f"Stooq blocked/empty for {symbol}: {text[:80]!r}")
+            df = pd.read_csv(io.StringIO(text))
+            if df.empty or "Close" not in df.columns:
+                raise RuntimeError(f"Stooq returned no rows for {symbol}")
+            df = df.rename(columns=str.lower)
+            df = df.assign(time=pd.to_datetime(df["date"], utc=True))[
+                ["time", "open", "high", "low", "close", "volume"]
+            ].astype({"open": float, "high": float, "low": float, "close": float, "volume": float})
+            return Bars(symbol=symbol.upper(), venue=Venue.IBKR, df=df, source="stooq_daily")
+        except Exception as e:  # transient block / network — back off and retry
+            last_err = e
+            if i < attempts - 1:
+                _time.sleep(1.0 * (i + 1))  # 1s, 2s — spreads the burst out
+    raise RuntimeError(f"Stooq failed for {symbol} after {attempts} attempts: {last_err}")
 
 
 def synthetic_bars(
