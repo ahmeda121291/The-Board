@@ -73,10 +73,26 @@ class Division(abc.ABC):
         if not fetchers:
             return [p for p in [self.propose(bankroll_cad=bankroll_cad)] if p is not None]
 
+        # Fetch every symbol's bars concurrently — the slow part is network I/O,
+        # so this turns ~N sequential round-trips into a few parallel rounds.
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _safe_fetch(f):
+            try:
+                return f()
+            except Exception:
+                return None  # dead/slow symbol -> abstain, never blocks the others
+
+        with ThreadPoolExecutor(max_workers=min(8, len(fetchers))) as ex:
+            all_bars = list(ex.map(_safe_fetch, fetchers))
+
         pitches: list[Pitch] = []
         last_reason = "abstained — no edge / trigger not fired"
-        for f in fetchers:
-            p = self.propose(fetch=f, bankroll_cad=bankroll_cad)
+        for bars in all_bars:
+            if bars is None:
+                last_reason = "abstained — data feed unavailable"
+                continue
+            p = self.propose(bars=bars, bankroll_cad=bankroll_cad)
             if p is not None:
                 pitches.append(p)
             else:

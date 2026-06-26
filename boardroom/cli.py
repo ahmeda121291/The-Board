@@ -159,7 +159,7 @@ def _run(args: argparse.Namespace) -> int:
             result = org.run_once()
             d = result.decision
             head = d.kind.value.upper() + (f" {d.division.value} {d.size_cad:.2f} CAD" if d.division else "")
-            console.print(f"[bold]checkpoint {datetime.now(timezone.utc):%H:%M UTC}[/bold] → {head}")
+            console.print(f"[bold]checkpoint {datetime.now(timezone.utc):%H:%M UTC}[/bold] -> {head}")
             console.print(f"[italic dim]{d.rationale}[/italic dim]")
             # The CFO studies the scoreboard and writes a strategic review each run.
             try:
@@ -226,7 +226,7 @@ def _poll(args: argparse.Namespace) -> int:
                 continue
             if req is not None:
                 rid = req.get("id")
-                console.print(f"[bold]▶ run request #{rid}[/bold] ({req.get('source', '?')}) — convening")
+                console.print(f"[bold]> run request #{rid}[/bold] ({req.get('source', '?')}) - convening")
                 try:
                     result = org.run_once()
                     d = result.decision
@@ -242,7 +242,7 @@ def _poll(args: argparse.Namespace) -> int:
                         "at": datetime.now(timezone.utc).isoformat(),
                     }
                     org.repo.complete_run_request(rid, "done", summary, d.decision_id)
-                    console.print(f"[bold]✓ #{rid} done[/bold] → {head}")
+                    console.print(f"[bold][#{rid} done][/bold] -> {head}")
                     try:
                         from boardroom.agents.strategist import generate_and_save_review
 
@@ -250,7 +250,7 @@ def _poll(args: argparse.Namespace) -> int:
                     except Exception:
                         pass
                 except Exception as e:  # never let one bad run kill the poller
-                    console.print(f"[red]✗ #{rid} error: {str(e)[:120]}[/red]")
+                    console.print(f"[red][#{rid} error] {str(e)[:120]}[/red]")
                     try:
                         org.repo.complete_run_request(rid, "error", {"error": str(e)[:300]})
                     except Exception:

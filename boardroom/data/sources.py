@@ -24,7 +24,7 @@ _KRAKEN_OHLC = "https://api.kraken.com/0/public/OHLC"
 _STOOQ_CSV = "https://stooq.com/q/d/l/"
 
 
-def _http_get(url: str, params: dict, timeout: float = 20.0):
+def _http_get(url: str, params: dict, timeout: float = 10.0):
     import httpx  # local import so the package imports without httpx in minimal envs
 
     resp = httpx.get(url, params=params, timeout=timeout)
