@@ -43,6 +43,10 @@ class Bars:
     def closes(self) -> np.ndarray:
         return self.df["close"].to_numpy(dtype=float)
 
+    @property
+    def volumes(self) -> np.ndarray:
+        return self.df["volume"].to_numpy(dtype=float)
+
 
 def sanity_check(df: pd.DataFrame, *, min_rows: int = 30) -> None:
     """Raise :class:`SanityError` if the frame is unusable.

@@ -29,6 +29,9 @@ class Division(abc.ABC):
     fetch: Callable[[], Bars] | None = None  # real data source; None -> needs injected bars
     fetchers: list[Callable[[], Bars]] | None = None  # multi-symbol universe; one pitch each
     universe_symbols: list[str] = field(default_factory=list)  # display names of the scanned set
+    #: Advisory divisions pitch and log but are NEVER funded with real capital —
+    #: a safe way to validate a new strategy on live data before it can trade.
+    advisory: bool = False
     enabled: bool = True
     max_age_seconds: float = 60 * 60 * 36  # daily bars: ~1.5 days tolerance
     min_rows: int = 40
@@ -43,6 +46,12 @@ class Division(abc.ABC):
     def needs_fx(self) -> bool:
         """True if the trade crosses CAD<->USD (IBKR USD names, USD crypto pairs)."""
         return self.venue == Venue.IBKR
+
+    def venue_for(self, bars: Bars) -> Venue:
+        """Execution venue for a pitch. Default = the division's venue; an
+        asset-agnostic division (Momentum scans stocks AND crypto) overrides this
+        to route per symbol off the data source."""
+        return self.venue
 
     def stop_fraction(self, output: ModelOutput) -> float:
         """Fractional loss if the stop is hit — grounds max_loss in real volatility."""
@@ -152,9 +161,10 @@ class Division(abc.ABC):
             self.last_status = "abstained — computed size rounds to zero"
             return None
 
+        venue = self.venue_for(bars)
         stop_frac = self.stop_fraction(output)
         cost = self.cost_model.round_trip_cost_cad(
-            venue=self.venue, notional_cad=capital, needs_fx=self.needs_fx()
+            venue=venue, notional_cad=capital, needs_fx=self.needs_fx()
         )
         max_loss = round(capital * stop_frac + cost, 2)
 
@@ -172,7 +182,7 @@ class Division(abc.ABC):
         return Pitch(
             pitch_id=str(uuid.uuid4()),
             division=self.division,
-            venue=self.venue,
+            venue=venue,
             symbol=bars.symbol,
             snapshot=snapshot,
             signals=signals,

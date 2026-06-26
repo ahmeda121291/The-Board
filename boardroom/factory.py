@@ -25,7 +25,8 @@ DIRECTIONAL_UNIVERSE = (
     "SPY", "QQQ", "IWM", "DIA",          # broad-market ETFs
     "XLK", "XLF", "XLE", "XLV",          # sector ETFs (rotation candidates)
     "AAPL", "MSFT", "NVDA", "AMZN",      # liquid mega-caps
-    "GOOGL", "META",
+    "GOOGL", "META", "LLY", "AVGO",      # incl. high-catalyst megacaps (LLY = the Trump-news case)
+    "COST", "UNH", "V",
 )
 EVENT_UNIVERSE = (
     "XBTUSD", "ETHUSD", "SOLUSD", "XRPUSD", "ADAUSD", "LINKUSD", "DOTUSD",
@@ -37,8 +38,7 @@ EVENT_UNIVERSE = (
 # long-only book can't realistically trade.
 DIRECTIONAL_UNIVERSE_WIDE = DIRECTIONAL_UNIVERSE + (
     "SMH", "XLY", "XLP", "XLI", "XLU", "GLD", "TLT", "EEM", "ARKK", "IBB",   # more ETFs
-    "TSLA", "AMD", "AVGO", "NFLX", "CRM", "JPM", "BAC", "WMT", "COST",       # liquid large-caps
-    "XOM", "CVX", "UNH", "LLY", "V", "MA", "HD",
+    "TSLA", "AMD", "NFLX", "CRM", "JPM", "BAC", "WMT", "XOM", "CVX", "MA", "HD",  # large-caps
 )
 EVENT_UNIVERSE_WIDE = EVENT_UNIVERSE + (
     "LTCUSD", "AVAXUSD", "DOGEUSD",
@@ -91,6 +91,8 @@ def build_default_org(
     # so its pitches route to the matching broker.
     dv = directional_execution_venue()
 
+    from boardroom.divisions.momentum import MomentumDivision
+
     yield_div = YieldDivision()
     directional = DirectionalDivision(
         fetchers=directional_fetchers, venue=dv, universe_symbols=dir_syms
@@ -98,9 +100,17 @@ def build_default_org(
     event = EventDivision(
         fetchers=event_fetchers, enabled=enable_event, universe_symbols=evt_syms
     )
+    # Momentum (catalyst-continuation) scans equities AND crypto and routes each
+    # pitch to its venue. Advisory: it logs breakouts but never trades real money
+    # until validated. This is the structural answer to missing catalyst moves.
+    momentum = MomentumDivision(
+        fetchers=list(directional_fetchers) + list(event_fetchers),
+        equity_venue=dv,
+        universe_symbols=dir_syms + evt_syms,
+    )
     effort = EffortDivision()  # disabled
 
-    divisions = [directional, event, effort]
+    divisions = [directional, event, momentum, effort]
 
     # Real adapters when requested + credentialed; stubs otherwise. Live
     # execution still requires the LIVE_TRADING master switch regardless.

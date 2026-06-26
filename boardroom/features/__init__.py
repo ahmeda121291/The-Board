@@ -7,6 +7,7 @@ These are the numbers a division computes and an explicit model maps to
 from __future__ import annotations
 
 from boardroom.features.technical import (
+    breakout_strength,
     drawdown,
     liquidity_proxy,
     max_drawdown,
@@ -15,6 +16,7 @@ from boardroom.features.technical import (
     rolling_correlation,
     rsi,
     volatility,
+    volume_surge,
     zscore_meanrev,
 )
 
@@ -28,4 +30,6 @@ __all__ = [
     "realized_sharpe",
     "liquidity_proxy",
     "rsi",
+    "volume_surge",
+    "breakout_strength",
 ]

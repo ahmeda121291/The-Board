@@ -168,6 +168,14 @@ checkpoints, without increasing entry frequency. Not warranted at current size.
 
 ## Changelog
 
+- **2026-06-26** — **Momentum / catalyst-continuation division** added (the LLY fix).
+  Root cause of missing catalyst moves: every prior model (Directional, Event) is
+  mean-reversion biased and *fades* strength, so a volume-driven breakout was scored
+  as a SELL. The new Momentum strategy BUYS volume-confirmed upside breakouts
+  (`breakout_strength` + `volume_surge` features), is asset-agnostic (stocks AND
+  crypto, routed per symbol), and ships **advisory** — it pitches/logs but gets no
+  real capital until validated on live data. LLY + more catalyst-prone megacaps added
+  to the core daily universe.
 - **2026-06-26** — Equity feed switched to **Yahoo Finance** (Stooq was serving a
   bot-block page). Dashboard **"Tracked universe"** card (the symbols scanned each
   run). **"Run wide scan"** button + `--wide` mode: a broader curated ~50-symbol set

@@ -27,6 +27,7 @@ class Division(str, enum.Enum):
     DIRECTIONAL = "directional"  # equities/ETFs trend & mean-reversion (price)
     EVENT = "event"          # rare asymmetric crypto bets (reflexivity)
     EFFORT = "effort"        # non-market operating bets (work) — disabled at launch
+    MOMENTUM = "momentum"    # catalyst-continuation: rides volume-confirmed breakouts
 
 
 class Venue(str, enum.Enum):

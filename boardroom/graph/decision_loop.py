@@ -202,7 +202,12 @@ class Orchestrator:
         hurdle_rate = self.yield_division.hurdle_for(horizon_days=1.0)
 
         pitches = self.gather_pitches(portfolio)
-        survivors, challenges = self.risk_review(pitches, portfolio)
+        # Advisory divisions (e.g. Momentum while it's being validated) pitch and
+        # are logged for visibility, but are excluded from funding — they never
+        # get real capital until promoted.
+        advisory = {d.division.value for d in self.divisions if getattr(d, "advisory", False)}
+        fundable = [p for p in pitches if p.division.value not in advisory]
+        survivors, challenges = self.risk_review(fundable, portfolio)
         decision, ranked = self.decide(survivors, hurdle_rate, deployed_cad, portfolio)
 
         session = self._build_session(decision, pitches, challenges, ranked, hurdle_rate, portfolio)
@@ -215,12 +220,15 @@ class Orchestrator:
         the risk manager's verdict, and the CEO's ranking + reason. This is the
         narrative the dashboard renders."""
         ranked_by_id = {r.pitch.pitch_id: r for r in ranked}
+        advisory = {d.division.value for d in self.divisions if getattr(d, "advisory", False)}
 
         pitch_rows = []
         for p in pitches:
             ch = challenges.get(p.pitch_id)
             r = ranked_by_id.get(p.pitch_id)
-            if decision.pitch_id == p.pitch_id and decision.kind.value == "fund":
+            if p.division.value in advisory:
+                status, reason = "shadow", "advisory — validating on live data, no capital yet"
+            elif decision.pitch_id == p.pitch_id and decision.kind.value == "fund":
                 status, reason = "funded", "CEO funded — best risk-adjusted edge over the floor"
             elif ch is not None and not ch.approved:
                 status, reason = "vetoed", "; ".join(ch.hard_objections) or "risk manager veto"

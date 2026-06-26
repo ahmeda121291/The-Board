@@ -21,6 +21,11 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 - **Yield** (crypto/Kraken) = the floor every idea must beat · **Event** (crypto/Kraken)
   · **Directional** (stocks/ETFs via Wealthsimple→SnapTrade) · **Effort** (disabled).
+- **Momentum** (catalyst-continuation) = the counterweight to the mean-reversion bias
+  in Directional/Event: BUYS volume-confirmed upside breakouts (`models/momentum.py`,
+  `breakout_strength`+`volume_surge`). Asset-agnostic (stocks+crypto, `venue_for`
+  routes per symbol). Ships **advisory** (`advisory=True` → pitches/logs but never
+  funded) until validated. Advisory pitches are excluded from CEO funding in the loop.
 - **Scanned universe** (factory.py): core = 14 liquid ETFs/mega-caps + 7 crypto pairs;
   **wide** = ~40 stocks/ETFs + 10 crypto (the "Run wide scan" button / `--wide`).
   Equities via **Yahoo** (`fetch_equity_daily`, Stooq fallback), crypto via Kraken.
