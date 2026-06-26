@@ -21,9 +21,11 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 - **Yield** (crypto/Kraken) = the floor every idea must beat · **Event** (crypto/Kraken)
   · **Directional** (stocks/ETFs via Wealthsimple→SnapTrade) · **Effort** (disabled).
-- **Scanned universe** (factory.py): Directional = ~14 liquid ETFs/mega-caps via Stooq;
-  Event = 7 crypto pairs via Kraken. Each division pitches one idea per qualifying
-  symbol (`propose_all`); the CEO ranks across all and funds the single best.
+- **Scanned universe** (factory.py): core = 14 liquid ETFs/mega-caps + 7 crypto pairs;
+  **wide** = ~40 stocks/ETFs + 10 crypto (the "Run wide scan" button / `--wide`).
+  Equities via **Yahoo** (`fetch_equity_daily`, Stooq fallback), crypto via Kraken.
+  Each division pitches one idea per qualifying symbol (`propose_all`); the CEO ranks
+  across all and funds the single best. Long-only (Wealthsimple/Kraken-spot can't short).
 - **CEO** ranks pitches deterministically vs hurdle + track record; default HOLD; funds
   ≤1 best idea. **Risk Manager** adversarially vetoes. **Critic** challenges reasoning.
   **CFO/Strategist** studies the scoreboard, writes a review each checkpoint

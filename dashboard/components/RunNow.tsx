@@ -35,7 +35,7 @@ function statusLabel(r: RunRequest | null): { text: string; tone: string } {
 export function RunNow() {
   const [latest, setLatest] = useState<RunRequest | null>(null);
   const [busy, setBusy] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  const [confirming, setConfirming] = useState<"core" | "wide" | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -60,21 +60,26 @@ export function RunNow() {
     return () => clearInterval(t);
   }, [latest?.status, refresh]);
 
-  async function run() {
+  async function run(mode: "core" | "wide") {
     setBusy(true);
     setMsg(null);
     try {
-      const res = await fetch("/api/run", { method: "POST" });
+      const res = await fetch("/api/run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
       const data = await res.json();
       if (data.alreadyActive) setMsg("A run is already queued or in progress.");
-      else if (data.queued) setMsg("Requested — your PC will run it shortly.");
+      else if (data.queued)
+        setMsg(`${mode === "wide" ? "Wide scan" : "Run"} requested — your PC will run it shortly.`);
       else if (data.error) setMsg(data.error);
       await refresh();
     } catch {
       setMsg("Request failed.");
     } finally {
       setBusy(false);
-      setConfirming(false);
+      setConfirming(null);
     }
   }
 
@@ -89,27 +94,39 @@ export function RunNow() {
       </div>
 
       {!confirming ? (
-        <button
-          onClick={() => setConfirming(true)}
-          disabled={busy || active}
-          className="rounded-xl border border-sky-400/30 bg-sky-400/10 px-4 py-2 text-sm text-sky-200 transition hover:bg-sky-400/20 disabled:opacity-40"
-        >
-          {active ? "Run in progress…" : "Run now"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setConfirming("core")}
+            disabled={busy || active}
+            className="rounded-xl border border-sky-400/30 bg-sky-400/10 px-4 py-2 text-sm text-sky-200 transition hover:bg-sky-400/20 disabled:opacity-40"
+          >
+            {active ? "Run in progress…" : "Run now"}
+          </button>
+          <button
+            onClick={() => setConfirming("wide")}
+            disabled={busy || active}
+            title="Scan the broader curated universe (~50 names). Takes a few minutes."
+            className="rounded-xl border border-violet-400/30 bg-violet-400/10 px-4 py-2 text-sm text-violet-200 transition hover:bg-violet-400/20 disabled:opacity-40"
+          >
+            Run wide scan
+          </button>
+        </div>
       ) : (
         <div className="flex items-center gap-2">
           <span className="text-xs text-amber-300">
-            Convene the boardroom now? It may place a real trade if the CEO funds.
+            {confirming === "wide"
+              ? "Run the wide scan (~50 names, a few minutes)? It may place a real trade if the CEO funds."
+              : "Convene the boardroom now? It may place a real trade if the CEO funds."}
           </span>
           <button
-            onClick={run}
+            onClick={() => run(confirming)}
             disabled={busy}
             className="rounded-xl border border-emerald-400/40 bg-emerald-400/10 px-3 py-1.5 text-sm text-emerald-200 disabled:opacity-40"
           >
-            {busy ? "…" : "Yes, run it"}
+            {busy ? "…" : confirming === "wide" ? "Yes, wide scan" : "Yes, run it"}
           </button>
           <button
-            onClick={() => setConfirming(false)}
+            onClick={() => setConfirming(null)}
             disabled={busy}
             className="rounded-xl border border-white/15 px-3 py-1.5 text-sm text-slate-300"
           >

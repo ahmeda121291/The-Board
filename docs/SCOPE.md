@@ -168,6 +168,11 @@ checkpoints, without increasing entry frequency. Not warranted at current size.
 
 ## Changelog
 
+- **2026-06-26** — Equity feed switched to **Yahoo Finance** (Stooq was serving a
+  bot-block page). Dashboard **"Tracked universe"** card (the symbols scanned each
+  run). **"Run wide scan"** button + `--wide` mode: a broader curated ~50-symbol set
+  (40 liquid stocks/ETFs + 10 crypto) on demand, vs the daily core ~21. Deliberately
+  curated/liquid, not a whole-market scan.
 - **2026-06-26** — **Widened the scanned universe** from 1 ticker per division to a
   basket (Directional: ~14 ETFs/mega-caps; Event: 7 crypto pairs). Each checkpoint
   scores every symbol and the CEO funds the best — far more likely to find an

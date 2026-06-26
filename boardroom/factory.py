@@ -31,13 +31,28 @@ EVENT_UNIVERSE = (
     "XBTUSD", "ETHUSD", "SOLUSD", "XRPUSD", "ADAUSD", "LINKUSD", "DOTUSD",
 )
 
+# "Wide scan" — a broader but still curated, liquid set used on demand (the
+# second dashboard button). A superset of the core universe. Deliberately NOT
+# the whole market: more tickers would just surface illiquid/noisy names a $200
+# long-only book can't realistically trade.
+DIRECTIONAL_UNIVERSE_WIDE = DIRECTIONAL_UNIVERSE + (
+    "SMH", "XLY", "XLP", "XLI", "XLU", "GLD", "TLT", "EEM", "ARKK", "IBB",   # more ETFs
+    "TSLA", "AMD", "AVGO", "NFLX", "CRM", "JPM", "BAC", "WMT", "COST",       # liquid large-caps
+    "XOM", "CVX", "UNH", "LLY", "V", "MA", "HD",
+)
+EVENT_UNIVERSE_WIDE = EVENT_UNIVERSE + (
+    "LTCUSD", "AVAXUSD", "DOGEUSD",
+)
 
-def _live_fetchers():
+
+def _live_fetchers(wide: bool = False):
     from boardroom.data.sources import fetch_equity_daily, fetch_kraken_ohlc
 
-    directional = [partial(fetch_equity_daily, s) for s in DIRECTIONAL_UNIVERSE]
-    event = [partial(fetch_kraken_ohlc, p, 1440) for p in EVENT_UNIVERSE]
-    return directional, event
+    dsyms = DIRECTIONAL_UNIVERSE_WIDE if wide else DIRECTIONAL_UNIVERSE
+    esyms = EVENT_UNIVERSE_WIDE if wide else EVENT_UNIVERSE
+    directional = [partial(fetch_equity_daily, s) for s in dsyms]
+    event = [partial(fetch_kraken_ohlc, p, 1440) for p in esyms]
+    return directional, event, list(dsyms), list(esyms)
 
 
 def _synthetic_fetchers():
@@ -60,11 +75,14 @@ def build_default_org(
     data_mode: str = "live",
     enable_event: bool = True,
     prefer_live_brokers: bool = False,
+    wide: bool = False,
     **orch_kwargs,
 ) -> Orchestrator:
-    directional_fetchers, event_fetchers = (
-        _live_fetchers() if data_mode == "live" else _synthetic_fetchers()
-    )
+    if data_mode == "live":
+        directional_fetchers, event_fetchers, dir_syms, evt_syms = _live_fetchers(wide=wide)
+    else:
+        directional_fetchers, event_fetchers = _synthetic_fetchers()
+        dir_syms, evt_syms = ["SPY", "QQQ"], ["XBTUSD", "ETHUSD"]
 
     from boardroom.brokers import StubBroker, directional_execution_venue, make_brokers
 
@@ -72,11 +90,6 @@ def build_default_org(
     # SnapTrade (Wealthsimple) if set, else IBKR. The division is tagged with it
     # so its pitches route to the matching broker.
     dv = directional_execution_venue()
-
-    # Display names for the dashboard's tracked-universe table (live = real
-    # tickers; synthetic = the small offline basket).
-    dir_syms = list(DIRECTIONAL_UNIVERSE if data_mode == "live" else ("SPY", "QQQ"))
-    evt_syms = list(EVENT_UNIVERSE if data_mode == "live" else ("XBTUSD", "ETHUSD"))
 
     yield_div = YieldDivision()
     directional = DirectionalDivision(

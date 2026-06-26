@@ -58,7 +58,9 @@ def _decide(args: argparse.Namespace) -> int:
         return 2
     live = bool(args.confirm_live and s.live_trading)
 
-    org = build_default_org(data_mode="synthetic" if args.synthetic else "live")
+    org = build_default_org(
+        data_mode="synthetic" if args.synthetic else "live", wide=getattr(args, "wide", False)
+    )
     console.rule(f"[bold]Decision loop ({'LIVE' if live else 'dry-run'})")
     if live:
         org.repo.set_live_armed(True)  # durable: dashboard shows LIVE-armed across redeploys
@@ -138,6 +140,7 @@ def _run(args: argparse.Namespace) -> int:
     org = build_default_org(
         data_mode="synthetic" if args.synthetic else "live",
         prefer_live_brokers=not args.synthetic,
+        wide=getattr(args, "wide", False),
     )
     console.rule(f"[bold]Boardroom scheduler ({'LIVE' if live else 'dry-run'})")
     console.print(f"Daily checkpoint at [bold]{s.checkpoint_utc} UTC[/bold]. Ctrl+C to stop.\n")
@@ -226,9 +229,23 @@ def _poll(args: argparse.Namespace) -> int:
                 continue
             if req is not None:
                 rid = req.get("id")
-                console.print(f"[bold]> run request #{rid}[/bold] ({req.get('source', '?')}) - convening")
+                mode = (req.get("mode") or "core").lower()
+                console.print(
+                    f"[bold]> run request #{rid}[/bold] ({req.get('source', '?')} · {mode}) - convening"
+                )
                 try:
-                    result = org.run_once()
+                    # 'wide' requests scan the broader curated universe; 'core' reuses
+                    # the already-built org. Both write to the same Supabase.
+                    run_org = (
+                        org
+                        if mode != "wide"
+                        else build_default_org(
+                            data_mode="synthetic" if args.synthetic else "live",
+                            prefer_live_brokers=not args.synthetic,
+                            wide=True,
+                        )
+                    )
+                    result = run_org.run_once()
                     d = result.decision
                     head = d.kind.value.upper() + (
                         f" {d.division.value} {d.size_cad:.2f} CAD" if d.division else ""
@@ -239,6 +256,7 @@ def _poll(args: argparse.Namespace) -> int:
                         "size_cad": d.size_cad,
                         "live": d.live,
                         "rationale": d.rationale,
+                        "mode": mode,
                         "at": datetime.now(timezone.utc).isoformat(),
                     }
                     org.repo.complete_run_request(rid, "done", summary, d.decision_id)
@@ -358,10 +376,12 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--synthetic", action="store_true", help="use offline synthetic data")
     p_run.add_argument("--confirm-live", action="store_true", help="execute live (requires LIVE_TRADING=true)")
     p_run.add_argument("--once", action="store_true", help="run one checkpoint now, then exit")
+    p_run.add_argument("--wide", action="store_true", help="scan the broader curated universe")
 
     p_decide = sub.add_parser("decide", help="run one daily decision loop")
     p_decide.add_argument("--synthetic", action="store_true", help="use offline synthetic data")
     p_decide.add_argument("--confirm-live", action="store_true", help="execute live (requires LIVE_TRADING=true)")
+    p_decide.add_argument("--wide", action="store_true", help="scan the broader curated universe")
 
     p_poll = sub.add_parser("poll", help="watch for dashboard 'Run now' requests and execute them")
     p_poll.add_argument("--synthetic", action="store_true", help="use offline synthetic data")

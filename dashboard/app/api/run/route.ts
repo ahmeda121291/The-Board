@@ -53,16 +53,18 @@ export async function POST(req: NextRequest) {
   }
 
   let note: string | undefined;
+  let mode = "core";
   try {
     const body = await req.json();
     note = typeof body?.note === "string" ? body.note.slice(0, 200) : undefined;
+    if (body?.mode === "wide") mode = "wide";
   } catch {
     // no body is fine
   }
 
   const { data, error } = await sb
     .from("run_requests")
-    .insert({ source: "dashboard", status: "pending", note: note ?? null })
+    .insert({ source: "dashboard", status: "pending", note: note ?? null, mode })
     .select("*")
     .limit(1);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
