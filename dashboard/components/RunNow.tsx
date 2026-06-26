@@ -21,10 +21,13 @@ function statusLabel(r: RunRequest | null): { text: string; tone: string } {
     case "error":
       return { text: `error: ${r.result?.error ?? "unknown"}`, tone: "text-rose-300" };
     case "done": {
-      const k = r.result?.kind ? String(r.result.kind).toUpperCase() : "DONE";
+      const kind = r.result?.kind ? String(r.result.kind).toLowerCase() : "";
+      const k = kind ? kind.toUpperCase() : "DONE";
       const div = r.result?.division ? ` ${r.result.division}` : "";
-      const live = r.result?.live ? " · LIVE" : " · dry-run";
-      return { text: `last run: ${k}${div}${live}`, tone: "text-emerald-300" };
+      // A HOLD / FUND_NONE places no order, so "no trade" — not "dry-run".
+      // dry-run only means a simulated FUND that wasn't sent live.
+      const tag = r.result?.live ? " · LIVE" : kind === "fund" ? " · dry-run" : " · no trade";
+      return { text: `last run: ${k}${div}${tag}`, tone: "text-emerald-300" };
     }
   }
 }
