@@ -251,6 +251,7 @@ class Orchestrator:
                     "opportunity": p.opportunity,
                     "why_now": p.why_now,
                     "features": p.signals.features,
+                    "news": p.signals.news,
                     "risk_approved": (ch.approved if ch else None),
                     "risk_objections": (ch.hard_objections if ch else []),
                     "risk_concern": (ch.qualitative_concern if ch else ""),

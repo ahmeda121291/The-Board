@@ -168,6 +168,12 @@ checkpoints, without increasing entry frequency. Not warranted at current size.
 
 ## Changelog
 
+- **2026-06-26** — **News / catalyst feed** (`data/news.py`, keyless Yahoo search).
+  Computes a deterministic `news_intensity` (recency-weighted headline burst) that
+  confirms whether real coverage backs a breakout, and attaches the headlines as
+  read-only context — fetched only for breakout candidates, degrades to "no news"
+  on failure. Grounding intact: the score is code, headlines are context, neither
+  is an LLM number. Shown on the dashboard session ("📰 Catalyst news").
 - **2026-06-26** — **Momentum / catalyst-continuation division** added (the LLY fix).
   Root cause of missing catalyst moves: every prior model (Directional, Event) is
   mean-reversion biased and *fades* strength, so a volume-driven breakout was scored

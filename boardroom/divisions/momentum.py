@@ -37,3 +37,18 @@ class MomentumDivision(Division):
     def venue_for(self, bars: Bars) -> Venue:
         # Kraken-sourced bars are crypto; everything else is the equity venue.
         return Venue.KRAKEN if bars.venue == Venue.KRAKEN else self.equity_venue
+
+    def enrich(self, pitch, bars: Bars):
+        """Attach catalyst news to a breakout pitch (called only when we pitch, so
+        we fetch news for the handful of breakouts, not the whole universe). The
+        computed ``news_intensity`` confirms whether real coverage backs the move;
+        the headlines are read-only context. Failure degrades to 'no news'."""
+        from boardroom.data.news import fetch_news, news_intensity, top_headlines
+
+        try:
+            items = fetch_news(pitch.symbol)
+            pitch.signals.features["news_intensity"] = news_intensity(items)
+            pitch.signals.news = top_headlines(items, 3)
+        except Exception:
+            pitch.signals.features["news_intensity"] = 0.0
+        return pitch

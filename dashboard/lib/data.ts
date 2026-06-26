@@ -39,6 +39,7 @@ export type SessionPitch = {
   opportunity: string;
   why_now: string;
   features: Record<string, number>;
+  news?: string[];
   risk_approved: boolean | null;
   risk_objections: string[];
   risk_concern: string;

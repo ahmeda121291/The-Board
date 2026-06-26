@@ -26,6 +26,10 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   `breakout_strength`+`volume_surge`). Asset-agnostic (stocks+crypto, `venue_for`
   routes per symbol). Ships **advisory** (`advisory=True` → pitches/logs but never
   funded) until validated. Advisory pitches are excluded from CEO funding in the loop.
+- **News/catalyst feed** (`data/news.py`, keyless Yahoo search): computed
+  `news_intensity` (recency-weighted headline burst) confirms a breakout; headlines
+  attached as context via `Division.enrich()` (fetched only for breakout candidates).
+  Grounding intact: score is code, headlines are context. Shown on dashboard session.
 - **Scanned universe** (factory.py): core = 14 liquid ETFs/mega-caps + 7 crypto pairs;
   **wide** = ~40 stocks/ETFs + 10 crypto (the "Run wide scan" button / `--wide`).
   Equities via **Yahoo** (`fetch_equity_daily`, Stooq fallback), crypto via Kraken.

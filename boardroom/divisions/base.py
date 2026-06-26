@@ -53,6 +53,13 @@ class Division(abc.ABC):
         to route per symbol off the data source."""
         return self.venue
 
+    def enrich(self, pitch: Pitch, bars: Bars) -> Pitch:
+        """Hook to add context to a freshly-built pitch (only called when the
+        division actually pitches). Default no-op; Momentum overrides it to attach
+        catalyst news. Runs after the quant fields are fixed, so it never changes
+        the numbers the system acts on."""
+        return pitch
+
     def stop_fraction(self, output: ModelOutput) -> float:
         """Fractional loss if the stop is hit — grounds max_loss in real volatility."""
         vol = output.features.get("volatility", 0.0)
@@ -179,7 +186,7 @@ class Division(abc.ABC):
         )
 
         self.last_status = "pitched"
-        return Pitch(
+        pitch = Pitch(
             pitch_id=str(uuid.uuid4()),
             division=self.division,
             venue=venue,
@@ -195,3 +202,4 @@ class Division(abc.ABC):
             opportunity="",  # narrative filled by the LLM narrator, never here
             why_now="",
         )
+        return self.enrich(pitch, bars)
