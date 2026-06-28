@@ -20,6 +20,14 @@ class YieldDivision(Division):
     venue: Venue = Venue.KRAKEN
     model: YieldModel = field(default_factory=YieldModel)
 
+    def refresh_floor(self) -> float:
+        """Refresh the floor's carry from the live APR provider (best-effort).
+
+        Delegates to the model, which only accepts a validated, in-band value and
+        otherwise keeps the configured carry. Returns the effective APR.
+        """
+        return self.model.resolve_carry()
+
     def hurdle_for(self, horizon_days: float) -> float:
         """The floor's expected fractional return over ``horizon_days`` — the bar."""
         return self.model.carry_over(horizon_days)

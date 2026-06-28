@@ -37,6 +37,7 @@ def _doctor() -> int:
     console.print(f"Supabase configured  : {'yes' if s.supabase_configured() else '[yellow]no (in-memory repo)[/yellow]'}")
     console.print(f"Kraken creds         : {'set' if s.kraken_api_key else 'not set (Milestone 6)'}")
     console.print(f"IBKR account         : {s.ibkr_account_id or 'not set (Milestone 6)'}")
+    console.print(f"Floor carry APR      : {s.floor_carry_apr:.2%} [dim](the hurdle; live Kraken Earn refresh when wired)[/dim]")
     pv = s.starting_portfolio_cad
     console.print(f"\n[bold]Hard caps — % of portfolio[/bold] [dim](resolved at {pv:.0f} CAD)[/dim]")
     console.print(f"  total deployable   : {s.total_deployable_pct:.0%}  = {s.total_deployable_pct * pv:.2f} CAD")

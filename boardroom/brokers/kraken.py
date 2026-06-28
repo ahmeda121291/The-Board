@@ -104,6 +104,39 @@ class KrakenBroker(Broker):
         bal = self._private("Balance")
         return float(bal.get(self._cad_asset, 0.0))
 
+    # ---- floor APR provider --------------------------------------------------
+    def staking_apr(self, assets: tuple[str, ...] = ("USD", "USDC", "USDT", "DAI")) -> float:
+        """Best available staking/earn APR (as a FRACTION) across ``assets``.
+
+        Queries Kraken's Earn strategies and returns the largest *low* (i.e.
+        conservative) APR estimate among the requested low-risk floor assets,
+        converted from percent to a fraction. Raises if no usable estimate is
+        found — the caller (:meth:`YieldModel.resolve_carry`) treats any raise as
+        "keep the configured carry", so a missing/changed endpoint never corrupts
+        the hurdle. Requires credentials.
+        """
+        if not self._has_creds:
+            raise RuntimeError("no Kraken credentials for staking APR")
+        result = self._private("Earn/Strategies")
+        items = result.get("items", result) if isinstance(result, dict) else result
+        wanted = {a.upper() for a in assets}
+        best: float | None = None
+        for it in items or []:
+            if not isinstance(it, dict):
+                continue
+            if it.get("asset", "").upper() not in wanted:
+                continue
+            est = it.get("apr_estimate") or {}
+            low = est.get("low")
+            if low is None:
+                continue
+            apr_fraction = float(low) / 100.0  # Kraken reports percent
+            if best is None or apr_fraction > best:
+                best = apr_fraction
+        if best is None:
+            raise RuntimeError("no Earn APR estimate for the requested floor assets")
+        return best
+
     def place_order(self, order: Order, *, live: bool) -> Fill:
         effective_live = self._effective_live(live)
         if not effective_live:

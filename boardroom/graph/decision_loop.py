@@ -201,6 +201,7 @@ class Orchestrator:
             else self.settle_and_ratchet()  # live equity minus the protected reserve
         )
         self.load_adaptive_state()
+        self.yield_division.refresh_floor()  # live APR if wired; else configured carry
         hurdle_rate = self.yield_division.hurdle_for(horizon_days=1.0)
 
         pitches = self.gather_pitches(portfolio)
@@ -285,6 +286,7 @@ def build_decision_graph(orch: Orchestrator):
 
     def n_gather(state: dict) -> dict:
         orch.load_adaptive_state()
+        orch.yield_division.refresh_floor()
         state["hurdle_rate"] = orch.yield_division.hurdle_for(1.0)
         state["pitches"] = orch.gather_pitches(_pv(state))
         return state
