@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import json
 
+from datetime import datetime
+
 from boardroom.config import get_settings
-from boardroom.persistence.repository import DivisionState, Repository
+from boardroom.persistence.repository import DivisionState, OpenPosition, Repository
 from boardroom.schemas import Decision, Division, Pitch, ProcessLuckTag, ResolvedOutcome
 
 _SCHEMA = "boardroom"
@@ -149,6 +151,54 @@ class SupabaseRepository(Repository):
             .execute()
         )
         return res.data or []
+
+    # ---- open positions ------------------------------------------------------
+    def save_open_position(self, position: OpenPosition) -> None:
+        self._t("open_positions").upsert(
+            {
+                "decision_id": position.decision_id,
+                "division": position.division,
+                "venue": position.venue,
+                "symbol": position.symbol,
+                "size_cad": position.size_cad,
+                "predicted_return": position.predicted_return,
+                "predicted_confidence": position.predicted_confidence,
+                "cost_cad": position.cost_cad,
+                "stop_fraction": position.stop_fraction,
+                "band_low": position.band_low,
+                "band_high": position.band_high,
+                "horizon_days": position.horizon_days,
+                "opened_at": position.opened_at.isoformat(),
+                "live": position.live,
+            }
+        ).execute()
+
+    def open_positions(self) -> list[OpenPosition]:
+        res = self._t("open_positions").select("*").execute()
+        out: list[OpenPosition] = []
+        for row in res.data or []:
+            out.append(
+                OpenPosition(
+                    decision_id=row["decision_id"],
+                    division=row["division"],
+                    venue=row["venue"],
+                    symbol=row["symbol"],
+                    size_cad=row["size_cad"],
+                    predicted_return=row["predicted_return"],
+                    predicted_confidence=row["predicted_confidence"],
+                    cost_cad=row["cost_cad"],
+                    stop_fraction=row["stop_fraction"],
+                    band_low=row["band_low"],
+                    band_high=row["band_high"],
+                    horizon_days=row["horizon_days"],
+                    opened_at=datetime.fromisoformat(row["opened_at"]),
+                    live=bool(row.get("live", False)),
+                )
+            )
+        return out
+
+    def close_position(self, decision_id: str) -> None:
+        self._t("open_positions").delete().eq("decision_id", decision_id).execute()
 
     # ---- reads ---------------------------------------------------------------
     def get_division_state(self, division: str) -> DivisionState:

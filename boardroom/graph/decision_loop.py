@@ -183,7 +183,29 @@ class Orchestrator:
         decision.live = fill.is_live
         fills.append(fill)
         self.repo.audit("execute", {"decision_id": decision.decision_id, "live": fill.is_live})
+
+        # Record the open position so it can be resolved (paper or live) at a
+        # later checkpoint and fed back into the adaptive engine.
+        from boardroom.graph.resolution_loop import build_open_position
+
+        self.repo.save_open_position(build_open_position(pitch, decision))
         return fills
+
+    def resolve_positions(self) -> list:
+        """Resolve any ready open positions against fresh prices and fold the
+        outcomes into calibration/leash/retirement. Reuses each division's own
+        fetcher (synthetic offline, live when wired)."""
+        from boardroom.graph.resolution_loop import resolve_open_positions
+
+        div_by_name = {d.division.value: d for d in self.divisions}
+
+        def fetch_for(pos):
+            d = div_by_name.get(pos.division)
+            if d is None or d.fetch is None:
+                return None
+            return d.fetch()
+
+        return resolve_open_positions(self.repo, fetch_for)
 
     # ---- the whole loop ------------------------------------------------------
     def run_once(
@@ -200,6 +222,9 @@ class Orchestrator:
             if bankroll_cad is not None
             else self.settle_and_ratchet()  # live equity minus the protected reserve
         )
+        # Resolve matured positions FIRST so today's decision uses the freshest
+        # calibration/leashes the just-resolved outcomes produced.
+        self.resolve_positions()
         self.load_adaptive_state()
         self.yield_division.refresh_floor()  # live APR if wired; else configured carry
         hurdle_rate = self.yield_division.hurdle_for(horizon_days=1.0)
@@ -285,6 +310,7 @@ def build_decision_graph(orch: Orchestrator):
         return state.get("portfolio_value_cad", state.get("bankroll_cad", 200.0))
 
     def n_gather(state: dict) -> dict:
+        orch.resolve_positions()
         orch.load_adaptive_state()
         orch.yield_division.refresh_floor()
         state["hurdle_rate"] = orch.yield_division.hurdle_for(1.0)
