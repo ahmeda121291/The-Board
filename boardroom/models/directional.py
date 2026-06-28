@@ -15,7 +15,15 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from boardroom.data.snapshot import Bars
-from boardroom.features import momentum, rsi, volatility, zscore_meanrev
+from boardroom.features import (
+    downside_deviation,
+    momentum,
+    return_skew,
+    rsi,
+    sortino_ratio,
+    volatility,
+    zscore_meanrev,
+)
 from boardroom.models.base import ModelOutput, PredictionModel
 
 
@@ -42,6 +50,12 @@ class DirectionalModel(PredictionModel):
             "meanrev_z": zscore_meanrev(c, self.lookback),
             "rsi_centered": rsi(c, 14) - 50.0,
             "volatility": volatility(c, self.lookback),
+            # Diligence-only (logged, surfaced on the dashboard, NOT in the logit):
+            # downside risk-quality of the name, so a pitch carries its own risk
+            # profile alongside the directional signal.
+            "downside_deviation": downside_deviation(c),
+            "sortino": sortino_ratio(c),
+            "return_skew": return_skew(c),
         }
 
     def predict(self, bars: Bars) -> ModelOutput:

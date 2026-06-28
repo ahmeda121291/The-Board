@@ -7,13 +7,21 @@ These are the numbers a division computes and an explicit model maps to
 from __future__ import annotations
 
 from boardroom.features.technical import (
+    atr,
+    beta,
+    bollinger_bandwidth,
+    downside_deviation,
     drawdown,
     liquidity_proxy,
+    macd_histogram,
     max_drawdown,
     momentum,
     realized_sharpe,
+    return_kurtosis,
+    return_skew,
     rolling_correlation,
     rsi,
+    sortino_ratio,
     volatility,
     zscore_meanrev,
 )
@@ -28,4 +36,12 @@ __all__ = [
     "realized_sharpe",
     "liquidity_proxy",
     "rsi",
+    "atr",
+    "downside_deviation",
+    "sortino_ratio",
+    "return_skew",
+    "return_kurtosis",
+    "macd_histogram",
+    "bollinger_bandwidth",
+    "beta",
 ]
