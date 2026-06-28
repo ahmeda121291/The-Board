@@ -152,6 +152,10 @@ checkpoints, without increasing entry frequency. Not warranted at current size.
 
 ## Changelog
 
+- **2026-06-28** — Docs reconciled: README updated to SnapTrade → Wealthsimple as the
+  Directional venue (IBKR retained as an alternate adapter), test count corrected to
+  132, and the branch workflow switched to `main` for everything (RUNBOOK clone +
+  CLAUDE.md working agreement).
 - **2026-06-25** — Market-hours guard added; daily checkpoint moved to 3pm local so
   the equity leg fills in-session. Tri-state live status badge. This living scope
   created and linked from the dashboard.

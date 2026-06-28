@@ -24,7 +24,7 @@ Nothing to approve; your keys never leave your laptop.
 
 ```bash
 git clone <this repo> && cd The-Board
-git checkout claude/fervent-feynman-j4jlqv
+git checkout main
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,venues]"      # core + tests + venue SDKs
 

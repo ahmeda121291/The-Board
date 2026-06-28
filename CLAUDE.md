@@ -72,7 +72,7 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 ## Working agreements
 
-- Develop on the feature branch; user merges to `main` (auto-deploys). Commit as
+- Work on `main` for everything; pushes to `main` auto-deploy to production. Commit as
   `Claude <noreply@anthropic.com>`.
 - **When behavior changes, update `docs/SCOPE.md` (+ changelog) in the same commit.**
 - Never commit secrets; `.env` is gitignored. Never echo secret values.
