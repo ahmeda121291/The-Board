@@ -152,6 +152,19 @@ checkpoints, without increasing entry frequency. Not warranted at current size.
 
 ## Changelog
 
+- **2026-06-28** — **Self-improvement transmission wired + diligence upgrades.** The
+  adaptive engine was fully built but never ran live (no outcome ever resolved). Added
+  a resolution loop: funded positions (paper or live) are marked to fresh prices each
+  checkpoint, resolved on horizon/stop net of cost, and folded into calibration → leash
+  → retirement through the existing guardrails. Added a guardrailed walk-forward model
+  re-fit (persisted in `model_params`, gated by can-refit + out-of-sample survival +
+  bounded step; rejected re-fits change nothing). Immediate diligence improvements: new
+  pure features (ATR, Sortino, downside deviation, skew/kurtosis, MACD, Bollinger
+  bandwidth, beta); the floor carry APR is now configurable (`FLOOR_CARRY_APR`) and
+  refreshable from live Kraken Earn within a sanity band; the Event division gained a
+  deterministic news/catalyst confirmation gate (`NEWS_API_KEY`, off by default). New
+  tables: `open_positions`, `model_params`. Structural self-modification remains
+  `requires_human`; all new adaptation is parameter-level and behind the guardrails.
 - **2026-06-28** — Docs reconciled: README updated to SnapTrade → Wealthsimple as the
   Directional venue (IBKR retained as an alternate adapter), test count corrected to
   132, and the branch workflow switched to `main` for everything (RUNBOOK clone +

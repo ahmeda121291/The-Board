@@ -55,7 +55,7 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 ## Where things live
 
 - **Code**: `boardroom/` (config, schemas, divisions, ceo, risk, brokers, graph,
-  agents, persistence, market.py). **Tests**: `tests/` (132 passing; `python -m pytest`).
+  agents, persistence, market.py). **Tests**: `tests/` (188 passing; `python -m pytest`).
 - **Dashboard**: `dashboard/` (Next.js 14 on Vercel, reads Supabase read-only; Docs
   page at `/docs`; "Ask the Boardroom" chat = read-only, needs `ANTHROPIC_API_KEY`).
 - **Ops**: `RUNBOOK.md`, `docs/OPERATIONS.md`, `install_scheduler.ps1`, `run_boardroom.ps1`.
