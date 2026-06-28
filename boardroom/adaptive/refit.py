@@ -15,6 +15,8 @@ the single easiest way to adapt into garbage. Three guardrails keep it honest:
 
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
+
 
 def can_refit(n_resolved: int, *, min_sample: int = 30) -> bool:
     """Only re-fit once at least ``min_sample`` outcomes have resolved.
@@ -82,3 +84,126 @@ def walk_forward_ok(
     if in_sample_score <= 0.0:
         return out_of_sample_score >= 0.0
     return out_of_sample_score >= min_ratio * in_sample_score
+
+
+# --------------------------------------------------------------------------- #
+# Walk-forward refit harness for the Directional model.
+#
+# Ties the three guardrails above together into one accept/reject decision:
+#   1. split history into in-sample (fit) and out-of-sample (validate) halves,
+#   2. fit a candidate on in-sample only (no lookahead),
+#   3. accept ONLY if it generalizes (walk_forward_ok) and there was enough data
+#      (can_refit), then move the live coefficients toward the candidate by a
+#      BOUNDED step. A rejected refit leaves the model exactly as it was.
+# --------------------------------------------------------------------------- #
+_COEF_NAMES = ("intercept", "w_momentum", "w_meanrev", "w_rsi")
+
+
+@dataclass
+class RefitResult:
+    accepted: bool
+    reason: str
+    n_train: int
+    in_sample_score: float
+    out_of_sample_score: float
+    old_coefficients: dict
+    new_coefficients: dict
+
+
+def _coefficients(model) -> dict:
+    return {k: float(getattr(model, k)) for k in _COEF_NAMES}
+
+
+def _training_set(model, bars, *, lo: int, hi: int, horizon: int):
+    """Feature rows + up/down labels over ``[lo, hi)`` using prefix-only windows."""
+    from boardroom.data.snapshot import Bars
+
+    closes = bars.closes
+    rows: list[dict] = []
+    labels: list[bool] = []
+    for i in range(lo, hi - horizon):
+        window = Bars(symbol=bars.symbol, venue=bars.venue, df=bars.df.iloc[: i + 1], source=bars.source)
+        f = model._features(window)
+        rows.append({k: f[k] for k in ("momentum", "meanrev_z", "rsi_centered")})
+        labels.append(bool(closes[i + horizon] > closes[i]))
+    return rows, labels
+
+
+def _net_edge_score(model, bars, *, lo: int, hi: int, horizon: int, cost_frac: float) -> float:
+    """Mean per-trade net (after-cost) fractional return of ``model`` over a segment.
+
+    Takes the side the model leans; mirrors the backtest's accounting so the score
+    is comparable to the live gate. 0.0 if the model never trades in the segment.
+    """
+    from boardroom.data.snapshot import Bars
+
+    closes = bars.closes
+    total = 0.0
+    n = 0
+    for i in range(lo, hi - horizon):
+        window = Bars(symbol=bars.symbol, venue=bars.venue, df=bars.df.iloc[: i + 1], source=bars.source)
+        out = model.predict(window)
+        if out.raw_confidence <= 0.0:
+            continue
+        realized = closes[i + horizon] / closes[i] - 1.0
+        directional = realized if out.expected_return >= 0 else -realized
+        total += directional - cost_frac
+        n += 1
+    return total / n if n else 0.0
+
+
+def refit_directional(
+    model,
+    bars,
+    *,
+    warmup: int = 40,
+    min_sample: int = 30,
+    split_frac: float = 0.7,
+    max_rel_step: float = 0.25,
+    min_ratio: float = 0.6,
+    cost_frac: float = 0.01,
+) -> RefitResult:
+    """Walk-forward re-fit of a DirectionalModel's coefficients, guardrailed.
+
+    Returns a :class:`RefitResult`; the model is mutated in place ONLY when the
+    refit is accepted, and even then each coefficient moves by at most
+    ``max_rel_step`` toward the fitted value. Never raises on thin/degenerate
+    data — it returns a rejecting result instead.
+    """
+    old = _coefficients(model)
+    closes = bars.closes
+    n = len(closes)
+    horizon = max(1, int(round(getattr(model, "horizon_days", 5.0))))
+    split = int(n * split_frac)
+
+    if n - horizon - warmup < min_sample or split <= warmup or split >= n - horizon:
+        return RefitResult(False, "insufficient data for a walk-forward split", 0, 0.0, 0.0, old, old)
+
+    rows, labels = _training_set(model, bars, lo=warmup, hi=split, horizon=horizon)
+    if not can_refit(len(rows), min_sample=min_sample):
+        return RefitResult(False, f"only {len(rows)} training rows (< {min_sample})", len(rows), 0.0, 0.0, old, old)
+    if len(set(labels)) < 2:
+        return RefitResult(False, "degenerate labels (no up/down variation)", len(rows), 0.0, 0.0, old, old)
+
+    candidate = replace(model)
+    candidate.fit(rows, labels)
+
+    in_score = _net_edge_score(candidate, bars, lo=warmup, hi=split, horizon=horizon, cost_frac=cost_frac)
+    oos_score = _net_edge_score(candidate, bars, lo=split, hi=n, horizon=horizon, cost_frac=cost_frac)
+
+    if not walk_forward_ok(in_score, oos_score, min_ratio=min_ratio):
+        return RefitResult(
+            False, "failed walk-forward (overfit risk)", len(rows), in_score, oos_score, old, _coefficients(candidate)
+        )
+
+    # Accept — move live coefficients toward the candidate by a bounded step.
+    new_vec = bounded_weight_update(
+        [old[k] for k in _COEF_NAMES],
+        [getattr(candidate, k) for k in _COEF_NAMES],
+        max_rel_step=max_rel_step,
+    )
+    for name, value in zip(_COEF_NAMES, new_vec):
+        setattr(model, name, float(value))
+    model.coefficients_source = "walk_forward_refit"
+    model.version = "v1-fit"
+    return RefitResult(True, "accepted", len(rows), in_score, oos_score, old, _coefficients(model))

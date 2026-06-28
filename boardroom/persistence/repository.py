@@ -83,6 +83,14 @@ class Repository(abc.ABC):
     def close_position(self, decision_id: str) -> None: ...
 
     @abc.abstractmethod
+    def get_model_params(self, division: str) -> dict | None:
+        """Persisted model coefficients for a division, or None if never re-fit."""
+        ...
+
+    @abc.abstractmethod
+    def save_model_params(self, division: str, params: dict) -> None: ...
+
+    @abc.abstractmethod
     def save_performance(self, snapshot: dict) -> None: ...
 
     @abc.abstractmethod
@@ -123,6 +131,7 @@ class InMemoryRepository(Repository):
     decisions: list[tuple[Decision, list[dict]]] = field(default_factory=list)
     outcomes: list[ResolvedOutcome] = field(default_factory=list)
     positions: dict[str, OpenPosition] = field(default_factory=dict)
+    model_params: dict[str, dict] = field(default_factory=dict)
     states: dict[str, DivisionState] = field(default_factory=dict)
     performance: list[dict] = field(default_factory=list)
     weekly: list[tuple[str, dict]] = field(default_factory=list)
@@ -165,6 +174,12 @@ class InMemoryRepository(Repository):
 
     def close_position(self, decision_id: str) -> None:
         self.positions.pop(decision_id, None)
+
+    def get_model_params(self, division: str) -> dict | None:
+        return self.model_params.get(division)
+
+    def save_model_params(self, division: str, params: dict) -> None:
+        self.model_params[division] = dict(params)
 
     def save_performance(self, snapshot: dict) -> None:
         self.performance.append(snapshot)

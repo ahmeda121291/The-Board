@@ -125,6 +125,52 @@ class Orchestrator:
             )
             self.engine.leashes[div.division.value] = 0.0 if st.retired else st.leash
 
+    def load_model_params(self) -> None:
+        """Apply persisted (re-fit) model coefficients to each division's model.
+
+        A division with no stored params keeps its documented prior. Only known,
+        numeric coefficient fields are applied — defensive against schema drift."""
+        for div in self.divisions:
+            params = self.repo.get_model_params(div.division.value)
+            if not params:
+                continue
+            model = div.model
+            for key, value in params.items():
+                if hasattr(model, key) and isinstance(value, (int, float)):
+                    setattr(model, key, float(value))
+
+    def refit_models(self) -> list:
+        """Guardrailed walk-forward re-fit of fittable division models on fresh
+        data. Accepted re-fits are persisted and applied to the live model;
+        rejected ones leave it untouched. Best-effort and isolated per division."""
+        from boardroom.adaptive.refit import refit_directional
+
+        results = []
+        for div in self.divisions:
+            if not hasattr(div.model, "fit") or div.fetch is None:
+                continue
+            try:
+                bars = div.fetch()
+                result = refit_directional(div.model, bars)
+            except Exception as e:  # noqa: BLE001
+                self.repo.audit("refit_error", {"division": div.division.value, "error": str(e)[:120]})
+                continue
+            if result.accepted:
+                self.repo.save_model_params(div.division.value, result.new_coefficients)
+            self.repo.audit(
+                "refit",
+                {
+                    "division": div.division.value,
+                    "accepted": result.accepted,
+                    "reason": result.reason,
+                    "n_train": result.n_train,
+                    "in_sample": round(result.in_sample_score, 5),
+                    "out_of_sample": round(result.out_of_sample_score, 5),
+                },
+            )
+            results.append(result)
+        return results
+
     def decide(
         self,
         pitches: list[Pitch],
@@ -226,6 +272,7 @@ class Orchestrator:
         # calibration/leashes the just-resolved outcomes produced.
         self.resolve_positions()
         self.load_adaptive_state()
+        self.load_model_params()  # apply any persisted walk-forward re-fit
         self.yield_division.refresh_floor()  # live APR if wired; else configured carry
         hurdle_rate = self.yield_division.hurdle_for(horizon_days=1.0)
 
@@ -312,6 +359,7 @@ def build_decision_graph(orch: Orchestrator):
     def n_gather(state: dict) -> dict:
         orch.resolve_positions()
         orch.load_adaptive_state()
+        orch.load_model_params()
         orch.yield_division.refresh_floor()
         state["hurdle_rate"] = orch.yield_division.hurdle_for(1.0)
         state["pitches"] = orch.gather_pitches(_pv(state))

@@ -200,6 +200,16 @@ class SupabaseRepository(Repository):
     def close_position(self, decision_id: str) -> None:
         self._t("open_positions").delete().eq("decision_id", decision_id).execute()
 
+    # ---- model params --------------------------------------------------------
+    def get_model_params(self, division: str) -> dict | None:
+        res = self._t("model_params").select("*").eq("division", division).limit(1).execute()
+        if res.data:
+            return res.data[0].get("params")
+        return None
+
+    def save_model_params(self, division: str, params: dict) -> None:
+        self._t("model_params").upsert({"division": division, "params": params}).execute()
+
     # ---- reads ---------------------------------------------------------------
     def get_division_state(self, division: str) -> DivisionState:
         res = self._t("division_state").select("*").eq("division", division).limit(1).execute()

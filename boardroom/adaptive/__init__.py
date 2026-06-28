@@ -22,8 +22,10 @@ from boardroom.adaptive.calibration import (
 )
 from boardroom.adaptive.leash import update_leash
 from boardroom.adaptive.refit import (
+    RefitResult,
     bounded_weight_update,
     can_refit,
+    refit_directional,
     walk_forward_ok,
 )
 from boardroom.adaptive.retirement import should_retire
@@ -38,4 +40,6 @@ __all__ = [
     "can_refit",
     "bounded_weight_update",
     "walk_forward_ok",
+    "refit_directional",
+    "RefitResult",
 ]
