@@ -87,6 +87,9 @@ class Settings(BaseSettings):
 
     # ---- Optional market data ------------------------------------------------
     market_data_api_key: SecretStr | None = Field(default=None, alias="MARKET_DATA_API_KEY")
+    # Optional news feed (CryptoPanic) for the Event division's catalyst gate.
+    # Unset -> the Event division stays price-only, exactly as before.
+    news_api_key: SecretStr | None = Field(default=None, alias="NEWS_API_KEY")
 
     # ---- Derived helpers -----------------------------------------------------
     @property

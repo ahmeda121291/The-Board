@@ -64,6 +64,14 @@ def build_default_org(
     event = EventDivision(fetch=event_fetch, enabled=enable_event)
     effort = EffortDivision()  # disabled
 
+    # Optional: arm the Event division's catalyst gate from a live news feed.
+    # Without NEWS_API_KEY the gate is neutral and Event stays price-only.
+    if settings.news_api_key:
+        from boardroom.data.news import fetch_cryptopanic_headlines
+
+        token = settings.news_api_key.get_secret_value()
+        event.model.news_provider = partial(fetch_cryptopanic_headlines, token=token)
+
     divisions = [directional, event, effort]
 
     # Real adapters when requested + credentialed; stubs otherwise. Live

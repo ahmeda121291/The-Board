@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from boardroom.data.news import NewsProvider, catalyst_score, default_keywords
 from boardroom.data.snapshot import Bars
 from boardroom.features import drawdown, momentum, volatility, zscore_meanrev
 from boardroom.models.base import ModelOutput, PredictionModel
@@ -29,6 +30,32 @@ class EventTriggerModel(PredictionModel):
     assumed_win_prob: float = 0.30
     # Asymmetric payoff: small fixed stop, larger target (the lottery shape).
     target_multiple: float = 3.0
+    # ---- optional news/catalyst confirmation gate ---------------------------
+    #: When set, a fired price trigger ALSO requires a real catalyst (computed,
+    #: not LLM-judged) within ``news_lookback_hours``. Unset -> price-only, exactly
+    #: as before. A fetch failure is treated as "no opinion" (fires on price).
+    news_provider: NewsProvider | None = None
+    catalyst_threshold: float = 1.0
+    news_lookback_hours: float = 48.0
+    #: Asset aliases to match in headlines; derived from the symbol when empty.
+    asset_keywords: tuple[str, ...] = ()
+
+    def _catalyst(self, bars: Bars) -> float | None:
+        """Catalyst score for this asset, or None when news can't be evaluated
+        (no provider / fetch failed) — None means the gate stays neutral."""
+        if self.news_provider is None:
+            return None
+        keywords = self.asset_keywords or default_keywords(bars.symbol)
+        try:
+            headlines = self.news_provider(bars.symbol)
+            return catalyst_score(
+                headlines,
+                keywords=keywords,
+                now=bars.last_time,
+                lookback_hours=self.news_lookback_hours,
+            )
+        except Exception:
+            return None  # news outage must never suppress a legitimate trigger
 
     def evaluate(self, bars: Bars) -> tuple[bool, dict[str, float]]:
         c = bars.closes
@@ -38,8 +65,19 @@ class EventTriggerModel(PredictionModel):
             "momentum": momentum(c, self.lookback),
             "drawdown": drawdown(c),
         }
-        fired = abs(f["meanrev_z"]) >= self.z_trigger and f["volatility"] >= self.vol_expansion_min
-        return fired, f
+        price_fired = (
+            abs(f["meanrev_z"]) >= self.z_trigger and f["volatility"] >= self.vol_expansion_min
+        )
+
+        catalyst = self._catalyst(bars)
+        if catalyst is not None:
+            f["catalyst_score"] = catalyst
+        # Confirmation gate: when news was successfully evaluated, a fired trigger
+        # must be corroborated by a catalyst at/above threshold. Neutral (None) ->
+        # price decides alone, preserving the pre-news behavior.
+        if price_fired and catalyst is not None and catalyst < self.catalyst_threshold:
+            return False, f
+        return price_fired, f
 
     def predict(self, bars: Bars) -> ModelOutput:
         fired, f = self.evaluate(bars)
