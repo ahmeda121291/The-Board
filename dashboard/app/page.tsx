@@ -34,6 +34,7 @@ function BalanceCard({
 }: { krakenCash: number | null; ibkrCash: number | null; equity: number | null; at: string | null }) {
   const dep = deposits();
   const synced = at !== null && equity !== null;
+  const partial = synced && (krakenCash === null || ibkrCash === null);
   const Row = ({ name, v, tone }: { name: string; v: number | null; tone: string }) => (
     <div className="flex items-center justify-between gap-6">
       <span className="flex items-center gap-1.5">
@@ -60,7 +61,9 @@ function BalanceCard({
         </div>
       </div>
       <div className="mt-2 text-[10px] text-slate-500">
-        {synced ? `synced ${ago(at as string)}` : "estimate — run `boardroom balances` to sync real cash"}
+        {synced
+          ? `synced ${ago(at as string)}${partial ? " · IBKR pending gateway login" : ""}`
+          : "estimate — run `boardroom balances` to sync real cash"}
       </div>
     </div>
   );
@@ -160,10 +163,18 @@ export default async function Page() {
   const breaker: string[] = perf?.breaker ?? [];
   const attribution = perf?.attribution ?? roll.attribution;
 
-  // Prefer real synced venue cash; fall back to the funding baseline + realized P&L.
-  const balancesSynced = d.equity_cad !== null && d.balances_at !== null;
-  const equity = balancesSynced ? (d.equity_cad as number) : dep.total + roll.pnl;
-  const roiOnDeposit = dep.total > 0 ? (equity - dep.total) / dep.total : 0;
+  // Prefer real synced venue cash; fall back to the funding baseline + realized
+  // P&L. Compare equity to the baseline of the SAME venues so an un-synced venue
+  // (e.g. IBKR before the gateway is up) can't look like a loss.
+  const krakenSynced = d.kraken_cash_cad !== null;
+  const ibkrSynced = d.ibkr_cash_cad !== null;
+  const balancesSynced = d.balances_at !== null && (krakenSynced || ibkrSynced);
+  const partialSync = balancesSynced && !(krakenSynced && ibkrSynced);
+  const syncedEquity = (krakenSynced ? (d.kraken_cash_cad as number) : 0) + (ibkrSynced ? (d.ibkr_cash_cad as number) : 0);
+  const syncedBaseline = (krakenSynced ? dep.kraken : 0) + (ibkrSynced ? dep.ibkr : 0);
+  const equity = balancesSynced ? syncedEquity : dep.total + roll.pnl;
+  const baselineForRoi = balancesSynced ? syncedBaseline : dep.total;
+  const roiOnDeposit = baselineForRoi > 0 ? (equity - baselineForRoi) / baselineForRoi : 0;
 
   const liveCount = d.divisions.filter((x) => !x.retired && !x.shadow).length;
   const shadowCount = d.divisions.filter((x) => x.shadow && !x.retired).length;
@@ -286,10 +297,14 @@ export default async function Page() {
       {/* Hero — portfolio value */}
       <div className="glass hud mt-6 flex flex-wrap items-end justify-between gap-6 p-6">
         <div>
-          <div className="label">{balancesSynced ? "Total equity · live venue cash" : "Estimated equity · baseline + realized P&amp;L"}</div>
+          <div className="label">
+            {balancesSynced
+              ? partialSync ? "Live cash · Kraken only (IBKR not synced yet)" : "Total equity · live venue cash"
+              : "Estimated equity · baseline + realized P&amp;L"}
+          </div>
           <div className="num mt-1 text-5xl font-bold text-white glow-cyan">{cad(equity)}</div>
           <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
-            <span className="text-slate-400">start {cad(dep.total)}</span>
+            <span className="text-slate-400">start {cad(baselineForRoi)}</span>
             <span className={roll.pnl >= 0 ? "text-emerald-400" : "text-rose-400"}>
               {roll.pnl >= 0 ? "▲" : "▼"} {cad(Math.abs(roll.pnl))} realized
             </span>
