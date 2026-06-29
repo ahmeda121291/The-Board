@@ -99,10 +99,20 @@ def cmd_register(args: argparse.Namespace) -> None:
         if not secret:
             return
 
-    login = client.authentication.login_snap_trade_user(user_id=args.user_id, user_secret=secret)
+    # connection_type="trade" is REQUIRED for the Directional leg to place orders.
+    # SnapTrade connections default to READ-ONLY; without this the link is created
+    # data-only and live equity orders are rejected (403 "Trading permissions have
+    # not been enabled"). Pass --read-only to deliberately create a data-only link.
+    connection_type = "read" if getattr(args, "read_only", False) else "trade"
+    login = client.authentication.login_snap_trade_user(
+        user_id=args.user_id, user_secret=secret, connection_type=connection_type
+    )
     url = _body(login).get("redirectURI")
-    print("\nOpen this URL in a browser and connect Wealthsimple:\n")
+    print(f"\nOpen this URL in a browser and connect Wealthsimple ({connection_type} access):\n")
     print(f"  {url}\n")
+    if connection_type == "trade":
+        print("On the Wealthsimple consent screen, APPROVE trading — a read-only link "
+              "leaves the equity leg in shadow mode (no real orders).\n")
     print("Then run:  python scripts/snaptrade_connect.py accounts "
           f"--user-id {args.user_id} --user-secret {secret}")
 
@@ -163,6 +173,12 @@ def main() -> None:
     r = sub.add_parser("register", help="register a user + print the connect URL")
     r.add_argument("--user-id", required=True)
     r.add_argument("--user-secret", default=None, help="reuse if the user already exists")
+    r.add_argument(
+        "--read-only",
+        action="store_true",
+        help="create a data-only link (default requests TRADE permission so the "
+             "Directional leg can place live equity orders)",
+    )
     r.set_defaults(func=cmd_register)
 
     a = sub.add_parser("accounts", help="list connected accounts (after linking)")

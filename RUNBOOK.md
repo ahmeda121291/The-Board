@@ -81,9 +81,11 @@ SNAPTRADE_ACCOUNT_ID=<the connected Wealthsimple account id>
 Use the helper (needs network to `api.snaptrade.com`, so run it locally):
 
 ```bash
-# 1. Register a SnapTrade user + print the Wealthsimple connect URL
+# 1. Register a SnapTrade user + print the Wealthsimple connect URL.
+#    The helper requests TRADE permission by default (connection_type="trade").
 python scripts/snaptrade_connect.py register --user-id ahmed-boardroom
-# 2. Open the printed URL, log into Wealthsimple, finish linking.
+# 2. Open the printed URL, log into Wealthsimple, and APPROVE TRADING on the
+#    consent screen (not just data access). Finish linking.
 # 3. List accounts and copy the one you want to trade
 python scripts/snaptrade_connect.py accounts --user-id ahmed-boardroom --user-secret <secret>
 ```
@@ -92,10 +94,14 @@ It uses only your `SNAPTRADE_CLIENT_ID` + `SNAPTRADE_CONSUMER_KEY`; no brokerage
 password ever touches Boardroom. Put `SNAPTRADE_USER_ID`,
 `SNAPTRADE_USER_SECRET`, and `SNAPTRADE_ACCOUNT_ID` in `.env`.
 
-> **Wealthsimple caveat:** confirm SnapTrade trading is enabled for your
-> Wealthsimple account. If it's read-only, the Directional division still
-> computes and scores pitches in **shadow mode** (no real equity orders) until a
-> trade-capable connection exists — Kraken still executes crypto live.
+> **Trade permission is required — and it's the #1 gotcha.** SnapTrade links are
+> **read-only by default**; a data-only link makes live equity orders fail with
+> `403 "Trading permissions have not been enabled"`, and the Directional division
+> falls back to **shadow mode** (computes/scores pitches, places no real orders).
+> The helper now passes `connection_type="trade"` so the consent screen offers
+> trading — you must approve it. If an existing link is read-only, **re-run
+> `register` and reconnect Wealthsimple, approving trading**, to upgrade it.
+> Kraken (crypto) is unaffected and executes live regardless.
 
 ---
 
