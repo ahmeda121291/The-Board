@@ -29,28 +29,38 @@ function kindTone(kind: string) {
   return "default";
 }
 
-function DepositLedger() {
-  const d = deposits();
-  const Row = ({ name, v, tone }: { name: string; v: number; tone: string }) => (
+function BalanceCard({
+  krakenCash, ibkrCash, equity, at,
+}: { krakenCash: number | null; ibkrCash: number | null; equity: number | null; at: string | null }) {
+  const dep = deposits();
+  const synced = at !== null && equity !== null;
+  const Row = ({ name, v, tone }: { name: string; v: number | null; tone: string }) => (
     <div className="flex items-center justify-between gap-6">
       <span className="flex items-center gap-1.5">
         <span className={`inline-block h-1.5 w-1.5 rounded-full ${tone}`} />
         <span className="text-[10px] uppercase tracking-widest text-slate-400">{name}</span>
       </span>
-      <span className="num text-sm text-slate-200">{cad(v)}</span>
+      <span className="num text-sm text-slate-200">{v === null ? "—" : cad(v)}</span>
     </div>
   );
   return (
     <div className="glass hud p-3 min-w-[210px]">
-      <div className="label mb-2">Original deposits</div>
+      <div className="label mb-2">{synced ? "Live balances" : "Funding baseline"}</div>
       <div className="space-y-1.5">
-        <Row name="Kraken · crypto" v={d.kraken} tone="bg-sky-400" />
-        <Row name="IBKR · stocks" v={d.ibkr} tone="bg-violet-400" />
+        <Row name="Kraken · crypto" v={synced ? krakenCash : dep.kraken} tone="bg-sky-400" />
+        <Row name="IBKR · stocks" v={synced ? ibkrCash : dep.ibkr} tone="bg-violet-400" />
         <div className="my-1 h-px bg-white/10" />
         <div className="flex items-center justify-between">
-          <span className="text-[10px] uppercase tracking-widest text-slate-400">Start balance</span>
-          <span className="num text-sm font-semibold text-sky-300 glow-cyan">{cad(d.total)}</span>
+          <span className="text-[10px] uppercase tracking-widest text-slate-400">
+            {synced ? "Total cash" : "Start balance"}
+          </span>
+          <span className="num text-sm font-semibold text-sky-300 glow-cyan">
+            {cad(synced ? (equity as number) : dep.total)}
+          </span>
         </div>
+      </div>
+      <div className="mt-2 text-[10px] text-slate-500">
+        {synced ? `synced ${ago(at as string)}` : "estimate — run `boardroom balances` to sync real cash"}
       </div>
     </div>
   );
@@ -150,8 +160,10 @@ export default async function Page() {
   const breaker: string[] = perf?.breaker ?? [];
   const attribution = perf?.attribution ?? roll.attribution;
 
-  const equity = dep.total + roll.pnl; // start balance + realized P&L
-  const roiOnDeposit = dep.total > 0 ? roll.pnl / dep.total : 0;
+  // Prefer real synced venue cash; fall back to the funding baseline + realized P&L.
+  const balancesSynced = d.equity_cad !== null && d.balances_at !== null;
+  const equity = balancesSynced ? (d.equity_cad as number) : dep.total + roll.pnl;
+  const roiOnDeposit = dep.total > 0 ? (equity - dep.total) / dep.total : 0;
 
   const liveCount = d.divisions.filter((x) => !x.retired && !x.shadow).length;
   const shadowCount = d.divisions.filter((x) => x.shadow && !x.retired).length;
@@ -219,7 +231,12 @@ export default async function Page() {
           </div>
         </div>
         <div className="ml-auto flex flex-col items-end gap-2">
-          <DepositLedger />
+          <BalanceCard
+            krakenCash={d.kraken_cash_cad}
+            ibkrCash={d.ibkr_cash_cad}
+            equity={d.equity_cad}
+            at={d.balances_at}
+          />
           <div className="flex items-center gap-2 text-[11px] text-slate-500">
             <Link href="/docs" className="rounded-full border border-white/15 px-2.5 py-1 text-slate-300 hover:border-sky-400/40 hover:text-sky-300">
               📖 Docs
@@ -269,7 +286,7 @@ export default async function Page() {
       {/* Hero — portfolio value */}
       <div className="glass hud mt-6 flex flex-wrap items-end justify-between gap-6 p-6">
         <div>
-          <div className="label">Estimated equity · deposits + realized P&amp;L</div>
+          <div className="label">{balancesSynced ? "Total equity · live venue cash" : "Estimated equity · baseline + realized P&amp;L"}</div>
           <div className="num mt-1 text-5xl font-bold text-white glow-cyan">{cad(equity)}</div>
           <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
             <span className="text-slate-400">start {cad(dep.total)}</span>

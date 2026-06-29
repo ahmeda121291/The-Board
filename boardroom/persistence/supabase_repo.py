@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from boardroom.config import get_settings
 from boardroom.persistence.repository import DivisionState, OpenPosition, Repository
@@ -119,6 +119,10 @@ class SupabaseRepository(Repository):
                 "reserve_cad": row["reserve_cad"],
                 "hwm_cad": row["hwm_cad"],
                 "live_armed": bool(row.get("live_armed", False)),
+                "kraken_cash_cad": row.get("kraken_cash_cad"),
+                "ibkr_cash_cad": row.get("ibkr_cash_cad"),
+                "equity_cad": row.get("equity_cad"),
+                "balances_at": row.get("balances_at"),
             }
         return {"reserve_cad": 0.0, "hwm_cad": 0.0, "live_armed": False}
 
@@ -129,6 +133,19 @@ class SupabaseRepository(Repository):
 
     def set_live_armed(self, armed: bool) -> None:
         self._t("system_state").upsert({"id": 1, "live_armed": bool(armed)}).execute()
+
+    def set_balances(
+        self, *, kraken_cash_cad: float | None, ibkr_cash_cad: float | None, equity_cad: float | None
+    ) -> None:
+        self._t("system_state").upsert(
+            {
+                "id": 1,
+                "kraken_cash_cad": kraken_cash_cad,
+                "ibkr_cash_cad": ibkr_cash_cad,
+                "equity_cad": equity_cad,
+                "balances_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).execute()
 
     def claim_next_run_request(self) -> dict | None:
         from datetime import datetime, timezone

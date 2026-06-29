@@ -173,6 +173,11 @@ def _run(args: argparse.Namespace) -> int:
                 console.print(f"[bold cyan]CFO:[/bold cyan] {review.headline}")
             except Exception as e:  # never let the review break the loop
                 console.print(f"[dim]CFO review skipped: {str(e)[:80]}[/dim]")
+            # Refresh real venue balances for the dashboard (best-effort).
+            try:
+                org.snapshot_balances()
+            except Exception as e:
+                console.print(f"[dim]balance snapshot skipped: {str(e)[:80]}[/dim]")
             # Guardrailed walk-forward re-fit (gated by data + walk-forward; a
             # rejected refit changes nothing). Never let it break the loop.
             try:
@@ -186,6 +191,24 @@ def _run(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         console.print("\n[yellow]Scheduler stopped.[/yellow]")
         return 0
+
+
+def _balances(args: argparse.Namespace) -> int:
+    """Pull real cash from each venue and write it to Supabase for the dashboard."""
+    from boardroom.factory import build_default_org
+
+    org = build_default_org(
+        data_mode="synthetic" if args.synthetic else "live", prefer_live_brokers=True
+    )
+    console.rule("[bold]Venue balances")
+    bal = org.snapshot_balances()
+    kr = bal["kraken_cash_cad"]
+    ib = bal["ibkr_cash_cad"]
+    console.print(f"  Kraken (crypto) : {f'{kr:.2f} CAD' if kr is not None else '[yellow]unavailable[/yellow]'}")
+    console.print(f"  IBKR (stocks)   : {f'{ib:.2f} CAD' if ib is not None else '[yellow]unavailable (gateway not authenticated?)[/yellow]'}")
+    console.print(f"  [bold]Total cash[/bold]      : {bal['equity_cad'] if bal['equity_cad'] is not None else '—'} CAD")
+    console.print("[dim]Written to Supabase — the dashboard reads these as your live balances.[/dim]")
+    return 0
 
 
 def _refit(args: argparse.Namespace) -> int:
@@ -403,6 +426,9 @@ def main(argv: list[str] | None = None) -> int:
     p_refit = sub.add_parser("refit", help="guardrailed walk-forward model re-fit")
     p_refit.add_argument("--synthetic", action="store_true", help="use offline synthetic data")
 
+    p_bal = sub.add_parser("balances", help="pull real venue cash and push to the dashboard")
+    p_bal.add_argument("--synthetic", action="store_true", help="use stub brokers (offline)")
+
     p_run = sub.add_parser("run", help="daily scheduler — convene the CEO at CHECKPOINT_UTC, forever")
     p_run.add_argument("--synthetic", action="store_true", help="use offline synthetic data")
     p_run.add_argument("--confirm-live", action="store_true", help="execute live (requires LIVE_TRADING=true)")
@@ -442,6 +468,8 @@ def main(argv: list[str] | None = None) -> int:
         return _review(args)
     if args.cmd == "refit":
         return _refit(args)
+    if args.cmd == "balances":
+        return _balances(args)
     if args.cmd == "decide":
         return _decide(args)
     if args.cmd == "poll":

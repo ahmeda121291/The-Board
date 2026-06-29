@@ -118,6 +118,11 @@ export type Dashboard = {
   reserve_cad: number;
   hwm_cad: number;
   live_armed: boolean;
+  // Real venue cash, pulled by the local runner (null until first synced).
+  kraken_cash_cad: number | null;
+  ibkr_cash_cad: number | null;
+  equity_cad: number | null;
+  balances_at: string | null;
 };
 
 export async function loadDashboard(): Promise<Dashboard> {
@@ -135,6 +140,10 @@ export async function loadDashboard(): Promise<Dashboard> {
     reserve_cad: 0,
     hwm_cad: 0,
     live_armed: false,
+    kraken_cash_cad: null,
+    ibkr_cash_cad: null,
+    equity_cad: null,
+    balances_at: null,
   };
 
   const sb = serverClient();
@@ -172,6 +181,10 @@ export async function loadDashboard(): Promise<Dashboard> {
       reserve_cad: sysRow?.reserve_cad ?? 0,
       hwm_cad: sysRow?.hwm_cad ?? 0,
       live_armed: Boolean(sysRow?.live_armed),
+      kraken_cash_cad: sysRow?.kraken_cash_cad ?? null,
+      ibkr_cash_cad: sysRow?.ibkr_cash_cad ?? null,
+      equity_cad: sysRow?.equity_cad ?? null,
+      balances_at: sysRow?.balances_at ?? null,
     };
   } catch (e: any) {
     return { ...empty, configured: true, error: e?.message ?? "Unknown error" };

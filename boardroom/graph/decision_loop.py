@@ -238,6 +238,29 @@ class Orchestrator:
         self.repo.save_open_position(build_open_position(pitch, decision))
         return fills
 
+    def snapshot_balances(self) -> dict:
+        """Pull real cash from each venue (we hold the keys here) and persist it
+        so the dashboard shows real numbers, not a hardcoded baseline. Best-effort
+        per venue — an unauthenticated/unreachable venue is left as None."""
+        from boardroom.schemas import Venue
+
+        def _cash(venue) -> float | None:
+            broker = self.brokers.get(venue)
+            if broker is None or type(broker).__name__ == "StubBroker":
+                return None
+            try:
+                return round(float(broker.get_cash_cad()), 2)
+            except Exception:
+                return None
+
+        kraken = _cash(Venue.KRAKEN)
+        ibkr = _cash(Venue.IBKR)
+        equity = None
+        if kraken is not None or ibkr is not None:
+            equity = round((kraken or 0.0) + (ibkr or 0.0), 2)
+        self.repo.set_balances(kraken_cash_cad=kraken, ibkr_cash_cad=ibkr, equity_cad=equity)
+        return {"kraken_cash_cad": kraken, "ibkr_cash_cad": ibkr, "equity_cad": equity}
+
     def resolve_positions(self) -> list:
         """Resolve any ready open positions against fresh prices and fold the
         outcomes into calibration/leash/retirement.

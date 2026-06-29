@@ -115,6 +115,14 @@ class Repository(abc.ABC):
         ...
 
     @abc.abstractmethod
+    def set_balances(
+        self, *, kraken_cash_cad: float | None, ibkr_cash_cad: float | None, equity_cad: float | None
+    ) -> None:
+        """Persist the latest real venue cash balances (pulled by the local
+        runner, which holds the keys) so the dashboard can show real numbers."""
+        ...
+
+    @abc.abstractmethod
     def claim_next_run_request(self) -> dict | None:
         """Claim the oldest pending on-demand run request (status -> running).
 
@@ -211,14 +219,22 @@ class InMemoryRepository(Repository):
         return dict(self.system_state)
 
     def set_system_state(self, reserve_cad: float, hwm_cad: float) -> None:
-        self.system_state = {
-            "reserve_cad": reserve_cad,
-            "hwm_cad": hwm_cad,
-            "live_armed": self.system_state.get("live_armed", False),
-        }
+        # In-place so balances / live_armed already on the row are preserved.
+        self.system_state["reserve_cad"] = reserve_cad
+        self.system_state["hwm_cad"] = hwm_cad
 
     def set_live_armed(self, armed: bool) -> None:
         self.system_state["live_armed"] = bool(armed)
+
+    def set_balances(
+        self, *, kraken_cash_cad: float | None, ibkr_cash_cad: float | None, equity_cad: float | None
+    ) -> None:
+        from boardroom.schemas import utcnow
+
+        self.system_state["kraken_cash_cad"] = kraken_cash_cad
+        self.system_state["ibkr_cash_cad"] = ibkr_cash_cad
+        self.system_state["equity_cad"] = equity_cad
+        self.system_state["balances_at"] = utcnow().isoformat()
 
     def claim_next_run_request(self) -> dict | None:
         for req in self.run_requests:
