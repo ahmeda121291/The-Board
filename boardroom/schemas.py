@@ -27,6 +27,7 @@ class Division(str, enum.Enum):
     DIRECTIONAL = "directional"  # equities/ETFs trend & mean-reversion (price)
     EVENT = "event"          # rare asymmetric crypto bets (reflexivity)
     EFFORT = "effort"        # non-market operating bets (work) — disabled at launch
+    MOMENTUM = "momentum"    # catalyst-continuation: rides volume-confirmed breakouts
 
 
 class Venue(str, enum.Enum):
@@ -69,6 +70,9 @@ class ComputedSignals(BaseModel):
     win_probability: float            # [0, 1]
     raw_confidence: float             # model confidence before trust adjustment
     horizon_days: float
+    #: Recent headlines behind the move (catalyst context). Computed score lives
+    #: in ``features['news_intensity']``; these strings are read-only context.
+    news: list[str] = Field(default_factory=list)
 
 
 class Pitch(BaseModel):

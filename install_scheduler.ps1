@@ -10,11 +10,12 @@
 param([string]$Time = "15:00")
 
 $ErrorActionPreference = "Stop"
-$ps1 = Join-Path $PSScriptRoot "run_boardroom.ps1"
-if (-not (Test-Path $ps1)) { throw "run_boardroom.ps1 not found next to this script." }
+# Use the .cmd launcher — Task Scheduler reliably runs batch files, whereas
+# PowerShell .ps1 scripts often silently fail to launch from the scheduler.
+$cmd = Join-Path $PSScriptRoot "run_boardroom.cmd"
+if (-not (Test-Path $cmd)) { throw "run_boardroom.cmd not found next to this script." }
 
-$action = New-ScheduledTaskAction -Execute "powershell.exe" `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$ps1`""
+$action = New-ScheduledTaskAction -Execute $cmd -WorkingDirectory $PSScriptRoot
 $trigger = New-ScheduledTaskTrigger -Daily -At $Time
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun `
     -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 1)
@@ -23,5 +24,5 @@ Register-ScheduledTask -TaskName "Boardroom Daily" -Action $action -Trigger $tri
     -Settings $settings -Description "Boardroom autonomous daily checkpoint" -Force | Out-Null
 
 Write-Host "Registered task 'Boardroom Daily' to run daily at $Time (local)."
-Write-Host "It launches run_boardroom.ps1 -> one live checkpoint -> logs\scheduler.log."
+Write-Host "It launches run_boardroom.cmd -> one live checkpoint -> logs\scheduler.log."
 Write-Host "Manage it in Task Scheduler, or remove with:  Unregister-ScheduledTask -TaskName 'Boardroom Daily' -Confirm:`$false"

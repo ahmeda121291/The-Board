@@ -29,7 +29,7 @@ qualitative calls.
 | M6 | Kraken + SnapTrade→Wealthsimple adapters behind the broker interface (live-gated; IBKR retained as fallback) | ✅ code · ⏸ live smoke test needs keys |
 | M7–M10 | Event live · go-live floor-dominant · ratchet · Effort | later |
 
-**188 tests pass** across the spine (features, CEO logic, calibration math,
+**189 tests pass** across the spine (features, CEO logic, calibration math,
 measurement, caps, the full loop). Everything runs **offline in dry-run** today:
 `LIVE_TRADING` defaults `false` and execution is stubbed until you fund accounts
 and wire venues.
@@ -189,7 +189,7 @@ your dashboard and your trust-check on the machine.
 ## Tests
 
 ```bash
-pytest -q          # 188 tests: features, CEO logic, calibration, measurement, caps, the loop
+pytest -q          # 189 tests: features, CEO logic, calibration, measurement, caps, the loop
 ```
 
 The spine — feature functions, CEO decision logic, and the calibration math — is

@@ -193,6 +193,40 @@ def liquidity_proxy(closes: np.ndarray, volumes: np.ndarray, lookback: int = 20)
     return float(np.mean(dollar_vol))
 
 
+def volume_surge(volumes: np.ndarray, lookback: int = 20) -> float:
+    """Latest bar's volume relative to its trailing average — a catalyst's
+    fingerprint. 1.0 = normal, 3.0 = 3x normal (something happened). The baseline
+    excludes the latest bar. Returns 1.0 if history is too short or the base is 0.
+    """
+    v = _as_1d("volumes", volumes)
+    if v.size < 2:
+        return 1.0
+    window = v[-(lookback + 1):-1] if v.size > lookback else v[:-1]
+    base = float(np.mean(window)) if window.size else 0.0
+    if base <= 0.0:
+        return 1.0
+    return float(v[-1] / base)
+
+
+def breakout_strength(closes: np.ndarray, lookback: int = 20, short: int = 5) -> float:
+    """The recent short-window move expressed in units of normal volatility.
+
+    Positive = an up-move beyond what the asset's own variability would predict —
+    the catalyst-continuation signal. ``+2`` ≈ a ~2-sigma upside thrust over the
+    last ``short`` bars. This is the OPPOSITE read to mean-reversion: a large
+    positive value is a BUY tell, not a fade.
+    """
+    c = _as_1d("closes", closes)
+    if c.size < max(lookback + 1, short + 1):
+        return 0.0
+    recent = float(c[-1] / c[-short - 1] - 1.0)
+    rets = np.diff(c[-(lookback + 1):]) / c[-(lookback + 1):-1]
+    sd = float(np.std(rets, ddof=1)) if rets.size > 1 else 0.0
+    if sd == 0.0:
+        return 0.0
+    return float(recent / (sd * np.sqrt(short)))
+
+
 def rsi(closes: np.ndarray, lookback: int = 14) -> float:
     """Wilder-style Relative Strength Index over the last ``lookback`` bars, in [0, 100].
 

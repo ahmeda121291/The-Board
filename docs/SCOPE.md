@@ -44,6 +44,14 @@ trade directly — they propose, and the CEO disposes.
 A pitch carries computed numbers (code) plus a short narrative (LLM). Quant fields
 are never LLM guesses.
 
+**Scanned universe.** Each checkpoint, Directional scans a basket of liquid ETFs and
+mega-caps (SPY, QQQ, IWM, DIA, sector ETFs, AAPL/MSFT/NVDA/AMZN/GOOGL/META) and Event
+scans the major crypto pairs (BTC, ETH, SOL, XRP, ADA, LINK, DOT). Every symbol runs
+the same grounded model + risk/cost gates; the CEO ranks across all of them and funds
+at most the single best. A wider universe means more chances something is a genuine,
+non-stretched, positive-edge buy — so the system actually deploys, rather than holding
+because its only candidate was overbought.
+
 ---
 
 ## 3. The agents (who decides)
@@ -98,6 +106,14 @@ plays with house money over time.
   leg is auto-held).
 
 > **Why once a day?** See §9.
+
+**On-demand runs.** Besides the daily 3pm checkpoint you can trigger a run yourself,
+two ways: a **"Run Boardroom Now" desktop shortcut** (fires a live checkpoint on the
+PC immediately), or a **"Run now" button on the dashboard**. The dashboard button
+only *requests* a run (inserts a row in `run_requests`) — it never trades, because
+the keys live only on the PC. A local **poller** (`boardroom poll`, a background
+scheduled task) claims the request and runs the checkpoint locally, preserving the
+dashboard's read-only safety property. The daily scheduler stays on alongside this.
 
 ---
 
@@ -158,17 +174,50 @@ checkpoints, without increasing entry frequency. Not warranted at current size.
   checkpoint, resolved on horizon/stop net of cost, and folded into calibration → leash
   → retirement through the existing guardrails. Added a guardrailed walk-forward model
   re-fit (persisted in `model_params`, gated by can-refit + out-of-sample survival +
-  bounded step; rejected re-fits change nothing). Immediate diligence improvements: new
-  pure features (ATR, Sortino, downside deviation, skew/kurtosis, MACD, Bollinger
-  bandwidth, beta); the floor carry APR is now configurable (`FLOOR_CARRY_APR`) and
-  refreshable from live Kraken Earn within a sanity band; the Event division gained a
-  deterministic news/catalyst confirmation gate (`NEWS_API_KEY`, off by default). New
-  tables: `open_positions`, `model_params`. Structural self-modification remains
-  `requires_human`; all new adaptation is parameter-level and behind the guardrails.
+  bounded step; rejected re-fits change nothing). New pure diligence features (ATR,
+  Sortino, downside deviation, skew/kurtosis, MACD, Bollinger bandwidth, beta); the
+  floor carry APR is now configurable (`FLOOR_CARRY_APR`) and refreshable from live
+  Kraken Earn within a sanity band. New tables: `open_positions`, `model_params`.
+  Structural self-modification remains `requires_human`; all new adaptation is
+  parameter-level and behind the guardrails. (The Event news-gate prototyped on this
+  branch was dropped in favor of the canonical Yahoo `news_intensity` feed below.)
 - **2026-06-28** — Docs reconciled: README updated to SnapTrade → Wealthsimple as the
-  Directional venue (IBKR retained as an alternate adapter), test count corrected to
-  132, and the branch workflow switched to `main` for everything (RUNBOOK clone +
-  CLAUDE.md working agreement).
+  Directional venue (IBKR retained as an alternate adapter), and the branch workflow
+  switched to `main` for everything (RUNBOOK clone + CLAUDE.md working agreement).
+- **2026-06-26** — **News / catalyst feed** (`data/news.py`, keyless Yahoo search).
+  Computes a deterministic `news_intensity` (recency-weighted headline burst) that
+  confirms whether real coverage backs a breakout, and attaches the headlines as
+  read-only context — fetched only for breakout candidates, degrades to "no news"
+  on failure. Grounding intact: the score is code, headlines are context, neither
+  is an LLM number. Shown on the dashboard session ("📰 Catalyst news").
+- **2026-06-26** — **Momentum / catalyst-continuation division** added (the LLY fix).
+  Root cause of missing catalyst moves: every prior model (Directional, Event) is
+  mean-reversion biased and *fades* strength, so a volume-driven breakout was scored
+  as a SELL. The new Momentum strategy BUYS volume-confirmed upside breakouts
+  (`breakout_strength` + `volume_surge` features), is asset-agnostic (stocks AND
+  crypto, routed per symbol), and ships **advisory** — it pitches/logs but gets no
+  real capital until validated on live data. LLY + more catalyst-prone megacaps added
+  to the core daily universe.
+- **2026-06-26** — Equity feed switched to **Yahoo Finance** (Stooq was serving a
+  bot-block page). Dashboard **"Tracked universe"** card (the symbols scanned each
+  run). **"Run wide scan"** button + `--wide` mode: a broader curated ~50-symbol set
+  (40 liquid stocks/ETFs + 10 crypto) on demand, vs the daily core ~21. Deliberately
+  curated/liquid, not a whole-market scan.
+- **2026-06-26** — **Widened the scanned universe** from 1 ticker per division to a
+  basket (Directional: ~14 ETFs/mega-caps; Event: 7 crypto pairs). Each checkpoint
+  scores every symbol and the CEO funds the best — far more likely to find an
+  actionable buy than scanning a single (often overbought) instrument. Batch-file
+  launchers (`run_*.cmd`) replaced the `.ps1` ones that wouldn't launch from Task
+  Scheduler / Startup. On-demand "Run now" verified end-to-end.
+- **2026-06-25** — Daily **keep-alive cron** (Vercel → `/api/keepalive` → trivial
+  Supabase read) so the free-tier project never idles out and gets paused. A paused
+  project drops its `<ref>.supabase.co` DNS, which breaks every local run; the
+  keep-alive runs on Vercel independent of the PC. Poller hardened to survive
+  transient DNS/connection errors instead of crashing.
+- **2026-06-25** — On-demand runs: dashboard "Run now" button + `run_requests`
+  queue + local `boardroom poll` poller, and a "Run Boardroom Now" desktop shortcut.
+  Daily 3pm scheduler unchanged. Durable `live_armed` flag so the live/armed badge
+  survives redeploys.
 - **2026-06-25** — Market-hours guard added; daily checkpoint moved to 3pm local so
   the equity leg fills in-session. Tri-state live status badge. This living scope
   created and linked from the dashboard.

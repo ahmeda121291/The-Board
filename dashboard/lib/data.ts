@@ -39,6 +39,7 @@ export type SessionPitch = {
   opportunity: string;
   why_now: string;
   features: Record<string, number>;
+  news?: string[];
   risk_approved: boolean | null;
   risk_objections: string[];
   risk_concern: string;
@@ -54,6 +55,7 @@ export type Session = {
   portfolio_value_cad?: number;
   pitches?: SessionPitch[];
   divisions?: { division: string; status: string }[];
+  universe?: Record<string, { venue: string; symbols: string[] }>;
 };
 
 export type Pitch = {

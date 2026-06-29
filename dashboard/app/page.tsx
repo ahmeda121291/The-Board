@@ -6,6 +6,7 @@ import { SessionView } from "@/components/Session";
 import { SessionHistory } from "@/components/SessionHistory";
 import { EquityChart } from "@/components/EquityChart";
 import { AskBoardroom } from "@/components/AskBoardroom";
+import { RunNow } from "@/components/RunNow";
 import {
   calibrationMean,
   equitySeries,
@@ -260,6 +261,11 @@ export default async function Page() {
         </div>
       </div>
 
+      {/* On-demand run — request a checkpoint now (executed on your PC) */}
+      <div className="mt-3">
+        <RunNow />
+      </div>
+
       {/* Hero — portfolio value */}
       <div className="glass hud mt-6 flex flex-wrap items-end justify-between gap-6 p-6">
         <div>
@@ -327,6 +333,31 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
       {/* Session history — scroll back through past checkpoints */}
       <Section title="Session history" desc="The last several checkpoints at a glance.">
         <SessionHistory decisions={d.decisions} />
+      </Section>
+
+      {/* Tracked universe — what gets scanned every run */}
+      <Section title="Tracked universe" desc="Every symbol the divisions scan each checkpoint. The CEO ranks across all and funds the single best.">
+        {latestSession?.universe && Object.keys(latestSession.universe).length > 0 ? (
+          <div className="grid gap-3 md:grid-cols-3">
+            {Object.entries(latestSession.universe).map(([div, u]) => (
+              <div key={div} className="glass hud p-4">
+                <div className="flex items-center justify-between">
+                  <span className="label capitalize">{div}</span>
+                  <Pill tone="cyan">{u.symbols.length} · {u.venue}</Pill>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {u.symbols.map((s) => (
+                    <span key={s} className="num rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-xs text-slate-200">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <Empty>Universe appears after the next checkpoint runs.</Empty>
+        )}
       </Section>
 
       {/* Divisions */}

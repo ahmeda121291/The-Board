@@ -70,12 +70,10 @@ class Orchestrator:
     def gather_pitches(self, bankroll_cad: float) -> list[Pitch]:
         pitches: list[Pitch] = []
         for div in self.divisions:
-            pitch = div.propose(bankroll_cad=bankroll_cad)
-            if pitch is None:
-                continue
-            pitch = narrate_pitch(pitch, self.llm)
-            self.repo.save_pitch(pitch)
-            pitches.append(pitch)
+            for pitch in div.propose_all(bankroll_cad=bankroll_cad):
+                pitch = narrate_pitch(pitch, self.llm)
+                self.repo.save_pitch(pitch)
+                pitches.append(pitch)
         return pitches
 
     def risk_review(
@@ -147,10 +145,13 @@ class Orchestrator:
 
         results = []
         for div in self.divisions:
-            if not hasattr(div.model, "fit") or div.fetch is None:
+            # A representative series for the (symbol-agnostic) model: the single
+            # fetch if set, else the first of the multi-symbol universe.
+            fetcher = div.fetch or (div.fetchers[0] if div.fetchers else None)
+            if not hasattr(div.model, "fit") or fetcher is None:
                 continue
             try:
-                bars = div.fetch()
+                bars = fetcher()
                 result = refit_directional(div.model, bars)
             except Exception as e:  # noqa: BLE001
                 self.repo.audit("refit_error", {"division": div.division.value, "error": str(e)[:120]})
@@ -239,19 +240,29 @@ class Orchestrator:
 
     def resolve_positions(self) -> list:
         """Resolve any ready open positions against fresh prices and fold the
-        outcomes into calibration/leash/retirement. Reuses each division's own
-        fetcher (synthetic offline, live when wired)."""
+        outcomes into calibration/leash/retirement.
+
+        Builds a price cache from the divisions' own fetchers (synthetic offline,
+        live when wired), keyed by the actual bars symbol so a position resolves
+        against the same series it was opened on. Skipped entirely when nothing is
+        open, so a routine HOLD checkpoint does no extra fetching."""
         from boardroom.graph.resolution_loop import resolve_open_positions
 
-        div_by_name = {d.division.value: d for d in self.divisions}
+        if not self.repo.open_positions():
+            return []
 
-        def fetch_for(pos):
-            d = div_by_name.get(pos.division)
-            if d is None or d.fetch is None:
-                return None
-            return d.fetch()
+        cache: dict[str, Any] = {}
+        for d in self.divisions:
+            fetchers = d.fetchers or ([d.fetch] if d.fetch else [])
+            for fetch in fetchers:
+                try:
+                    bars = fetch()
+                except Exception:
+                    continue
+                if bars is not None:
+                    cache[bars.symbol] = bars
 
-        return resolve_open_positions(self.repo, fetch_for)
+        return resolve_open_positions(self.repo, lambda pos: cache.get(pos.symbol))
 
     # ---- the whole loop ------------------------------------------------------
     def run_once(
@@ -277,7 +288,12 @@ class Orchestrator:
         hurdle_rate = self.yield_division.hurdle_for(horizon_days=1.0)
 
         pitches = self.gather_pitches(portfolio)
-        survivors, challenges = self.risk_review(pitches, portfolio)
+        # Advisory divisions (e.g. Momentum while it's being validated) pitch and
+        # are logged for visibility, but are excluded from funding — they never
+        # get real capital until promoted.
+        advisory = {d.division.value for d in self.divisions if getattr(d, "advisory", False)}
+        fundable = [p for p in pitches if p.division.value not in advisory]
+        survivors, challenges = self.risk_review(fundable, portfolio)
         decision, ranked = self.decide(survivors, hurdle_rate, deployed_cad, portfolio)
 
         session = self._build_session(decision, pitches, challenges, ranked, hurdle_rate, portfolio)
@@ -290,12 +306,15 @@ class Orchestrator:
         the risk manager's verdict, and the CEO's ranking + reason. This is the
         narrative the dashboard renders."""
         ranked_by_id = {r.pitch.pitch_id: r for r in ranked}
+        advisory = {d.division.value for d in self.divisions if getattr(d, "advisory", False)}
 
         pitch_rows = []
         for p in pitches:
             ch = challenges.get(p.pitch_id)
             r = ranked_by_id.get(p.pitch_id)
-            if decision.pitch_id == p.pitch_id and decision.kind.value == "fund":
+            if p.division.value in advisory:
+                status, reason = "shadow", "advisory — validating on live data, no capital yet"
+            elif decision.pitch_id == p.pitch_id and decision.kind.value == "fund":
                 status, reason = "funded", "CEO funded — best risk-adjusted edge over the floor"
             elif ch is not None and not ch.approved:
                 status, reason = "vetoed", "; ".join(ch.hard_objections) or "risk manager veto"
@@ -318,6 +337,7 @@ class Orchestrator:
                     "opportunity": p.opportunity,
                     "why_now": p.why_now,
                     "features": p.signals.features,
+                    "news": p.signals.news,
                     "risk_approved": (ch.approved if ch else None),
                     "risk_objections": (ch.hard_objections if ch else []),
                     "risk_concern": (ch.qualitative_concern if ch else ""),
@@ -336,11 +356,17 @@ class Orchestrator:
             {"division": d.division.value, "status": getattr(d, "last_status", "idle")}
             for d in [self.yield_division, *self.divisions]
         ]
+        universe = {}
+        for d in self.divisions:
+            syms = getattr(d, "universe_symbols", None)
+            if syms:
+                universe[d.division.value] = {"venue": d.venue.value, "symbols": list(syms)}
         return {
             "hurdle_rate": hurdle_rate,
             "portfolio_value_cad": portfolio,
             "pitches": pitch_rows,
             "divisions": division_rows,
+            "universe": universe,
         }
 
 

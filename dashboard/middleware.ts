@@ -7,6 +7,10 @@ import { NextRequest, NextResponse } from "next/server";
 // - Once you set DASHBOARD_PASSWORD in the Vercel project env, every page
 //   requires it. Username can be anything; only the password is checked.
 export function middleware(req: NextRequest) {
+  // The daily keep-alive cron must reach the DB without the dashboard password
+  // (it carries its own CRON_SECRET check). Exempt it from Basic Auth.
+  if (req.nextUrl.pathname === "/api/keepalive") return NextResponse.next();
+
   const password = process.env.DASHBOARD_PASSWORD;
   if (!password) return NextResponse.next();
 

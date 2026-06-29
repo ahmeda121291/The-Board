@@ -10,6 +10,7 @@ from boardroom.features.technical import (
     atr,
     beta,
     bollinger_bandwidth,
+    breakout_strength,
     downside_deviation,
     drawdown,
     liquidity_proxy,
@@ -23,6 +24,7 @@ from boardroom.features.technical import (
     rsi,
     sortino_ratio,
     volatility,
+    volume_surge,
     zscore_meanrev,
 )
 
@@ -44,4 +46,6 @@ __all__ = [
     "macd_histogram",
     "bollinger_bandwidth",
     "beta",
+    "volume_surge",
+    "breakout_strength",
 ]

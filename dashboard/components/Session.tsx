@@ -53,6 +53,24 @@ function PitchCard({ p }: { p: SessionPitch }) {
         </div>
       )}
 
+      {/* catalyst news — momentum's qualitative confirmation */}
+      {p.news && p.news.length > 0 ? (
+        <div className="mt-3 rounded-lg border border-violet-400/20 bg-violet-400/[0.04] p-2.5 text-xs">
+          <div className="flex items-center gap-1.5">
+            <span>📰</span>
+            <span className="label">Catalyst news</span>
+            {typeof p.features?.news_intensity === "number" ? (
+              <span className="num text-violet-300">intensity {p.features.news_intensity.toFixed(2)}</span>
+            ) : null}
+          </div>
+          <ul className="mt-1.5 space-y-1">
+            {p.news.slice(0, 3).map((h, i) => (
+              <li key={i} className="text-slate-300">• {h}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {/* risk manager */}
       <div className="mt-3 text-xs">
         <span className="label">Risk manager</span>
