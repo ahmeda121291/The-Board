@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 
 import pandas as pd
+import pytest
 
 from boardroom.data.sources import synthetic_bars
 from boardroom.data.snapshot import Bars
@@ -38,6 +39,9 @@ def test_directional_produces_pitch_on_fresh_data():
     assert pitch.capital_required > 0
     assert pitch.max_loss > 0
     assert pitch.opportunity == ""
+    # The reference (entry) price is stamped into the computed signals so the
+    # dashboard can render the trade plan (price now / units / fair value).
+    assert pitch.signals.features["price"] == pytest.approx(float(bars.closes[-1]))
 
 
 def test_event_sentinel_abstains_when_no_trigger():

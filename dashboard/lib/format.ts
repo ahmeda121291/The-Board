@@ -9,6 +9,21 @@ export const pct = (n: number | null | undefined, digits = 2) =>
 export const num = (n: number | null | undefined, digits = 4) =>
   n === null || n === undefined || Number.isNaN(n) ? "—" : n.toFixed(digits);
 
+// A quoted instrument price ($). Sub-dollar (e.g. some crypto) gets more digits.
+export const price = (n: number | null | undefined) => {
+  if (n === null || n === undefined || Number.isNaN(n)) return "—";
+  const digits = Math.abs(n) >= 1 ? 2 : 6;
+  return `$${n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+};
+
+// A share/unit count. Whole-ish numbers shown compact; fractional kept precise.
+export const qty = (n: number | null | undefined) => {
+  if (n === null || n === undefined || Number.isNaN(n)) return "—";
+  return n >= 1
+    ? n.toLocaleString("en-US", { maximumFractionDigits: 2 })
+    : n.toFixed(4);
+};
+
 export const when = (iso: string | null | undefined) => {
   if (!iso) return "—";
   const d = new Date(iso);

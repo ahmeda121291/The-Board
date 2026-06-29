@@ -175,8 +175,10 @@ class Division(abc.ABC):
         )
         max_loss = round(capital * stop_frac + cost, 2)
 
+        # Stamp the reference (entry) price the decision was computed on, so the
+        # dashboard can show "buying at $X, we value it at $Y" without recomputing.
         signals = ComputedSignals(
-            features=output.features,
+            features={**output.features, "price": float(bars.closes[-1])},
             model_name=output.model_name,
             model_version=output.model_version,
             expected_return=output.expected_return,

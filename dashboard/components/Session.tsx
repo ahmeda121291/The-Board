@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Pill } from "@/components/ui";
 import type { Session, SessionPitch } from "@/lib/data";
-import { cad, num, pct } from "@/lib/format";
+import { cad, num, pct, price, qty } from "@/lib/format";
 
 function statusTone(s: string) {
   return s === "funded" ? "good" : s === "vetoed" ? "bad" : "warn";
@@ -24,6 +24,13 @@ function Metric({ label, value, tone }: { label: string; value: React.ReactNode;
 }
 
 function PitchCard({ p }: { p: SessionPitch }) {
+  // Reference (entry) price the decision was computed on. Lets us show the
+  // human-readable trade plan: price now, ~units, what we think it's worth.
+  const px = typeof p.features?.price === "number" ? p.features.price : null;
+  const hasPlan = px !== null && px > 0;
+  const target = hasPlan ? px * (1 + p.expected_return) : null;     // our fair value
+  const units = hasPlan ? p.capital_required / px : null;          // approx (CAD notional; FX at broker)
+  const funded = p.status === "funded";
   return (
     <div className="glass hud p-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -34,6 +41,29 @@ function PitchCard({ p }: { p: SessionPitch }) {
           <Pill tone={statusTone(p.status)}>{p.status.toUpperCase()}</Pill>
         </span>
       </div>
+
+      {/* Trade plan — price now, how many units, and what we think it's worth */}
+      {hasPlan ? (
+        <div className="mt-3 rounded-lg border border-sky-400/20 bg-sky-400/[0.05] p-2.5">
+          <div className="label mb-1.5">
+            {funded ? "Trade plan · executed" : "Trade plan · if funded"}
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Metric label="Price now" value={price(px)} />
+            <Metric label={`≈ units for ${cad(p.capital_required)}`} value={qty(units)} />
+            <Metric label="Our fair value" value={price(target)} tone="text-emerald-300" />
+            <Metric
+              label="Upside to target"
+              value={pct(p.expected_return)}
+              tone={p.expected_return >= 0 ? "text-emerald-400" : "text-rose-400"}
+            />
+          </div>
+          <div className="mt-1.5 text-[11px] text-slate-500">
+            “Our fair value” = price now × (1 + expected return) over the {num(p.horizon_days, 0)}-day
+            horizon. Units are approximate — orders are sized in CAD and the broker converts FX & rounds.
+          </div>
+        </div>
+      ) : null}
 
       {/* computed numbers — code, not the LLM */}
       <div className="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-6">
