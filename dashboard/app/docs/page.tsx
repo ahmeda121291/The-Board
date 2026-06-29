@@ -159,8 +159,8 @@ export default function DocsPage() {
           </tr>
           <tr className="hover:bg-white/[0.02]">
             <td className="px-4 py-3 font-medium">Stocks / ETFs</td>
-            <td className="px-4 py-3 text-slate-300">Wealthsimple (via SnapTrade)</td>
-            <td className="px-4 py-3"><Pill tone="cyan">Directional</Pill></td>
+            <td className="px-4 py-3 text-slate-300">Interactive Brokers</td>
+            <td className="px-4 py-3"><Pill tone="cyan">Directional</Pill> <Pill tone="warn">Momentum</Pill></td>
           </tr>
         </Table>
         <p className="mt-3 pl-1 text-sm text-slate-400">

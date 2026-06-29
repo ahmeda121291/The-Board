@@ -21,16 +21,20 @@ _SYSTEM = (
 
 
 def _fallback(pitch: Pitch) -> tuple[str, str]:
-    f = pitch.signals.features
-    feat = ", ".join(f"{k}={v:.4f}" for k, v in list(f.items())[:4])
+    """Plain-language pitch when the LLM is unavailable — no jargon, no raw
+    feature dump (the dashboard is for a person, not a debugger)."""
+    sym = pitch.symbol
+    move = pitch.expected_return * 100.0
+    direction = "rise" if pitch.expected_return >= 0 else "fall"
     opp = (
-        f"{pitch.division.value.title()} on {pitch.symbol} via {pitch.venue.value}: "
-        f"model {pitch.signals.model_name}:{pitch.signals.model_version} computes "
-        f"expected_return={pitch.expected_return:.4f} at win_prob={pitch.confidence:.2f}, "
-        f"horizon {pitch.time_horizon_days:.0f}d, size {pitch.capital_required:.2f} CAD, "
-        f"max_loss {pitch.max_loss:.2f} CAD."
+        f"Buy about {pitch.capital_required:.0f} CAD of {sym}. The model expects it to "
+        f"{direction} roughly {abs(move):.1f}% over the next {pitch.time_horizon_days:.0f} days, "
+        f"risking at most {pitch.max_loss:.2f} CAD if its stop is hit."
     )
-    why = f"Triggering features: {feat}." if feat else "Computed signals crossed the model threshold."
+    why = (
+        f"{sym} just cleared the model's entry bar this checkpoint, with about a "
+        f"{pitch.confidence * 100:.0f}% chance of going the way we expect."
+    )
     return opp, why
 
 

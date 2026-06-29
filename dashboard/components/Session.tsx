@@ -1,7 +1,21 @@
+"use client";
+
 import * as React from "react";
 import { Pill } from "@/components/ui";
 import type { Session, SessionPitch } from "@/lib/data";
 import { cad, num, pct, price, qty } from "@/lib/format";
+
+// This view is for a person, not a debugger: every card leads with one plain
+// sentence about what happened and why. The math is still here — tucked behind
+// "Show the numbers" — so nothing is hidden, it's just not in your face.
+
+type Bucket = "funded" | "vetoed" | "considered";
+
+function bucketOf(p: SessionPitch): Bucket {
+  if (p.status === "funded") return "funded";
+  if (p.status === "vetoed") return "vetoed";
+  return "considered"; // "passed" + advisory "shadow"
+}
 
 function statusTone(s: string) {
   return s === "funded" ? "good" : s === "vetoed" ? "bad" : "warn";
@@ -11,7 +25,31 @@ function divisionTone(status: string) {
   if (status.startsWith("pitched")) return "cyan";
   if (status.startsWith("floor")) return "good";
   if (status.startsWith("disabled")) return "default";
-  return "warn"; // abstained
+  return "warn";
+}
+
+// Turn a risk-manager objection into something a human understands.
+function plainVeto(objections: string[]): string {
+  const j = objections.join(" ").toLowerCase();
+  if (j.includes("cost")) return "the expected gain didn’t cover the trading cost — not worth it.";
+  if (j.includes("liquid")) return "the market’s too thin to trade our size cleanly.";
+  if (j.includes("loss") || j.includes("cap") || j.includes("size")) return "it would breach a risk limit.";
+  if (j.includes("stop")) return "the stop-loss wasn’t solid enough.";
+  return objections[0] || "the risk manager blocked it.";
+}
+
+function headline(p: SessionPitch, target: number | null): { icon: string; text: string } {
+  if (p.status === "funded") {
+    const t = target !== null ? ` We think it’s worth about ${price(target)} — ${pct(p.expected_return)} higher.` : "";
+    return { icon: "✅", text: `Bought ${cad(p.capital_required)} of ${p.symbol}.${t}` };
+  }
+  if (p.status === "vetoed") {
+    return { icon: "✖", text: `Skipped ${p.symbol} — ${plainVeto(p.risk_objections)}` };
+  }
+  if (p.status === "shadow") {
+    return { icon: "👁", text: `Watching ${p.symbol} — a new strategy still proving itself, so no real money yet.` };
+  }
+  return { icon: "➖", text: `Looked at ${p.symbol}, but holding the cash floor was the better bet today.` };
 }
 
 function Metric({ label, value, tone }: { label: string; value: React.ReactNode; tone?: string }) {
@@ -24,109 +62,101 @@ function Metric({ label, value, tone }: { label: string; value: React.ReactNode;
 }
 
 function PitchCard({ p }: { p: SessionPitch }) {
-  // Reference (entry) price the decision was computed on. Lets us show the
-  // human-readable trade plan: price now, ~units, what we think it's worth.
   const px = typeof p.features?.price === "number" ? p.features.price : null;
   const hasPlan = px !== null && px > 0;
-  const target = hasPlan ? px * (1 + p.expected_return) : null;     // our fair value
-  const units = hasPlan ? p.capital_required / px : null;          // approx (CAD notional; FX at broker)
+  const target = hasPlan ? px * (1 + p.expected_return) : null;
+  const units = hasPlan ? p.capital_required / px : null;
   const funded = p.status === "funded";
+  const h = headline(p, target);
+
   return (
     <div className="glass hud p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium capitalize">{p.division}</span>
-        <span className="num text-slate-400">{p.symbol}</span>
-        <span className="text-xs text-slate-500">{p.venue}</span>
-        <span className="ml-auto">
-          <Pill tone={statusTone(p.status)}>{p.status.toUpperCase()}</Pill>
-        </span>
+      {/* one human sentence, first */}
+      <div className="flex items-start gap-2.5">
+        <span className="text-lg leading-none">{h.icon}</span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] leading-snug text-slate-100">{h.text}</p>
+          <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+            <span className="capitalize">{p.division}</span>
+            <span>·</span>
+            <span className="num">{p.symbol}</span>
+            <span>·</span>
+            <span>{p.venue}</span>
+          </div>
+        </div>
+        <Pill tone={statusTone(p.status)}>{p.status.toUpperCase()}</Pill>
       </div>
 
-      {/* Trade plan — price now, how many units, and what we think it's worth */}
-      {hasPlan ? (
-        <div className="mt-3 rounded-lg border border-sky-400/20 bg-sky-400/[0.05] p-2.5">
-          <div className="label mb-1.5">
-            {funded ? "Trade plan · executed" : "Trade plan · if funded"}
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Metric label="Price now" value={price(px)} />
-            <Metric label={`≈ units for ${cad(p.capital_required)}`} value={qty(units)} />
-            <Metric label="Our fair value" value={price(target)} tone="text-emerald-300" />
-            <Metric
-              label="Upside to target"
-              value={pct(p.expected_return)}
-              tone={p.expected_return >= 0 ? "text-emerald-400" : "text-rose-400"}
-            />
-          </div>
-          <div className="mt-1.5 text-[11px] text-slate-500">
-            “Our fair value” = price now × (1 + expected return) over the {num(p.horizon_days, 0)}-day
-            horizon. Units are approximate — orders are sized in CAD and the broker converts FX & rounds.
-          </div>
+      {/* the trade plan, only when we actually bought */}
+      {funded && hasPlan ? (
+        <div className="mt-3 grid grid-cols-2 gap-3 rounded-lg border border-emerald-400/20 bg-emerald-400/[0.05] p-2.5 sm:grid-cols-4">
+          <Metric label="Price now" value={price(px)} />
+          <Metric label={`≈ shares for ${cad(p.capital_required)}`} value={qty(units)} />
+          <Metric label="Our fair value" value={price(target)} tone="text-emerald-300" />
+          <Metric label="Upside to target" value={pct(p.expected_return)} tone="text-emerald-400" />
         </div>
       ) : null}
 
-      {/* computed numbers — code, not the LLM */}
-      <div className="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-6">
-        <Metric label="Exp. return" value={pct(p.expected_return)} tone={p.expected_return >= 0 ? "text-emerald-400" : "text-rose-400"} />
-        <Metric label="Win prob" value={pct(p.confidence, 0)} />
-        <Metric label="Size" value={cad(p.capital_required)} />
-        <Metric label="Max loss" value={cad(p.max_loss)} tone="text-rose-300" />
-        <Metric label="Est. cost" value={cad(p.expected_cost)} tone="text-amber-300" />
-        <Metric label="Horizon" value={`${num(p.horizon_days, 0)}d`} />
-      </div>
-
-      {/* narrative — the LLM's words */}
-      {(p.opportunity || p.why_now) && (
-        <div className="mt-3 space-y-1 border-l-2 border-sky-400/30 pl-3 text-sm">
-          {p.opportunity ? <p className="text-slate-200">{p.opportunity}</p> : null}
-          {p.why_now ? <p className="text-slate-400"><span className="text-slate-500">Why now:</span> {p.why_now}</p> : null}
-        </div>
-      )}
-
-      {/* catalyst news — momentum's qualitative confirmation */}
+      {/* catalyst news — a real-world reason, if any */}
       {p.news && p.news.length > 0 ? (
         <div className="mt-3 rounded-lg border border-violet-400/20 bg-violet-400/[0.04] p-2.5 text-xs">
-          <div className="flex items-center gap-1.5">
-            <span>📰</span>
-            <span className="label">Catalyst news</span>
-            {typeof p.features?.news_intensity === "number" ? (
-              <span className="num text-violet-300">intensity {p.features.news_intensity.toFixed(2)}</span>
-            ) : null}
-          </div>
-          <ul className="mt-1.5 space-y-1">
-            {p.news.slice(0, 3).map((h, i) => (
-              <li key={i} className="text-slate-300">• {h}</li>
+          <div className="label mb-1">📰 In the news</div>
+          <ul className="space-y-1">
+            {p.news.slice(0, 3).map((n, i) => (
+              <li key={i} className="text-slate-300">• {n}</li>
             ))}
           </ul>
         </div>
       ) : null}
 
-      {/* risk manager */}
-      <div className="mt-3 text-xs">
-        <span className="label">Risk manager</span>
+      {/* everything quantitative lives here — available, not in the way */}
+      <details className="mt-3 text-xs">
+        <summary className="cursor-pointer text-slate-500 hover:text-slate-300">Show the numbers</summary>
+        <div className="mt-2 grid grid-cols-3 gap-3 sm:grid-cols-6">
+          <Metric label="Exp. return" value={pct(p.expected_return)} tone={p.expected_return >= 0 ? "text-emerald-400" : "text-rose-400"} />
+          <Metric label="Win prob" value={pct(p.confidence, 0)} />
+          <Metric label="Size" value={cad(p.capital_required)} />
+          <Metric label="Max loss" value={cad(p.max_loss)} tone="text-rose-300" />
+          <Metric label="Est. cost" value={cad(p.expected_cost)} tone="text-amber-300" />
+          <Metric label="Horizon" value={`${num(p.horizon_days, 0)}d`} />
+        </div>
         {p.risk_approved === false ? (
-          <div className="mt-1 text-rose-300">
-            ✗ vetoed — {p.risk_objections.join("; ")}
-          </div>
+          <div className="mt-2 text-rose-300">Risk manager vetoed: {p.risk_objections.join("; ")}</div>
         ) : (
-          <div className="mt-1 text-emerald-300">✓ cleared the hard checks</div>
+          <div className="mt-2 text-emerald-300">Risk manager: cleared the hard checks.</div>
         )}
-        {p.risk_concern ? <div className="mt-0.5 text-slate-500">“{p.risk_concern}”</div> : null}
-      </div>
-
-      {/* CEO verdict */}
-      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-white/10 pt-3 text-xs">
-        <span className="label">CEO</span>
-        {p.ceo_score !== null ? <span className="num text-slate-300">score {num(p.ceo_score, 3)}</span> : null}
-        {p.ceo_trust !== null ? <span className="num text-slate-300">trust {num(p.ceo_trust, 2)}</span> : null}
-        {p.ceo_size_cad ? <span className="num text-slate-300">size {cad(p.ceo_size_cad)}</span> : null}
-        <span className={`ml-auto ${p.status === "funded" ? "text-emerald-300" : "text-amber-300"}`}>{p.reason}</span>
-      </div>
+        {p.ceo_score !== null ? (
+          <div className="mt-1 text-slate-500">
+            CEO score {num(p.ceo_score, 3)} · trust {num(p.ceo_trust ?? 0, 2)}
+            {p.reason ? ` · ${p.reason}` : ""}
+          </div>
+        ) : null}
+        {p.opportunity ? <div className="mt-1 text-slate-400">{p.opportunity}</div> : null}
+      </details>
     </div>
   );
 }
 
+function FilterChip({
+  label, count, active, onClick,
+}: { label: string; count: number; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-full border px-3 py-1 text-xs transition ${
+        active
+          ? "border-sky-400/50 bg-sky-400/10 text-sky-200"
+          : "border-white/10 text-slate-400 hover:border-white/25 hover:text-slate-200"
+      }`}
+    >
+      {label} <span className="num text-slate-500">{count}</span>
+    </button>
+  );
+}
+
 export function SessionView({ session }: { session: Session | null }) {
+  const [filter, setFilter] = React.useState<"all" | Bucket>("all");
+
   if (!session || (!session.pitches?.length && !session.divisions?.length)) {
     return (
       <div className="glass p-4 text-sm text-slate-400">
@@ -135,12 +165,19 @@ export function SessionView({ session }: { session: Session | null }) {
     );
   }
   const pitches = session.pitches ?? [];
+  const counts = {
+    funded: pitches.filter((p) => bucketOf(p) === "funded").length,
+    vetoed: pitches.filter((p) => bucketOf(p) === "vetoed").length,
+    considered: pitches.filter((p) => bucketOf(p) === "considered").length,
+  };
+  const shown = filter === "all" ? pitches : pitches.filter((p) => bucketOf(p) === filter);
+
   return (
     <div className="space-y-4">
       {/* division roll-call */}
       {session.divisions?.length ? (
         <div className="glass p-4">
-          <div className="label mb-2">Division roll-call</div>
+          <div className="label mb-2">Who showed up</div>
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             {session.divisions.map((d) => (
               <div key={d.division} className="flex items-center gap-2">
@@ -152,17 +189,39 @@ export function SessionView({ session }: { session: Session | null }) {
         </div>
       ) : null}
 
-      {/* pitches considered */}
       {pitches.length ? (
-        <div className="space-y-3">
-          {pitches.map((p) => (
-            <PitchCard key={p.pitch_id} p={p} />
-          ))}
-        </div>
+        <>
+          {/* filters + plain-language legend */}
+          <div className="flex flex-wrap items-center gap-2">
+            <FilterChip label="All" count={pitches.length} active={filter === "all"} onClick={() => setFilter("all")} />
+            <FilterChip label="✅ Bought" count={counts.funded} active={filter === "funded"} onClick={() => setFilter("funded")} />
+            <FilterChip label="✖ Skipped" count={counts.vetoed} active={filter === "vetoed"} onClick={() => setFilter("vetoed")} />
+            <FilterChip label="➖ Considered" count={counts.considered} active={filter === "considered"} onClick={() => setFilter("considered")} />
+          </div>
+          <details className="text-xs text-slate-500">
+            <summary className="cursor-pointer hover:text-slate-300">What do these mean?</summary>
+            <ul className="mt-2 space-y-1">
+              <li><b className="text-emerald-300">Bought</b> — the CEO put real money into this idea.</li>
+              <li><b className="text-rose-300">Skipped</b> — the risk manager blocked it (usually the gain didn’t beat the cost, or it broke a risk limit).</li>
+              <li><b className="text-amber-300">Considered</b> — a fair idea, but parking the cash in the safe “floor” (interest/yield) was the better bet today.</li>
+              <li><b className="text-slate-300">Watching</b> — a new strategy still being validated; it’s logged but never funded with real money yet.</li>
+            </ul>
+          </details>
+
+          {shown.length ? (
+            <div className="space-y-3">
+              {shown.map((p) => (
+                <PitchCard key={p.pitch_id} p={p} />
+              ))}
+            </div>
+          ) : (
+            <div className="glass p-4 text-sm text-slate-400">Nothing in this category this checkpoint.</div>
+          )}
+        </>
       ) : (
         <div className="glass p-4 text-sm text-slate-400">
-          No pitches this checkpoint — every division abstained (no fresh edge cleared its
-          threshold), so the CEO stayed in the floor. That’s the null default doing its job.
+          No ideas cleared the bar this checkpoint, so the CEO stayed in the safe floor. That’s the
+          default — doing nothing is usually the right call.
         </div>
       )}
     </div>

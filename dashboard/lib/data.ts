@@ -46,7 +46,7 @@ export type SessionPitch = {
   ceo_score: number | null;
   ceo_trust: number | null;
   ceo_size_cad: number | null;
-  status: "funded" | "vetoed" | "passed";
+  status: "funded" | "vetoed" | "passed" | "shadow";
   reason: string;
 };
 

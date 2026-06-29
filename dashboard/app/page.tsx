@@ -44,8 +44,8 @@ function DepositLedger() {
     <div className="glass hud p-3 min-w-[210px]">
       <div className="label mb-2">Original deposits</div>
       <div className="space-y-1.5">
-        <Row name="Kraken" v={d.kraken} tone="bg-sky-400" />
-        <Row name="Wealthsimple" v={d.wealthsimple} tone="bg-violet-400" />
+        <Row name="Kraken · crypto" v={d.kraken} tone="bg-sky-400" />
+        <Row name="IBKR · stocks" v={d.ibkr} tone="bg-violet-400" />
         <div className="my-1 h-px bg-white/10" />
         <div className="flex items-center justify-between">
           <span className="text-[10px] uppercase tracking-widest text-slate-400">Start balance</span>
@@ -361,23 +361,24 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
       </Section>
 
       {/* Divisions */}
-      <Section title="Divisions" desc="Trust = demonstrated calibration (Beta posterior mean), not stated confidence.">
+      <Section
+        title="The teams"
+        desc="Each team hunts a different kind of opportunity. “Track record” is how often it’s actually been right — earned, not claimed. “Risk budget” is how much we let it bet (0 = benched until it proves itself)."
+      >
         {d.divisions.length === 0 ? (
-          <Empty>No divisions registered yet.</Empty>
+          <Empty>No teams registered yet.</Empty>
         ) : (
-          <Table head={["Division", "Status", "Calibration", "Leash", "Resolved", "Net vs floor"]}>
+          <Table head={["Team", "Status", "Track record", "Risk budget", "Trades", "Beat the floor by"]}>
             {d.divisions.map((x) => {
               const mean = calibrationMean(x);
-              const status = x.retired ? "retired" : x.shadow ? "shadow" : "live";
+              const status = x.retired ? "benched" : x.shadow ? "watching" : "active";
               const tone = x.retired ? "bad" : x.shadow ? "warn" : "good";
               return (
                 <tr key={x.division} className="hover:bg-white/[0.02]">
                   <td className="px-4 py-3 font-medium capitalize">{x.division}</td>
                   <td className="px-4 py-3"><Pill tone={tone}>{status}</Pill></td>
-                  <td className="num px-4 py-3">
-                    {pct(mean, 0)} <span className="text-slate-500">α{num(x.alpha, 1)}/β{num(x.beta, 1)}</span>
-                  </td>
-                  <td className="num px-4 py-3">{num(x.leash, 2)}</td>
+                  <td className="num px-4 py-3">{x.n_resolved > 0 ? pct(mean, 0) : "—"}</td>
+                  <td className="num px-4 py-3">{pct(x.leash, 0)}</td>
                   <td className="num px-4 py-3">{x.n_resolved}</td>
                   <td className={`num px-4 py-3 ${x.net_vs_floor_cad >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                     {cad(x.net_vs_floor_cad)}
@@ -404,11 +405,11 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
       </Section>
 
       {/* Decisions */}
-      <Section title="Decision log" desc="Every checkpoint: FUND / HOLD / FUND_NONE.">
+      <Section title="Decision log" desc="Every checkpoint and what the CEO decided — buy something, or hold the cash floor.">
         {d.decisions.length === 0 ? (
           <Empty>No decisions logged yet.</Empty>
         ) : (
-          <Table head={["When", "Decision", "Division", "Size", "Hurdle", "Mode"]}>
+          <Table head={["When", "Decision", "Team", "Size", "Floor to beat", "Mode"]}>
             {d.decisions.map((x) => (
               <tr key={x.decision_id} className="hover:bg-white/[0.02]">
                 <td className="px-4 py-3 text-slate-400">{when(x.created_at)}</td>
@@ -424,11 +425,11 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
       </Section>
 
       {/* Pitches */}
-      <Section title="Recent pitches" desc="Computed numbers (code), narrative (LLM). Quant fields are never LLM guesses.">
+      <Section title="Recent ideas" desc="Every idea a team pitched recently, newest first — whether or not it got funded.">
         {d.pitches.length === 0 ? (
-          <Empty>No pitches yet.</Empty>
+          <Empty>No ideas yet.</Empty>
         ) : (
-          <Table head={["When", "Division", "Symbol", "Exp. return", "Win prob", "Size", "Max loss"]}>
+          <Table head={["When", "Team", "Symbol", "Exp. return", "Win prob", "Size", "Max loss"]}>
             {d.pitches.map((p) => (
               <tr key={p.pitch_id} className="hover:bg-white/[0.02]">
                 <td className="px-4 py-3 text-slate-400">{ago(p.created_at)}</td>
@@ -447,11 +448,11 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
       </Section>
 
       {/* Outcomes */}
-      <Section title="Resolved outcomes" desc="Predicted vs realized, and the process-vs-luck tag.">
+      <Section title="How past bets turned out" desc="Once a trade closes: what we predicted vs what actually happened, and whether it was good process or just luck.">
         {d.outcomes.length === 0 ? (
           <Empty>Nothing resolved yet.</Empty>
         ) : (
-          <Table head={["When", "Division", "Predicted", "Realized", "P&L", "Process×Luck"]}>
+          <Table head={["When", "Team", "Predicted", "Actual", "P&L", "Process / luck"]}>
             {d.outcomes.slice(0, 25).map((o) => (
               <tr key={o.id} className="hover:bg-white/[0.02]">
                 <td className="px-4 py-3 text-slate-400">{ago(o.resolved_at)}</td>
