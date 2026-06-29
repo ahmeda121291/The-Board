@@ -153,3 +153,27 @@ def test_trust_discounts_overclaiming_division():
     p = _pitch(expected_return=0.06, confidence=0.9)
     _, ranked = eng.decide([p], hurdle_rate=0.0002, portfolio_value_cad=PV)
     assert ranked[0].trust < 0.9
+
+
+# ---- aggression schedule: bolder while small, calmer as it grows ------------
+def test_aggression_schedule_scales_the_bar_with_equity():
+    eng = CEODecisionEngine(
+        caps=_caps(),
+        deviation_threshold=0.02,        # conservative (grown) bar
+        deviation_threshold_low=0.005,   # aggressive (small-account) bar
+        aggressive_below_cad=500.0,
+        conservative_above_cad=5000.0,
+    )
+    assert eng._effective_threshold(200) == pytest.approx(0.005)    # small -> low bar
+    assert eng._effective_threshold(500) == pytest.approx(0.005)    # at floor of the ramp
+    assert eng._effective_threshold(5000) == pytest.approx(0.02)    # grown -> conservative
+    assert eng._effective_threshold(50000) == pytest.approx(0.02)   # clamped above
+    mid = eng._effective_threshold(2750)  # halfway up the ramp
+    assert 0.005 < mid < 0.02
+
+
+def test_no_schedule_keeps_the_fixed_bar():
+    # Without deviation_threshold_low set, behaviour is the old fixed threshold.
+    eng = CEODecisionEngine(caps=_caps())
+    assert eng._effective_threshold(200) == pytest.approx(0.02)
+    assert eng._effective_threshold(100000) == pytest.approx(0.02)

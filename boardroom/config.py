@@ -47,6 +47,16 @@ class Settings(BaseSettings):
     # live equity is wired in.
     starting_portfolio_cad: float = Field(default=200.0, alias="STARTING_PORTFOLIO_CAD")
 
+    # ---- CEO aggression schedule — bolder small, calmer as it grows ----------
+    # The "bar" the best idea must clear to deviate from holding the floor. It's
+    # LOW while the account is small (deploy and compound) and rises to the
+    # conservative value as equity climbs. Hard caps are unaffected — this only
+    # changes how readily the CEO acts.
+    ceo_deviation_threshold: float = Field(default=0.02, alias="CEO_DEVIATION_THRESHOLD")
+    ceo_deviation_threshold_low: float = Field(default=0.005, alias="CEO_DEVIATION_THRESHOLD_LOW")
+    aggressive_below_cad: float = Field(default=500.0, alias="AGGRESSIVE_BELOW_CAD")
+    conservative_above_cad: float = Field(default=5000.0, alias="CONSERVATIVE_ABOVE_CAD")
+
     # The floor's annualized carry — the hurdle every other division must beat.
     # Set this to the APR you actually earn (Kraken staking/lending). When the
     # live Kraken venue is wired it can refresh this automatically within a sanity

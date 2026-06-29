@@ -168,6 +168,14 @@ checkpoints, without increasing entry frequency. Not warranted at current size.
 
 ## Changelog
 
+- **2026-06-29** — **Equity-scaled aggression schedule + real venue balances + a
+  human dashboard.** The CEO's deviation bar (how readily it leaves the floor) is now a
+  function of equity: low (0.005) while the account is small so it actually deploys and
+  compounds, rising to the conservative 0.02 as equity grows past $5k — bolder small,
+  calmer as it grows. Hard caps unchanged. The dashboard now shows REAL venue cash
+  (pulled by the local runner via `boardroom balances` → `system_state`, migration 0008)
+  instead of a hardcoded baseline, and was reworked to lead with plain language (filters,
+  legends, a "show the numbers" toggle) rather than raw model internals.
 - **2026-06-29** — **Directional venue switched to Interactive Brokers; SnapTrade /
   Wealthsimple fully removed.** A SnapTrade→Wealthsimple connection couldn't be made
   trade-capable (read-only / account lockout), so the equity leg now executes on IBKR

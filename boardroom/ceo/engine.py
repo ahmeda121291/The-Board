@@ -33,11 +33,34 @@ class RankedPitch:
 @dataclass
 class CEODecisionEngine:
     caps: RiskCaps
-    #: Minimum risk-adjusted score required to deviate from the floor. The bar
-    #: that makes "do nothing" win most days.
+    #: Minimum risk-adjusted score required to deviate from the floor — the
+    #: CONSERVATIVE (grown-account) bar. The bar that makes "do nothing" win.
     deviation_threshold: float = 0.02
+    #: Equity-scaled "aggression schedule" (off unless ``deviation_threshold_low``
+    #: is set). When set, the bar is LOW for a small account (deploy and grow) and
+    #: rises linearly to ``deviation_threshold`` as equity climbs from
+    #: ``aggressive_below_cad`` to ``conservative_above_cad``. The hard caps
+    #: (per-trade, daily-loss, drawdown, fee-drag) are untouched — this only
+    #: changes how readily the CEO acts, never the blast radius.
+    deviation_threshold_low: float | None = None
+    aggressive_below_cad: float = 500.0
+    conservative_above_cad: float = 5000.0
     posteriors: dict[str, CalibrationPosterior] = field(default_factory=dict)
     leashes: dict[str, float] = field(default_factory=dict)
+
+    def _effective_threshold(self, equity: float) -> float:
+        """The deviation bar at this equity. Smaller account -> lower bar."""
+        low = self.deviation_threshold_low
+        high = self.deviation_threshold
+        if low is None:
+            return high
+        lo_cad, hi_cad = self.aggressive_below_cad, self.conservative_above_cad
+        if equity <= lo_cad:
+            return low
+        if hi_cad <= lo_cad or equity >= hi_cad:
+            return high
+        frac = (equity - lo_cad) / (hi_cad - lo_cad)
+        return low + frac * (high - low)
 
     def _rank_one(
         self, pitch: Pitch, hurdle_rate: float, deployed_cad: float, portfolio_value_cad: float
@@ -121,7 +144,8 @@ class CEODecisionEngine:
             )
 
         best = survivors[0]
-        if best.score < self.deviation_threshold:
+        threshold = self._effective_threshold(portfolio_value_cad)
+        if best.score < threshold:
             return (
                 Decision(
                     decision_id=decision_id,
@@ -130,7 +154,7 @@ class CEODecisionEngine:
                     ranked_pitch_ids=ranked_ids,
                     rationale=(
                         f"Best score {best.score:.3f} below deviation threshold "
-                        f"{self.deviation_threshold:.3f} — stay in the floor."
+                        f"{threshold:.3f} — stay in the floor."
                     ),
                 ),
                 ranked,

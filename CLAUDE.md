@@ -44,6 +44,10 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 - **Caps are percent-of-portfolio** (scale with equity): deployable 80%, per-trade 20%,
   Event 5%, daily-loss 6%, max-drawdown 15%, fee-drag 5%. Circuit breakers on loss/drawdown.
+- **Aggression schedule** (`ceo/engine.py`): the CEO's deviation bar is LOW while the
+  account is small (0.005 ≤ $500) and rises to conservative (0.02 ≥ $5000) as equity grows
+  — bolder small, calmer as it compounds. Tunable via `CEO_DEVIATION_THRESHOLD*` /
+  `AGGRESSIVE_BELOW_CAD` / `CONSERVATIVE_ABOVE_CAD`. Hard caps above are unaffected.
 - **Gains ratchet** sweeps a fraction of new highs into an **untouchable reserve**.
 - **Withdrawals DISABLED on every venue** — no transfer code path exists. Keys are
   trade-only and per-venue isolated (Kraken ⟂ equities).

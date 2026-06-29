@@ -59,7 +59,15 @@ class Orchestrator:
         if self.risk_manager is None:
             self.risk_manager = RiskManager(caps=caps, llm=self.llm)
         if self.engine is None:
-            self.engine = CEODecisionEngine(caps=caps)
+            # Equity-scaled aggression: a lower bar while the account is small,
+            # rising to the conservative bar as it grows. Hard caps unaffected.
+            self.engine = CEODecisionEngine(
+                caps=caps,
+                deviation_threshold=self.settings.ceo_deviation_threshold,
+                deviation_threshold_low=self.settings.ceo_deviation_threshold_low,
+                aggressive_below_cad=self.settings.aggressive_below_cad,
+                conservative_above_cad=self.settings.conservative_above_cad,
+            )
         # Default to stub brokers; real Kraken/IBKR are injected at Milestone 6.
         self.brokers.setdefault(Venue.KRAKEN, StubBroker(Venue.KRAKEN))
         self.brokers.setdefault(Venue.IBKR, StubBroker(Venue.IBKR))
