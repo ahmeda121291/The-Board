@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 *.pem
+# IBeam holds the IBKR password — never commit the real env.list.
+ibeam/env.list
 *.key
 secrets/
 
