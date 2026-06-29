@@ -38,7 +38,7 @@ trade directly — they propose, and the CEO disposes.
 | --- | --- | --- | --- |
 | **Yield** | Crypto | Kraken | The floor — the safe baseline return every other idea must beat. |
 | **Event** | Crypto | Kraken | Event/catalyst-driven crypto opportunities. |
-| **Directional** | Stocks / ETFs | Wealthsimple (via SnapTrade) | Directional equity positions. |
+| **Directional** | Stocks / ETFs | Interactive Brokers | Directional equity positions. |
 | **Effort** | — | — | Disabled. Reserved. |
 
 A pitch carries computed numbers (code) plus a short narrative (LLM). Quant fields
@@ -96,7 +96,7 @@ plays with house money over time.
 
 - **One checkpoint per day** at **3:00pm local (≈19:00 UTC summer)**.
 - Crypto (Kraken) trades **24/7** — the Yield/Event legs can act at any checkpoint.
-- Stocks (Wealthsimple) only fill during the **regular session, 9:30am–4:00pm ET**.
+- Stocks (Interactive Brokers) only fill during the **regular session, 9:30am–4:00pm ET**.
   3pm local is **1 hour before the close** in both summer and winter, so the
   Directional leg fills while the market is open.
 - **Market-hours guard:** if a live equity order is ever attempted while the market
@@ -168,6 +168,15 @@ checkpoints, without increasing entry frequency. Not warranted at current size.
 
 ## Changelog
 
+- **2026-06-29** — **Directional venue switched to Interactive Brokers; SnapTrade /
+  Wealthsimple fully removed.** A SnapTrade→Wealthsimple connection couldn't be made
+  trade-capable (read-only / account lockout), so the equity leg now executes on IBKR
+  via the Client Portal Gateway (session-based; no static API key). Deleted the
+  SnapTrade broker, connect helper, config, dependency, and the `Venue.SNAPTRADE`
+  enum; IBKR is the sole Directional venue. Also hardened the test suite to be
+  hermetic (`tests/conftest.py`) — it strips live credentials / `LIVE_TRADING` / the
+  Supabase keys and never reads `.env`, so running `pytest` on the live machine can
+  no longer attempt real orders or touch the production database.
 - **2026-06-28** — **Self-improvement transmission wired + diligence upgrades.** The
   adaptive engine was fully built but never ran live (no outcome ever resolved). Added
   a resolution loop: funded positions (paper or live) are marked to fresh prices each

@@ -90,9 +90,8 @@ def build_default_org(
 
     settings = get_settings()
 
-    # The Directional leg's execution venue follows the configured credentials:
-    # SnapTrade (Wealthsimple) if set, else IBKR. The division is tagged with it
-    # so its pitches route to the matching broker.
+    # The Directional leg executes on IBKR (Client Portal Gateway). The division
+    # is tagged with it so its pitches route to the matching broker.
     dv = directional_execution_venue()
 
     from boardroom.divisions.momentum import MomentumDivision

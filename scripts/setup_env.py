@@ -23,11 +23,8 @@ FIELDS = [
     ("ANTHROPIC_API_KEY", "Anthropic API key (sk-ant-...). Optional — blank = templated rationales", "", True),
     ("KRAKEN_API_KEY", "Kraken API key (trade + staking; WITHDRAW DISABLED)", "", True),
     ("KRAKEN_API_SECRET", "Kraken API secret (the private key, ends in ==)", "", True),
-    ("SNAPTRADE_CLIENT_ID", "SnapTrade Client ID (PERS-...)", "", False),
-    ("SNAPTRADE_CONSUMER_KEY", "SnapTrade Consumer Key", "", True),
-    ("SNAPTRADE_USER_ID", "SnapTrade user id you'll register (e.g. ahmed-boardroom). Skip if not done yet", "", False),
-    ("SNAPTRADE_USER_SECRET", "SnapTrade user secret (from the connect step). Skip for now if you don't have it", "", True),
-    ("SNAPTRADE_ACCOUNT_ID", "SnapTrade account id (from the connect step). Skip for now if you don't have it", "", False),
+    ("IBKR_ACCOUNT_ID", "Interactive Brokers account id (U... live or DU... paper). Run the Client Portal Gateway + log in at https://localhost:5000", "", False),
+    ("IBKR_GATEWAY_URL", "IBKR Client Portal Gateway URL", "https://localhost:5000", False),
     # --- Hard risk caps as PERCENT of portfolio value (scale as you grow) ----
     ("TOTAL_DEPLOYABLE_PCT", "Max fraction of portfolio the agents may deploy (0.80 = 80%)", "0.80", False),
     ("PER_TRADE_MAX_PCT", "Max fraction of portfolio for any single trade (0.20 = 20%)", "0.20", False),

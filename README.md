@@ -6,7 +6,7 @@
 > goes each day (usually nowhere), and a *measurement* layer scores every
 > decision and feeds results back so the system adapts.
 >
-> Canada build · Kraken + Wealthsimple (via SnapTrade) · live-capable, gated behind a flag.
+> Canada build · Kraken + Interactive Brokers · live-capable, gated behind a flag.
 
 **The governing law (scope §5): the LLM reasons; CODE calculates.** No
 quantitative field the system acts on is ever produced by an LLM's free-form
@@ -26,7 +26,7 @@ qualitative calls.
 | M3 | Adversarial risk manager (code-driven vetoes the LLM can't sweet-talk) | ✅ |
 | M4 | Measurement (ROI vs **floor** and **buy-and-hold**, Critic, cost gate) + Supabase | ✅ |
 | M5 | Adaptive engine (calibration → trust + leashes, refit guardrails, retirement, shadow) | ✅ |
-| M6 | Kraken + SnapTrade→Wealthsimple adapters behind the broker interface (live-gated; IBKR retained as fallback) | ✅ code · ⏸ live smoke test needs keys |
+| M6 | Kraken + IBKR adapters behind the broker interface (live-gated) | ✅ code · ⏸ live smoke test needs the gateway running |
 | M7–M10 | Event live · go-live floor-dominant · ratchet · Effort | later |
 
 **189 tests pass** across the spine (features, CEO logic, calibration math,
@@ -51,10 +51,9 @@ boardroom decide                 # same, using real keyless public data feeds
 ```
 
 **Going live:** see [`RUNBOOK.md`](RUNBOOK.md). The Directional leg executes via
-**SnapTrade → Wealthsimple** (IBKR retained as an alternate adapter); Kraken handles crypto.
-Live trading from a sandboxed environment additionally needs egress to
-`api.kraken.com`, `api.snaptrade.com`, and `stooq.com` — easiest is to run on
-your own machine.
+**Interactive Brokers** (Client Portal Gateway, run locally); Kraken handles crypto.
+Live trading needs egress to `api.kraken.com` and your equity data host, plus the
+IBKR gateway running on `localhost:5000` — easiest is to run on your own machine.
 
 `boardroom decide` prints the day's pitches, the trust-weighted ranking, the
 floor hurdle, and the CEO's verdict — one of **FUND / FUND_NONE / HOLD**. Most
@@ -70,7 +69,7 @@ Three layers, three loops (scope §2, §10):
  Divisions (sensory organs)        CEO (the cortex)            Measurement (conscience)
  ─────────────────────────         ─────────────────          ────────────────────────
  Yield  → the floor/hurdle         price vs the floor          Performance: ROI vs floor
- Directional → equities (WS/SnapTrade)  null default = HOLD       AND vs buy-and-hold
+ Directional → equities (IBKR)     null default = HOLD           AND vs buy-and-hold
  Event  → asymmetric crypto        trust = demonstrated        Critic: calibration,
  Effort → non-market (disabled)      calibration, not vibes      process-vs-luck
                                    conviction sizing
@@ -125,7 +124,7 @@ permission is the single most dangerous thing in this project; don't create one.
 | `ANTHROPIC_API_KEY` | every agent's reasoning | n/a (usage-billed) |
 | `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` | state + metrics | data only, **no** trading power |
 | `KRAKEN_API_KEY` + `KRAKEN_API_SECRET` | Yield + Event | **trade + staking; DISABLE withdraw** |
-| `SNAPTRADE_*` (client id, consumer key, user id/secret, account id) | Directional (Wealthsimple) | **trade-only; cannot move funds** |
+| `IBKR_ACCOUNT_ID` (+ Client Portal Gateway session) | Directional (equities) | **trading on; transfers/withdrawals off** |
 | `MARKET_DATA_API_KEY` | richer Directional signals | read-only (optional) |
 
 > The system runs **without** the Anthropic key (agents fall back to templated
@@ -152,25 +151,24 @@ the dashboard toggle is the durable home for it).
 ## Wiring the venues (Milestone 6)
 
 The broker interface (`boardroom/brokers/base.py`) is venue-agnostic.
-`KrakenBroker` (crypto) and `SnapTradeBroker` (the Directional leg, via
-Wealthsimple) are **implemented** (`boardroom/brokers/`); `IBKRBroker` remains as
-an alternate Directional adapter behind the same interface. Each sits behind two
-hard safety properties: `supports_withdrawal` is `False` with no withdraw/transfer
-code path, and a live order is placed **only** when the per-call `live` flag
-**and** the global `LIVE_TRADING` flag **and** credentials are all present —
-otherwise it simulates (no network, no money). `make_brokers(prefer_live=True)`
-selects real adapters vs stubs (SnapTrade wins for Directional when configured,
-else IBKR); `build_default_org(prefer_live_brokers=True)` injects them.
+`KrakenBroker` (crypto) and `IBKRBroker` (the Directional/equities leg) are
+**implemented** (`boardroom/brokers/`). Each sits behind two hard safety
+properties: `supports_withdrawal` is `False` with no withdraw/transfer code path,
+and a live order is placed **only** when the per-call `live` flag **and** the
+global `LIVE_TRADING` flag **and** credentials are all present — otherwise it
+simulates (no network, no money). `make_brokers(prefer_live=True)` selects real
+adapters vs stubs; `build_default_org(prefer_live_brokers=True)` injects them.
 
 To run the **live smoke test** (smallest possible real order), set in the
 environment / `.env`:
 
 1. **Kraken** — `KRAKEN_API_KEY` + `KRAKEN_API_SECRET`, scoped **trade + staking,
    withdrawals disabled**.
-2. **SnapTrade → Wealthsimple** — `SNAPTRADE_CLIENT_ID`, `SNAPTRADE_CONSUMER_KEY`,
-   `SNAPTRADE_USER_ID`, `SNAPTRADE_USER_SECRET`, and `SNAPTRADE_ACCOUNT_ID`
-   (trade-only; SnapTrade cannot move funds). See [`RUNBOOK.md`](RUNBOOK.md) for the
-   one-time connection helper that produces the user secret + account id.
+2. **Interactive Brokers** — run the **Client Portal Gateway** locally and log in at
+   `https://localhost:5000` (session-based; no static API key), then set
+   `IBKR_ACCOUNT_ID` (and `IBKR_GATEWAY_URL` if not the default). Enable trading;
+   keep transfers/withdrawals off. See [`RUNBOOK.md`](RUNBOOK.md) for the gateway
+   setup.
 
 Then flip `LIVE_TRADING=true` and run `boardroom decide --confirm-live`. Until
 then the same code runs fully in dry-run.

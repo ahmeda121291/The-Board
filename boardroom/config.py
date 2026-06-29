@@ -72,18 +72,11 @@ class Settings(BaseSettings):
     kraken_api_key: SecretStr | None = Field(default=None, alias="KRAKEN_API_KEY")
     kraken_api_secret: SecretStr | None = Field(default=None, alias="KRAKEN_API_SECRET")
 
-    # ---- IBKR (Directional) — Milestone 6 -----------------------------------
+    # ---- IBKR (Directional / equities) — Client Portal Gateway --------------
+    # Session-based: run the Client Portal Gateway locally and authenticate in a
+    # browser (https://localhost:5000). No static API key. Set the account id.
     ibkr_gateway_url: str = Field(default="https://localhost:5000", alias="IBKR_GATEWAY_URL")
     ibkr_account_id: str | None = Field(default=None, alias="IBKR_ACCOUNT_ID")
-
-    # ---- SnapTrade (Directional via Wealthsimple etc.) — Milestone 6 --------
-    # clientId + consumerKey authenticate the app; userSecret + accountId scope
-    # to YOUR connected brokerage. Trade-only; SnapTrade can't move your funds.
-    snaptrade_client_id: str | None = Field(default=None, alias="SNAPTRADE_CLIENT_ID")
-    snaptrade_consumer_key: SecretStr | None = Field(default=None, alias="SNAPTRADE_CONSUMER_KEY")
-    snaptrade_user_id: str | None = Field(default=None, alias="SNAPTRADE_USER_ID")
-    snaptrade_user_secret: SecretStr | None = Field(default=None, alias="SNAPTRADE_USER_SECRET")
-    snaptrade_account_id: str | None = Field(default=None, alias="SNAPTRADE_ACCOUNT_ID")
 
     # ---- Optional market data ------------------------------------------------
     market_data_api_key: SecretStr | None = Field(default=None, alias="MARKET_DATA_API_KEY")

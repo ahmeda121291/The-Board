@@ -12,8 +12,8 @@ fastest and keeps your keys entirely in your control — recommended.**
 | Host | Why |
 |---|---|
 | `api.kraken.com` | Kraken trading + balances (Yield, Event) |
-| `api.snaptrade.com` | SnapTrade → Wealthsimple (Directional) |
-| `stooq.com` | keyless daily equity bars (Directional research) |
+| `localhost:5000` | IBKR Client Portal Gateway (Directional) — runs locally |
+| `query1.finance.yahoo.com` | keyless daily equity bars (Directional research) |
 | `api.anthropic.com` | LLM reasoning (already allowed) |
 
 ---
@@ -68,40 +68,40 @@ ANTHROPIC_API_KEY=<your key>          # optional; without it, rationales are tem
 KRAKEN_API_KEY=<fresh key>
 KRAKEN_API_SECRET=<fresh secret>
 
-# Directional via SnapTrade → Wealthsimple (trade-only; cannot move funds)
-SNAPTRADE_CLIENT_ID=<from SnapTrade dashboard>
-SNAPTRADE_CONSUMER_KEY=<from SnapTrade dashboard>
-SNAPTRADE_USER_ID=<the user id you registered with SnapTrade>
-SNAPTRADE_USER_SECRET=<returned when you registered that user>
-SNAPTRADE_ACCOUNT_ID=<the connected Wealthsimple account id>
+# Directional via Interactive Brokers (Client Portal Gateway, session-based).
+IBKR_GATEWAY_URL=https://localhost:5000
+IBKR_ACCOUNT_ID=<your IBKR account id, e.g. U1234567 (or DU... for paper)>
 ```
 
-### One-time SnapTrade connection (to get USER_SECRET + ACCOUNT_ID)
+### One-time IBKR setup (Client Portal Gateway)
 
-Use the helper (needs network to `api.snaptrade.com`, so run it locally):
+IBKR's Client Portal API is **session-based — there is no static API key**. You
+run a small gateway locally and log into it; it holds your authenticated session.
+Requires an **IBKR Pro** account and **Java 8u192+**.
 
-```bash
-# 1. Register a SnapTrade user + print the Wealthsimple connect URL.
-#    The helper requests TRADE permission by default (connection_type="trade").
-python scripts/snaptrade_connect.py register --user-id ahmed-boardroom
-# 2. Open the printed URL, log into Wealthsimple, and APPROVE TRADING on the
-#    consent screen (not just data access). Finish linking.
-# 3. List accounts and copy the one you want to trade
-python scripts/snaptrade_connect.py accounts --user-id ahmed-boardroom --user-secret <secret>
+```powershell
+# 1. Download + unzip the gateway:
+#    https://download2.interactivebrokers.com/portal/clientportal.gw.zip
+Expand-Archive "$HOME\Downloads\clientportal.gw.zip" -DestinationPath "C:\IBKR"
+
+# 2. Start it (leave this window running — the session lives here):
+cd C:\IBKR
+bin\run.bat root\conf.yaml
+
+# 3. In a browser, open https://localhost:5000, accept the local cert warning,
+#    and log in with your IBKR username + password + 2FA ("Client login succeeds").
 ```
 
-It uses only your `SNAPTRADE_CLIENT_ID` + `SNAPTRADE_CONSUMER_KEY`; no brokerage
-password ever touches Boardroom. Put `SNAPTRADE_USER_ID`,
-`SNAPTRADE_USER_SECRET`, and `SNAPTRADE_ACCOUNT_ID` in `.env`.
+Then set `IBKR_ACCOUNT_ID` in `.env` (account id from
+[portal.interactivebrokers.com](https://www.interactivebrokers.com/en/trading/client-portal.php)).
+Enable trading on the account; keep transfers/withdrawals OFF.
 
-> **Trade permission is required — and it's the #1 gotcha.** SnapTrade links are
-> **read-only by default**; a data-only link makes live equity orders fail with
-> `403 "Trading permissions have not been enabled"`, and the Directional division
-> falls back to **shadow mode** (computes/scores pitches, places no real orders).
-> The helper now passes `connection_type="trade"` so the consent screen offers
-> trading — you must approve it. If an existing link is read-only, **re-run
-> `register` and reconnect Wealthsimple, approving trading**, to upgrade it.
-> Kraken (crypto) is unaffected and executes live regardless.
+> **The gateway must be running and authenticated when Boardroom runs.** The
+> session **expires daily / on inactivity**, so re-log-in before each checkpoint
+> (people automate this with [IBeam](https://github.com/voyz/ibeam); manual
+> re-login is fine to start). If the gateway is down or logged out, the Directional
+> leg simply abstains that checkpoint — Kraken (crypto) is unaffected and executes
+> live regardless.
 
 ---
 
@@ -117,7 +117,7 @@ powershell -ExecutionPolicy Bypass -File .\install_scheduler.ps1 -Time 15:00
 ```
 
 > **Why 15:00 local?** The run uses `--once`, so the Task Scheduler trigger time
-> *is* the execution time. Equities (Wealthsimple via SnapTrade) only fill during
+> *is* the execution time. Equities (Interactive Brokers) only fill during
 > the 9:30am–4:00pm ET regular session; 15:00 local is 1h before the close in both
 > summer and winter. Crypto (Kraken) is 24/7. As a backstop, a market-hours guard
 > auto-holds any live equity order placed while the market is closed (it logs an

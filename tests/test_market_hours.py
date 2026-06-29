@@ -16,7 +16,6 @@ def _utc(y, mo, d, h, mi):
 
 
 def test_equities_venue_classification():
-    assert is_equities_venue(Venue.SNAPTRADE)
     assert is_equities_venue(Venue.IBKR)
     assert not is_equities_venue(Venue.KRAKEN)  # crypto is 24/7
     assert Venue.KRAKEN not in EQUITIES_VENUES

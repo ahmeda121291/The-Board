@@ -23,13 +23,13 @@ from boardroom.schemas import Division as DivisionEnum, Venue
 @dataclass
 class MomentumDivision(Division):
     division: DivisionEnum = DivisionEnum.MOMENTUM
-    venue: Venue = Venue.SNAPTRADE  # default; venue_for routes per symbol
+    venue: Venue = Venue.IBKR  # default; venue_for routes per symbol
     model: MomentumModel = field(default_factory=MomentumModel)
     min_stop_fraction: float = 0.02
     stop_vol_multiple: float = 2.5
     advisory: bool = True  # validate on live data before it can trade real money
     #: Execution venue for crypto symbols; equities route to ``equity_venue``.
-    equity_venue: Venue = Venue.SNAPTRADE
+    equity_venue: Venue = Venue.IBKR
 
     def needs_fx(self) -> bool:
         return False  # resolved per-pitch; FX handled by the equity venue if needed

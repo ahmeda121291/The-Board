@@ -1,7 +1,7 @@
 """Equities market-hours guard.
 
 Crypto (Kraken) trades 24/7, so a checkpoint can fire at any time and the Event
-division fills fine. Equities do NOT: Wealthsimple (via SnapTrade) and IBKR only
+division fills fine. Equities do NOT: IBKR only
 fill during the regular session — 9:30am–4:00pm America/New_York, Mon–Fri (the
 US and Toronto exchanges share these hours). A market order sent after the close
 either gets rejected or queued blindly to the next open, where it fills at an
@@ -29,7 +29,7 @@ _OPEN = time(9, 30)
 _CLOSE = time(16, 0)
 
 # Venues that only fill during the regular equities session.
-EQUITIES_VENUES = {Venue.SNAPTRADE, Venue.IBKR}
+EQUITIES_VENUES = {Venue.IBKR}
 
 
 def is_equities_venue(venue: Venue) -> bool:

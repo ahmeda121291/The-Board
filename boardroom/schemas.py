@@ -32,8 +32,7 @@ class Division(str, enum.Enum):
 
 class Venue(str, enum.Enum):
     KRAKEN = "kraken"
-    IBKR = "ibkr"
-    SNAPTRADE = "snaptrade"  # brokerage aggregator (e.g. Wealthsimple) for Directional
+    IBKR = "ibkr"          # equities/ETFs via the Client Portal Gateway
     NONE = "none"  # the floor's resting state needs no execution venue
 
 

@@ -20,7 +20,7 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 ## Divisions (pitch ideas) → Agents (decide)
 
 - **Yield** (crypto/Kraken) = the floor every idea must beat · **Event** (crypto/Kraken)
-  · **Directional** (stocks/ETFs via Wealthsimple→SnapTrade) · **Effort** (disabled).
+  · **Directional** (stocks/ETFs via Interactive Brokers) · **Effort** (disabled).
 - **Momentum** (catalyst-continuation) = the counterweight to the mean-reversion bias
   in Directional/Event: BUYS volume-confirmed upside breakouts (`models/momentum.py`,
   `breakout_strength`+`volume_surge`). Asset-agnostic (stocks+crypto, `venue_for`
@@ -34,7 +34,7 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   **wide** = ~40 stocks/ETFs + 10 crypto (the "Run wide scan" button / `--wide`).
   Equities via **Yahoo** (`fetch_equity_daily`, Stooq fallback), crypto via Kraken.
   Each division pitches one idea per qualifying symbol (`propose_all`); the CEO ranks
-  across all and funds the single best. Long-only (Wealthsimple/Kraken-spot can't short).
+  across all and funds the single best. Long-only (IBKR cash/Kraken-spot can't short).
 - **CEO** ranks pitches deterministically vs hurdle + track record; default HOLD; funds
   ≤1 best idea. **Risk Manager** adversarially vetoes. **Critic** challenges reasoning.
   **CFO/Strategist** studies the scoreboard, writes a review each checkpoint
