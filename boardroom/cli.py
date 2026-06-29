@@ -37,6 +37,7 @@ def _doctor() -> int:
     console.print(f"Supabase configured  : {'yes' if s.supabase_configured() else '[yellow]no (in-memory repo)[/yellow]'}")
     console.print(f"Kraken creds         : {'set' if s.kraken_api_key else 'not set (Milestone 6)'}")
     console.print(f"IBKR account         : {s.ibkr_account_id or 'not set (Milestone 6)'}")
+    console.print(f"Floor carry APR      : {s.floor_carry_apr:.2%} [dim](the hurdle; live Kraken Earn refresh when wired)[/dim]")
     pv = s.starting_portfolio_cad
     console.print(f"\n[bold]Hard caps — % of portfolio[/bold] [dim](resolved at {pv:.0f} CAD)[/dim]")
     console.print(f"  total deployable   : {s.total_deployable_pct:.0%}  = {s.total_deployable_pct * pv:.2f} CAD")
@@ -172,11 +173,38 @@ def _run(args: argparse.Namespace) -> int:
                 console.print(f"[bold cyan]CFO:[/bold cyan] {review.headline}")
             except Exception as e:  # never let the review break the loop
                 console.print(f"[dim]CFO review skipped: {str(e)[:80]}[/dim]")
+            # Guardrailed walk-forward re-fit (gated by data + walk-forward; a
+            # rejected refit changes nothing). Never let it break the loop.
+            try:
+                for r in org.refit_models():
+                    verdict = "accepted" if r.accepted else "rejected"
+                    console.print(f"[dim]refit {verdict}: {r.reason}[/dim]")
+            except Exception as e:
+                console.print(f"[dim]refit skipped: {str(e)[:80]}[/dim]")
             if args.once:
                 return 0
     except KeyboardInterrupt:
         console.print("\n[yellow]Scheduler stopped.[/yellow]")
         return 0
+
+
+def _refit(args: argparse.Namespace) -> int:
+    """Run the guardrailed walk-forward model re-fit and persist accepted weights."""
+    from boardroom.factory import build_default_org
+
+    org = build_default_org(data_mode="synthetic" if args.synthetic else "live")
+    console.rule("[bold]Walk-forward re-fit")
+    results = org.refit_models()
+    if not results:
+        console.print("[dim]No fittable divisions with data.[/dim]")
+        return 0
+    for r in results:
+        tag = "[green]ACCEPTED[/green]" if r.accepted else "[yellow]rejected[/yellow]"
+        console.print(
+            f"  {tag}  {r.reason}  [dim](n_train={r.n_train} "
+            f"in={r.in_sample_score:.4f} oos={r.out_of_sample_score:.4f})[/dim]"
+        )
+    return 0
 
 
 def _poll(args: argparse.Namespace) -> int:
@@ -372,6 +400,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("preflight", help="read-only venue connectivity + live go/no-go")
     sub.add_parser("review", help="generate the CFO/Strategist review now")
 
+    p_refit = sub.add_parser("refit", help="guardrailed walk-forward model re-fit")
+    p_refit.add_argument("--synthetic", action="store_true", help="use offline synthetic data")
+
     p_run = sub.add_parser("run", help="daily scheduler — convene the CEO at CHECKPOINT_UTC, forever")
     p_run.add_argument("--synthetic", action="store_true", help="use offline synthetic data")
     p_run.add_argument("--confirm-live", action="store_true", help="execute live (requires LIVE_TRADING=true)")
@@ -409,6 +440,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run(args)
     if args.cmd == "review":
         return _review(args)
+    if args.cmd == "refit":
+        return _refit(args)
     if args.cmd == "decide":
         return _decide(args)
     if args.cmd == "poll":

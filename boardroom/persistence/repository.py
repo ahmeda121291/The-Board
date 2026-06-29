@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from boardroom.config import get_settings
 from boardroom.schemas import Decision, Pitch, ResolvedOutcome
@@ -26,6 +27,31 @@ class DivisionState:
     shadow: bool = False        # computes pitches but gets no real capital
     n_resolved: int = 0
     net_vs_floor_cad: float = 0.0
+
+
+@dataclass
+class OpenPosition:
+    """A funded position awaiting resolution (mirrors the ``open_positions`` table).
+
+    Everything needed to score the decision later from the price series alone:
+    the entry price is recovered by timestamp at resolution, so dry-run (paper)
+    and live positions resolve identically off real market data.
+    """
+
+    decision_id: str
+    division: str
+    venue: str
+    symbol: str
+    size_cad: float
+    predicted_return: float
+    predicted_confidence: float
+    cost_cad: float
+    stop_fraction: float
+    band_low: float
+    band_high: float
+    horizon_days: float
+    opened_at: datetime
+    live: bool = False
 
 
 class Repository(abc.ABC):
@@ -46,6 +72,23 @@ class Repository(abc.ABC):
 
     @abc.abstractmethod
     def recent_outcomes(self, division: str | None = None, limit: int = 200) -> list[ResolvedOutcome]: ...
+
+    @abc.abstractmethod
+    def save_open_position(self, position: OpenPosition) -> None: ...
+
+    @abc.abstractmethod
+    def open_positions(self) -> list[OpenPosition]: ...
+
+    @abc.abstractmethod
+    def close_position(self, decision_id: str) -> None: ...
+
+    @abc.abstractmethod
+    def get_model_params(self, division: str) -> dict | None:
+        """Persisted model coefficients for a division, or None if never re-fit."""
+        ...
+
+    @abc.abstractmethod
+    def save_model_params(self, division: str, params: dict) -> None: ...
 
     @abc.abstractmethod
     def save_performance(self, snapshot: dict) -> None: ...
@@ -103,6 +146,8 @@ class InMemoryRepository(Repository):
     pitches: list[Pitch] = field(default_factory=list)
     decisions: list[tuple[Decision, list[dict]]] = field(default_factory=list)
     outcomes: list[ResolvedOutcome] = field(default_factory=list)
+    positions: dict[str, OpenPosition] = field(default_factory=dict)
+    model_params: dict[str, dict] = field(default_factory=dict)
     states: dict[str, DivisionState] = field(default_factory=dict)
     performance: list[dict] = field(default_factory=list)
     weekly: list[tuple[str, dict]] = field(default_factory=list)
@@ -137,6 +182,21 @@ class InMemoryRepository(Repository):
     def recent_outcomes(self, division: str | None = None, limit: int = 200) -> list[ResolvedOutcome]:
         rows = [o for o in self.outcomes if division is None or o.division.value == division]
         return rows[-limit:]
+
+    def save_open_position(self, position: OpenPosition) -> None:
+        self.positions[position.decision_id] = position
+
+    def open_positions(self) -> list[OpenPosition]:
+        return list(self.positions.values())
+
+    def close_position(self, decision_id: str) -> None:
+        self.positions.pop(decision_id, None)
+
+    def get_model_params(self, division: str) -> dict | None:
+        return self.model_params.get(division)
+
+    def save_model_params(self, division: str, params: dict) -> None:
+        self.model_params[division] = dict(params)
 
     def save_performance(self, snapshot: dict) -> None:
         self.performance.append(snapshot)

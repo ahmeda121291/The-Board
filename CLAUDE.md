@@ -73,7 +73,7 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 ## Where things live
 
 - **Code**: `boardroom/` (config, schemas, divisions, ceo, risk, brokers, graph,
-  agents, persistence, market.py). **Tests**: `tests/` (132 passing; `python -m pytest`).
+  agents, persistence, market.py). **Tests**: `tests/` (189 passing; `python -m pytest`).
 - **Dashboard**: `dashboard/` (Next.js 14 on Vercel, reads Supabase read-only; Docs
   page at `/docs`; "Ask the Boardroom" chat = read-only, needs `ANTHROPIC_API_KEY`).
 - **Ops**: `RUNBOOK.md`, `docs/OPERATIONS.md`, `install_scheduler.ps1`, `run_boardroom.ps1`.
@@ -90,7 +90,7 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 ## Working agreements
 
-- Develop on the feature branch; user merges to `main` (auto-deploys). Commit as
+- Work on `main` for everything; pushes to `main` auto-deploy to production. Commit as
   `Claude <noreply@anthropic.com>`.
 - **When behavior changes, update `docs/SCOPE.md` (+ changelog) in the same commit.**
 - Never commit secrets; `.env` is gitignored. Never echo secret values.

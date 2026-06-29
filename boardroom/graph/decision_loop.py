@@ -123,6 +123,55 @@ class Orchestrator:
             )
             self.engine.leashes[div.division.value] = 0.0 if st.retired else st.leash
 
+    def load_model_params(self) -> None:
+        """Apply persisted (re-fit) model coefficients to each division's model.
+
+        A division with no stored params keeps its documented prior. Only known,
+        numeric coefficient fields are applied — defensive against schema drift."""
+        for div in self.divisions:
+            params = self.repo.get_model_params(div.division.value)
+            if not params:
+                continue
+            model = div.model
+            for key, value in params.items():
+                if hasattr(model, key) and isinstance(value, (int, float)):
+                    setattr(model, key, float(value))
+
+    def refit_models(self) -> list:
+        """Guardrailed walk-forward re-fit of fittable division models on fresh
+        data. Accepted re-fits are persisted and applied to the live model;
+        rejected ones leave it untouched. Best-effort and isolated per division."""
+        from boardroom.adaptive.refit import refit_directional
+
+        results = []
+        for div in self.divisions:
+            # A representative series for the (symbol-agnostic) model: the single
+            # fetch if set, else the first of the multi-symbol universe.
+            fetcher = div.fetch or (div.fetchers[0] if div.fetchers else None)
+            if not hasattr(div.model, "fit") or fetcher is None:
+                continue
+            try:
+                bars = fetcher()
+                result = refit_directional(div.model, bars)
+            except Exception as e:  # noqa: BLE001
+                self.repo.audit("refit_error", {"division": div.division.value, "error": str(e)[:120]})
+                continue
+            if result.accepted:
+                self.repo.save_model_params(div.division.value, result.new_coefficients)
+            self.repo.audit(
+                "refit",
+                {
+                    "division": div.division.value,
+                    "accepted": result.accepted,
+                    "reason": result.reason,
+                    "n_train": result.n_train,
+                    "in_sample": round(result.in_sample_score, 5),
+                    "out_of_sample": round(result.out_of_sample_score, 5),
+                },
+            )
+            results.append(result)
+        return results
+
     def decide(
         self,
         pitches: list[Pitch],
@@ -181,7 +230,39 @@ class Orchestrator:
         decision.live = fill.is_live
         fills.append(fill)
         self.repo.audit("execute", {"decision_id": decision.decision_id, "live": fill.is_live})
+
+        # Record the open position so it can be resolved (paper or live) at a
+        # later checkpoint and fed back into the adaptive engine.
+        from boardroom.graph.resolution_loop import build_open_position
+
+        self.repo.save_open_position(build_open_position(pitch, decision))
         return fills
+
+    def resolve_positions(self) -> list:
+        """Resolve any ready open positions against fresh prices and fold the
+        outcomes into calibration/leash/retirement.
+
+        Builds a price cache from the divisions' own fetchers (synthetic offline,
+        live when wired), keyed by the actual bars symbol so a position resolves
+        against the same series it was opened on. Skipped entirely when nothing is
+        open, so a routine HOLD checkpoint does no extra fetching."""
+        from boardroom.graph.resolution_loop import resolve_open_positions
+
+        if not self.repo.open_positions():
+            return []
+
+        cache: dict[str, Any] = {}
+        for d in self.divisions:
+            fetchers = d.fetchers or ([d.fetch] if d.fetch else [])
+            for fetch in fetchers:
+                try:
+                    bars = fetch()
+                except Exception:
+                    continue
+                if bars is not None:
+                    cache[bars.symbol] = bars
+
+        return resolve_open_positions(self.repo, lambda pos: cache.get(pos.symbol))
 
     # ---- the whole loop ------------------------------------------------------
     def run_once(
@@ -198,7 +279,12 @@ class Orchestrator:
             if bankroll_cad is not None
             else self.settle_and_ratchet()  # live equity minus the protected reserve
         )
+        # Resolve matured positions FIRST so today's decision uses the freshest
+        # calibration/leashes the just-resolved outcomes produced.
+        self.resolve_positions()
         self.load_adaptive_state()
+        self.load_model_params()  # apply any persisted walk-forward re-fit
+        self.yield_division.refresh_floor()  # live APR if wired; else configured carry
         hurdle_rate = self.yield_division.hurdle_for(horizon_days=1.0)
 
         pitches = self.gather_pitches(portfolio)
@@ -297,7 +383,10 @@ def build_decision_graph(orch: Orchestrator):
         return state.get("portfolio_value_cad", state.get("bankroll_cad", 200.0))
 
     def n_gather(state: dict) -> dict:
+        orch.resolve_positions()
         orch.load_adaptive_state()
+        orch.load_model_params()
+        orch.yield_division.refresh_floor()
         state["hurdle_rate"] = orch.yield_division.hurdle_for(1.0)
         state["pitches"] = orch.gather_pitches(_pv(state))
         return state

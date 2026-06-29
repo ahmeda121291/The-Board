@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     # live equity is wired in.
     starting_portfolio_cad: float = Field(default=200.0, alias="STARTING_PORTFOLIO_CAD")
 
+    # The floor's annualized carry — the hurdle every other division must beat.
+    # Set this to the APR you actually earn (Kraken staking/lending). When the
+    # live Kraken venue is wired it can refresh this automatically within a sanity
+    # band; on any failure the system falls back to this configured value.
+    floor_carry_apr: float = Field(default=0.04, alias="FLOOR_CARRY_APR")
+
     # Daily checkpoint time (UTC, "HH:MM") — when the CEO convenes once a day.
     # 19:00 UTC ≈ 3pm ET (summer) — INSIDE the equities regular session (closes
     # 4pm ET) so the Directional leg can actually fill. Crypto is 24/7. If you
@@ -81,6 +87,9 @@ class Settings(BaseSettings):
 
     # ---- Optional market data ------------------------------------------------
     market_data_api_key: SecretStr | None = Field(default=None, alias="MARKET_DATA_API_KEY")
+    # Optional news feed (CryptoPanic) for the Event division's catalyst gate.
+    # Unset -> the Event division stays price-only, exactly as before.
+    news_api_key: SecretStr | None = Field(default=None, alias="NEWS_API_KEY")
 
     # ---- Derived helpers -----------------------------------------------------
     @property

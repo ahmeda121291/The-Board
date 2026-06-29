@@ -85,6 +85,10 @@ def build_default_org(
         dir_syms, evt_syms = ["SPY", "QQQ"], ["XBTUSD", "ETHUSD"]
 
     from boardroom.brokers import StubBroker, directional_execution_venue, make_brokers
+    from boardroom.config import get_settings
+    from boardroom.models.yield_model import YieldModel
+
+    settings = get_settings()
 
     # The Directional leg's execution venue follows the configured credentials:
     # SnapTrade (Wealthsimple) if set, else IBKR. The division is tagged with it
@@ -93,7 +97,9 @@ def build_default_org(
 
     from boardroom.divisions.momentum import MomentumDivision
 
-    yield_div = YieldDivision()
+    # Seed the floor from the configured carry (your real earned APR); the live
+    # Kraken Earn provider is attached below when a real broker is present.
+    yield_div = YieldDivision(model=YieldModel(carry_apr=settings.floor_carry_apr))
     directional = DirectionalDivision(
         fetchers=directional_fetchers, venue=dv, universe_symbols=dir_syms
     )
@@ -119,5 +125,12 @@ def build_default_org(
             orch_kwargs["brokers"] = make_brokers(prefer_live=True)
         else:
             orch_kwargs["brokers"] = {Venue.KRAKEN: StubBroker(Venue.KRAKEN), dv: StubBroker(dv)}
+
+    # If a real Kraken broker is present, let the floor refresh its APR from the
+    # live Earn endpoint (validated + clamped in resolve_carry; falls back to the
+    # configured carry on any failure).
+    kraken = orch_kwargs["brokers"].get(Venue.KRAKEN)
+    if kraken is not None and type(kraken).__name__ == "KrakenBroker":
+        yield_div.model.apr_provider = kraken.staking_apr
 
     return Orchestrator(divisions=divisions, yield_division=yield_div, **orch_kwargs)

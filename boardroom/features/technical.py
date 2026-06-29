@@ -25,6 +25,14 @@ __all__ = [
     "realized_sharpe",
     "liquidity_proxy",
     "rsi",
+    "atr",
+    "downside_deviation",
+    "sortino_ratio",
+    "return_skew",
+    "return_kurtosis",
+    "macd_histogram",
+    "bollinger_bandwidth",
+    "beta",
 ]
 
 
@@ -243,3 +251,198 @@ def rsi(closes: np.ndarray, lookback: int = 14) -> float:
         return 0.0
     rs = avg_gain / avg_loss
     return float(100.0 - 100.0 / (1.0 + rs))
+
+
+# --------------------------------------------------------------------------- #
+# Diligence features — risk-quality measures the divisions and the risk manager
+# read to size, gate, and diversify. All pure, deterministic numpy.
+# --------------------------------------------------------------------------- #
+def _simple_returns(closes: np.ndarray) -> np.ndarray:
+    """Per-bar simple returns ``c[t]/c[t-1] - 1``; raises on a zero price."""
+    if np.any(closes[:-1] == 0):
+        raise ValueError("zero price in series; cannot compute returns")
+    return np.diff(closes) / closes[:-1]
+
+
+def atr(
+    highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, lookback: int = 14
+) -> float:
+    """Average True Range over the last ``lookback`` bars (Wilder's TR, simple mean).
+
+    True range per bar is ``max(high-low, |high-prev_close|, |low-prev_close|)``;
+    ATR averages it. Unlike :func:`volatility` (a return stdev) this is in *price*
+    units and captures intraday gaps — a sturdier stop-distance input. Returns a
+    non-negative float.
+    """
+    h = _as_1d("highs", highs)
+    low_arr = _as_1d("lows", lows)
+    c = _as_1d("closes", closes)
+    if not (h.size == low_arr.size == c.size):
+        raise ValueError(
+            f"highs/lows/closes must be equal length: {h.size}/{low_arr.size}/{c.size}"
+        )
+    if lookback < 1:
+        raise ValueError(f"lookback must be >= 1, got {lookback}")
+    # Need a previous close for each TR -> lookback + 1 bars.
+    if c.size < lookback + 1:
+        raise ValueError(f"series too short: need {lookback + 1}, got {c.size}")
+    h = h[-(lookback + 1):]
+    low_arr = low_arr[-(lookback + 1):]
+    c = c[-(lookback + 1):]
+    prev_close = c[:-1]
+    tr = np.maximum.reduce(
+        [
+            h[1:] - low_arr[1:],
+            np.abs(h[1:] - prev_close),
+            np.abs(low_arr[1:] - prev_close),
+        ]
+    )
+    return float(np.mean(tr))
+
+
+def downside_deviation(closes: np.ndarray, mar: float = 0.0) -> float:
+    """Root-mean-square of per-bar returns that fall below ``mar`` (downside risk).
+
+    Only losses count toward the dispersion (upside is not "risk"); the mean is
+    taken over *all* periods, so a series with few, shallow drawdowns scores low.
+    Returns a non-negative float; 0.0 when nothing dips below ``mar``.
+    """
+    c = _as_1d("closes", closes)
+    if c.size < 2:
+        raise ValueError(f"closes too short: need >= 2, got {c.size}")
+    rets = _simple_returns(c)
+    shortfall = np.minimum(0.0, rets - mar)
+    return float(np.sqrt(np.mean(shortfall**2)))
+
+
+def sortino_ratio(
+    closes: np.ndarray, periods_per_year: int = 252, mar: float = 0.0
+) -> float:
+    """Annualized Sortino ratio: excess mean return per unit of *downside* risk.
+
+    Like :func:`realized_sharpe` but penalizes only downside volatility, so a
+    smooth grinder isn't dinged for upside variance. Returns 0.0 when there is no
+    downside deviation in the window.
+    """
+    c = _as_1d("closes", closes)
+    if c.size < 2:
+        raise ValueError(f"closes too short: need >= 2, got {c.size}")
+    rets = _simple_returns(c)
+    dd = downside_deviation(c, mar=mar)
+    if dd == 0.0:
+        return 0.0
+    return float((np.mean(rets) - mar) / dd * np.sqrt(periods_per_year))
+
+
+def return_skew(closes: np.ndarray) -> float:
+    """Skewness of per-bar simple returns (Fisher-Pearson, population moment).
+
+    Negative skew == fat left tail (crash risk); positive == lottery-like upside.
+    Returns 0.0 when there are fewer than 3 returns or zero return variance.
+    """
+    c = _as_1d("closes", closes)
+    if c.size < 4:
+        return 0.0
+    rets = _simple_returns(c)
+    sd = float(np.std(rets))
+    if sd == 0.0:
+        return 0.0
+    centered = rets - np.mean(rets)
+    return float(np.mean(centered**3) / sd**3)
+
+
+def return_kurtosis(closes: np.ndarray) -> float:
+    """Excess kurtosis of per-bar simple returns (normal == 0).
+
+    High excess kurtosis == fat tails / outlier-prone (more frequent extreme
+    moves than a normal). Returns 0.0 when there are too few returns or zero
+    variance.
+    """
+    c = _as_1d("closes", closes)
+    if c.size < 5:
+        return 0.0
+    rets = _simple_returns(c)
+    var = float(np.var(rets))
+    if var == 0.0:
+        return 0.0
+    centered = rets - np.mean(rets)
+    return float(np.mean(centered**4) / var**2 - 3.0)
+
+
+def _ema(values: np.ndarray, span: int) -> np.ndarray:
+    """Exponential moving average with ``alpha = 2/(span+1)`` (pandas-compatible)."""
+    alpha = 2.0 / (span + 1.0)
+    out = np.empty_like(values, dtype=float)
+    out[0] = values[0]
+    for i in range(1, values.size):
+        out[i] = alpha * values[i] + (1.0 - alpha) * out[i - 1]
+    return out
+
+
+def macd_histogram(
+    closes: np.ndarray, fast: int = 12, slow: int = 26, signal: int = 9
+) -> float:
+    """Latest MACD histogram value: ``(EMA_fast - EMA_slow) - signal_EMA``.
+
+    Positive == short-term trend accelerating above the longer trend (bullish
+    momentum), negative == decelerating. A bounded, scale-relative read on trend
+    change. Requires at least ``slow + signal`` closes.
+    """
+    c = _as_1d("closes", closes)
+    if min(fast, slow, signal) < 1:
+        raise ValueError("fast/slow/signal must each be >= 1")
+    if fast >= slow:
+        raise ValueError(f"fast ({fast}) must be < slow ({slow})")
+    if c.size < slow + signal:
+        raise ValueError(f"closes too short: need {slow + signal}, got {c.size}")
+    macd_line = _ema(c, fast) - _ema(c, slow)
+    signal_line = _ema(macd_line, signal)
+    return float(macd_line[-1] - signal_line[-1])
+
+
+def bollinger_bandwidth(closes: np.ndarray, lookback: int = 20, num_std: float = 2.0) -> float:
+    """Bollinger bandwidth: ``(upper - lower) / middle`` over the last ``lookback`` bars.
+
+    Width of the ``num_std``-deviation envelope relative to the moving average — a
+    normalized volatility/compression gauge. A low value flags a squeeze (coiled
+    range); a high value flags an expansion. Returns 0.0 when the window has zero
+    variance. Raises if the moving average is zero.
+    """
+    c = _as_1d("closes", closes)
+    if lookback < 2:
+        raise ValueError(f"lookback must be >= 2, got {lookback}")
+    if c.size < lookback:
+        raise ValueError(f"closes too short: need {lookback}, got {c.size}")
+    window = c[-lookback:]
+    middle = float(np.mean(window))
+    if middle == 0.0:
+        raise ValueError("moving average is zero; cannot compute bandwidth")
+    sd = float(np.std(window, ddof=1))
+    if sd == 0.0:
+        return 0.0
+    return float(2.0 * num_std * sd / middle)
+
+
+def beta(asset: np.ndarray, benchmark: np.ndarray, lookback: int = 20) -> float:
+    """Beta of ``asset`` vs ``benchmark`` over the last ``lookback`` per-bar returns.
+
+    ``cov(asset, benchmark) / var(benchmark)`` — how much the asset moves per unit
+    of benchmark move. ~1 tracks the benchmark, >1 amplifies it, <0 moves against
+    it. Used as a concentration/diversification gate. Returns 0.0 when the
+    benchmark return window has zero variance.
+    """
+    a = _as_1d("asset", asset)
+    b = _as_1d("benchmark", benchmark)
+    if a.size != b.size:
+        raise ValueError(f"asset and benchmark must be equal length: {a.size} != {b.size}")
+    if lookback < 2:
+        raise ValueError(f"lookback must be >= 2, got {lookback}")
+    if a.size < lookback + 1:
+        raise ValueError(f"series too short: need {lookback + 1}, got {a.size}")
+    ra = _simple_returns(a[-(lookback + 1):])
+    rb = _simple_returns(b[-(lookback + 1):])
+    var_b = float(np.var(rb))
+    if var_b == 0.0:
+        return 0.0
+    cov = float(np.mean((ra - np.mean(ra)) * (rb - np.mean(rb))))
+    return float(cov / var_b)

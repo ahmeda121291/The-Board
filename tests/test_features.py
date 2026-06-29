@@ -10,13 +10,21 @@ import numpy as np
 import pytest
 
 from boardroom.features import (
+    atr,
+    beta,
+    bollinger_bandwidth,
+    downside_deviation,
     drawdown,
     liquidity_proxy,
+    macd_histogram,
     max_drawdown,
     momentum,
     realized_sharpe,
+    return_kurtosis,
+    return_skew,
     rolling_correlation,
     rsi,
+    sortino_ratio,
     volatility,
     zscore_meanrev,
 )
@@ -244,3 +252,158 @@ def test_rsi_within_bounds_on_mixed_series():
 def test_rsi_too_short_raises():
     with pytest.raises(ValueError):
         rsi(np.arange(10.0), lookback=14)
+
+
+# --------------------------------------------------------------------------- #
+# atr
+# --------------------------------------------------------------------------- #
+def test_atr_constant_range_known_value():
+    # Flat closes at 100, bands +/-1: TR each bar = max(2, 1, 1) = 2 -> ATR 2.
+    closes = np.full(20, 100.0)
+    highs = closes + 1.0
+    lows = closes - 1.0
+    assert atr(highs, lows, closes, lookback=10) == pytest.approx(2.0)
+
+
+def test_atr_nonnegative_and_captures_gap():
+    closes = np.array([100.0, 105.0, 95.0, 110.0, 90.0, 115.0])
+    highs = closes + 2.0
+    lows = closes - 2.0
+    assert atr(highs, lows, closes, lookback=3) > 0.0
+
+
+def test_atr_length_mismatch_raises():
+    with pytest.raises(ValueError):
+        atr(np.arange(20.0), np.arange(19.0), np.arange(20.0), lookback=10)
+
+
+def test_atr_too_short_raises():
+    with pytest.raises(ValueError):
+        atr(np.arange(5.0), np.arange(5.0), np.arange(5.0), lookback=10)
+
+
+# --------------------------------------------------------------------------- #
+# downside_deviation / sortino_ratio
+# --------------------------------------------------------------------------- #
+def test_downside_deviation_zero_when_all_up():
+    closes = 100.0 * (1.01 ** np.arange(20))
+    assert downside_deviation(closes) == pytest.approx(0.0)
+
+
+def test_downside_deviation_known_value():
+    # returns: +0.1, -0.1 -> shortfall^2 mean = (0 + 0.01)/2 = 0.005.
+    closes = np.array([100.0, 110.0, 99.0])
+    assert downside_deviation(closes) == pytest.approx(np.sqrt(0.005))
+
+
+def test_sortino_zero_when_no_downside():
+    closes = 100.0 * (1.005 ** np.arange(30))
+    assert sortino_ratio(closes) == 0.0
+
+
+def test_sortino_negative_on_downtrend():
+    closes = 100.0 * (0.99 ** np.arange(30))
+    assert sortino_ratio(closes) < 0.0
+
+
+# --------------------------------------------------------------------------- #
+# return_skew / return_kurtosis
+# --------------------------------------------------------------------------- #
+def test_return_skew_zero_on_constant_returns():
+    # Powers of two -> every simple return is exactly 1.0 (no FP noise) -> zero
+    # dispersion -> skew is 0.0.
+    closes = 2.0 ** np.arange(20)
+    assert return_skew(closes) == pytest.approx(0.0)
+
+
+def test_return_skew_negative_with_left_tail():
+    # Mostly small gains, one large crash -> fat left tail -> negative skew.
+    closes = [100.0]
+    for _ in range(15):
+        closes.append(closes[-1] * 1.01)
+    closes.append(closes[-1] * 0.6)  # crash
+    assert return_skew(np.array(closes)) < 0.0
+
+
+def test_return_kurtosis_zero_on_too_short():
+    assert return_kurtosis(np.array([100.0, 101.0])) == 0.0
+
+
+def test_return_kurtosis_positive_with_outliers():
+    # Calm returns punctuated by rare large moves -> fat tails -> +excess kurtosis.
+    closes = [100.0]
+    for i in range(40):
+        step = 1.5 if i in (10, 30) else 1.001
+        closes.append(closes[-1] * step)
+    assert return_kurtosis(np.array(closes)) > 0.0
+
+
+# --------------------------------------------------------------------------- #
+# macd_histogram
+# --------------------------------------------------------------------------- #
+def test_macd_histogram_zero_on_flat_series():
+    closes = np.full(50, 100.0)
+    assert macd_histogram(closes) == pytest.approx(0.0)
+
+
+def test_macd_histogram_finite_on_trend():
+    closes = 100.0 * (1.01 ** np.arange(60))
+    value = macd_histogram(closes)
+    assert np.isfinite(value)
+
+
+def test_macd_histogram_rejects_fast_ge_slow():
+    with pytest.raises(ValueError):
+        macd_histogram(np.full(50, 100.0), fast=26, slow=12)
+
+
+def test_macd_histogram_too_short_raises():
+    with pytest.raises(ValueError):
+        macd_histogram(np.arange(10.0))
+
+
+# --------------------------------------------------------------------------- #
+# bollinger_bandwidth
+# --------------------------------------------------------------------------- #
+def test_bollinger_bandwidth_zero_on_constant():
+    closes = np.full(30, 100.0)
+    assert bollinger_bandwidth(closes, lookback=20) == pytest.approx(0.0)
+
+
+def test_bollinger_bandwidth_positive_and_finite_on_varying():
+    closes = np.array([100.0, 102.0, 98.0, 104.0, 96.0] * 5, dtype=float)
+    value = bollinger_bandwidth(closes, lookback=20)
+    assert value > 0.0 and np.isfinite(value)
+
+
+def test_bollinger_bandwidth_too_short_raises():
+    with pytest.raises(ValueError):
+        bollinger_bandwidth(np.arange(5.0), lookback=20)
+
+
+# --------------------------------------------------------------------------- #
+# beta
+# --------------------------------------------------------------------------- #
+def test_beta_one_against_itself():
+    series = 100.0 * (1.01 ** np.arange(30)) + np.tile([0.0, 0.7], 15)
+    assert beta(series, series, lookback=20) == pytest.approx(1.0)
+
+
+def test_beta_zero_when_benchmark_constant():
+    asset = 100.0 * (1.01 ** np.arange(30))
+    benchmark = np.full(30, 100.0)
+    assert beta(asset, benchmark, lookback=20) == 0.0
+
+
+def test_beta_negative_when_mirrored():
+    base = np.array([100.0, 110.0, 95.0, 120.0, 90.0, 130.0, 85.0])
+    rets = np.diff(base) / base[:-1]
+    mirror = [100.0]
+    for r in rets:
+        mirror.append(mirror[-1] * (1.0 - r))
+    assert beta(base, np.array(mirror), lookback=6) < 0.0
+
+
+def test_beta_length_mismatch_raises():
+    with pytest.raises(ValueError):
+        beta(np.arange(30, dtype=float), np.arange(25, dtype=float))
