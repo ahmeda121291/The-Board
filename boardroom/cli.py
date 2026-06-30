@@ -60,7 +60,7 @@ def _decide(args: argparse.Namespace) -> int:
     live = bool(args.confirm_live and s.live_trading)
 
     org = build_default_org(
-        data_mode="synthetic" if args.synthetic else "live", wide=getattr(args, "wide", False)
+        data_mode="synthetic" if args.synthetic else "live"
     )
     console.rule(f"[bold]Decision loop ({'LIVE' if live else 'dry-run'})")
     if live:
@@ -141,7 +141,6 @@ def _run(args: argparse.Namespace) -> int:
     org = build_default_org(
         data_mode="synthetic" if args.synthetic else "live",
         prefer_live_brokers=not args.synthetic,
-        wide=getattr(args, "wide", False),
     )
     console.rule(f"[bold]Boardroom scheduler ({'LIVE' if live else 'dry-run'})")
     console.print(f"Daily checkpoint at [bold]{s.checkpoint_utc} UTC[/bold]. Ctrl+C to stop.\n")

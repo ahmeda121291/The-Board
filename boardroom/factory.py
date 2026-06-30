@@ -18,9 +18,11 @@ from boardroom.graph.decision_loop import Orchestrator
 from boardroom.schemas import Venue
 
 
-# The scanned universe. More liquid names = more chances something is a genuine
-# positive-edge, non-stretched buy that clears the floor after cost. Every symbol
-# still runs the same grounded model + risk/cost gates; the CEO funds the best one.
+# The scanned equity universe. Equities are ADVISORY (recommendations, not
+# auto-trades), so the universe is deliberately WIDE — the more liquid names we
+# scan, the less likely a genuine breakout (the SNDK-up-4000% case) slips past
+# us. Every symbol still runs the same grounded model + risk/cost gates; the
+# recommendation engine ranks them into a target portfolio.
 DIRECTIONAL_UNIVERSE = (
     "SPY", "QQQ", "IWM", "DIA",          # broad-market ETFs
     "XLK", "XLF", "XLE", "XLV",          # sector ETFs (rotation candidates)
@@ -32,16 +34,25 @@ EVENT_UNIVERSE = (
     "XBTUSD", "ETHUSD", "SOLUSD", "XRPUSD", "ADAUSD", "LINKUSD", "DOTUSD",
 )
 
-# "Wide scan" — a broader but still curated, liquid set used on demand (the
-# second dashboard button). A superset of the core universe. Deliberately NOT
-# the whole market: more tickers would just surface illiquid/noisy names a $200
-# long-only book can't realistically trade.
+# "Wide scan" — the broad equity universe used for the daily recommendation
+# (now the DEFAULT). A large, liquid, sector-diverse set spanning megacaps,
+# high-momentum semis/AI names, growth, and the major ETFs — chosen so a runaway
+# winner can't hide. Still liquid-only (no penny/illiquid names); equities are
+# advisory so a wide list is safe — it just produces better recommendations.
 DIRECTIONAL_UNIVERSE_WIDE = DIRECTIONAL_UNIVERSE + (
-    "SMH", "XLY", "XLP", "XLI", "XLU", "GLD", "TLT", "EEM", "ARKK", "IBB",   # more ETFs
-    "TSLA", "AMD", "NFLX", "CRM", "JPM", "BAC", "WMT", "XOM", "CVX", "MA", "HD",  # large-caps
+    # more ETFs (sectors, factors, themes)
+    "SMH", "XLY", "XLP", "XLI", "XLU", "XLC", "XLRE", "XLB",
+    "GLD", "SLV", "TLT", "EEM", "ARKK", "IBB", "XBI", "SOXX", "VGT", "IGV",
+    # megacap / large-cap leaders
+    "TSLA", "AMD", "NFLX", "CRM", "JPM", "BAC", "WMT", "XOM", "CVX", "MA", "HD",
+    "ORCL", "ADBE", "INTC", "QCOM", "TXN", "MU", "PYPL", "DIS", "PEP", "KO",
+    "PFE", "MRK", "ABBV", "TMO", "CAT", "GE", "BA", "UBER", "SHOP", "PANW",
+    # high-momentum / catalyst growth names (the kind that run hard)
+    "SNDK", "PLTR", "SMCI", "ARM", "COIN", "MSTR", "CRWD", "DDOG", "SNOW",
+    "NOW", "ANET", "MRVL", "DELL", "WDC", "MARA", "RIOT", "HOOD", "RBLX",
 )
 EVENT_UNIVERSE_WIDE = EVENT_UNIVERSE + (
-    "LTCUSD", "AVAXUSD", "DOGEUSD",
+    "LTCUSD", "AVAXUSD", "DOGEUSD", "AAVEUSD", "UNIUSD", "ATOMUSD",
 )
 
 
@@ -75,7 +86,7 @@ def build_default_org(
     data_mode: str = "live",
     enable_event: bool = True,
     prefer_live_brokers: bool = False,
-    wide: bool = False,
+    wide: bool = True,  # equities are advisory → scan wide by default so winners aren't missed
     **orch_kwargs,
 ) -> Orchestrator:
     if data_mode == "live":
