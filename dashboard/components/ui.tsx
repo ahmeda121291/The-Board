@@ -45,17 +45,55 @@ export function Section({
   title,
   desc,
   children,
+  collapsible = false,
+  defaultOpen = true,
+  count,
 }: {
   title: string;
   desc?: string;
   children: React.ReactNode;
+  /** Render as a click-to-expand panel (native <details>, no JS needed). */
+  collapsible?: boolean;
+  /** When collapsible, whether it starts expanded. */
+  defaultOpen?: boolean;
+  /** Optional badge (e.g. row count) shown next to the title. */
+  count?: number;
 }) {
+  const Header = (
+    <div className="flex items-center gap-3">
+      <span className="h-3 w-1 rounded-full bg-gradient-to-b from-sky-400 to-violet-500" />
+      <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-300">{title}</h2>
+      {count !== undefined ? (
+        <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-slate-400">
+          {count}
+        </span>
+      ) : null}
+      {collapsible ? (
+        <span className="ml-auto text-[10px] uppercase tracking-widest text-slate-500 transition group-open:hidden">
+          show ▾
+        </span>
+      ) : null}
+      {collapsible ? (
+        <span className="ml-auto hidden text-[10px] uppercase tracking-widest text-slate-500 group-open:inline">
+          hide ▴
+        </span>
+      ) : null}
+    </div>
+  );
+
+  if (collapsible) {
+    return (
+      <details className="group mt-10" {...(defaultOpen ? { open: true } : {})}>
+        <summary className="cursor-pointer list-none select-none">{Header}</summary>
+        {desc ? <p className="mt-1 pl-4 text-xs text-slate-500">{desc}</p> : null}
+        <div className="mt-3">{children}</div>
+      </details>
+    );
+  }
+
   return (
     <section className="mt-10">
-      <div className="flex items-center gap-3">
-        <span className="h-3 w-1 rounded-full bg-gradient-to-b from-sky-400 to-violet-500" />
-        <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-300">{title}</h2>
-      </div>
+      {Header}
       {desc ? <p className="mt-1 pl-4 text-xs text-slate-500">{desc}</p> : null}
       <div className="mt-3">{children}</div>
     </section>
