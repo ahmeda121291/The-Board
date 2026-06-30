@@ -45,27 +45,54 @@ class CEODecisionEngine:
     deviation_threshold_low: float | None = None
     aggressive_below_cad: float = 500.0
     conservative_above_cad: float = 5000.0
+    #: Equity-scaled crypto Event position cap (off unless set). While the account
+    #: is small the Event hard cap is this fraction (bold — defaults to the
+    #: per-trade max); it tapers to ``caps.event_hard_cap_pct`` as equity grows.
+    #: The daily-loss / drawdown / fee-drag breakers are untouched.
+    event_cap_pct_small: float | None = None
     posteriors: dict[str, CalibrationPosterior] = field(default_factory=dict)
     leashes: dict[str, float] = field(default_factory=dict)
 
-    def _effective_threshold(self, equity: float) -> float:
-        """The deviation bar at this equity. Smaller account -> lower bar."""
-        low = self.deviation_threshold_low
-        high = self.deviation_threshold
-        if low is None:
-            return high
+    def _ramp(self, equity: float, at_small: float, at_grown: float) -> float:
+        """Linear aggression ramp: ``at_small`` while equity <= aggressive_below_cad,
+        ``at_grown`` while >= conservative_above_cad, interpolated between. Works
+        either direction (a rising bar, or a shrinking cap)."""
         lo_cad, hi_cad = self.aggressive_below_cad, self.conservative_above_cad
         if equity <= lo_cad:
-            return low
+            return at_small
         if hi_cad <= lo_cad or equity >= hi_cad:
-            return high
+            return at_grown
         frac = (equity - lo_cad) / (hi_cad - lo_cad)
-        return low + frac * (high - low)
+        return at_small + frac * (at_grown - at_small)
+
+    def _effective_threshold(self, equity: float) -> float:
+        """The deviation bar at this equity. Smaller account -> lower bar."""
+        if self.deviation_threshold_low is None:
+            return self.deviation_threshold
+        return self._ramp(equity, self.deviation_threshold_low, self.deviation_threshold)
+
+    def _effective_caps(self, equity: float) -> RiskCaps:
+        """Caps for this decision, with the crypto Event hard cap riding the
+        aggression ramp (bold while small) when ``event_cap_pct_small`` is set.
+        Per-trade, deployable, daily-loss, drawdown and fee-drag are untouched."""
+        if self.event_cap_pct_small is None:
+            return self.caps
+        event_pct = self._ramp(equity, self.event_cap_pct_small, self.caps.event_hard_cap_pct)
+        return RiskCaps(
+            total_deployable_pct=self.caps.total_deployable_pct,
+            per_trade_max_pct=self.caps.per_trade_max_pct,
+            event_hard_cap_pct=event_pct,
+            daily_loss_limit_pct=self.caps.daily_loss_limit_pct,
+            max_drawdown_pct=self.caps.max_drawdown_pct,
+            fee_drag_limit_pct=self.caps.fee_drag_limit_pct,
+        )
 
     def _rank_one(
-        self, pitch: Pitch, hurdle_rate: float, deployed_cad: float, portfolio_value_cad: float
+        self, pitch: Pitch, hurdle_rate: float, deployed_cad: float, portfolio_value_cad: float,
+        caps: RiskCaps | None = None,
     ) -> RankedPitch:
         div = pitch.division.value
+        caps = caps if caps is not None else self.caps
 
         # 1. Cost gate — drop anything whose edge doesn't clear its expected cost.
         if not pitch.clears_cost():
@@ -89,7 +116,7 @@ class CEODecisionEngine:
             edge=excess_over_floor(pitch, hurdle_rate),
             win_probability=trusted_conf,
             risk_unit_fraction=risk_unit,
-            caps=self.caps,
+            caps=caps,
             deployed_cad=deployed_cad,
             portfolio_value_cad=portfolio_value_cad,
             leash=self.leashes.get(div, 1.0),
@@ -117,8 +144,9 @@ class CEODecisionEngine:
 
         Hard caps resolve as percentages of ``portfolio_value_cad``.
         """
+        caps = self._effective_caps(portfolio_value_cad)
         ranked = sorted(
-            (self._rank_one(p, hurdle_rate, deployed_cad, portfolio_value_cad) for p in pitches),
+            (self._rank_one(p, hurdle_rate, deployed_cad, portfolio_value_cad, caps) for p in pitches),
             key=lambda r: r.score,
             reverse=True,
         )

@@ -71,7 +71,7 @@ export default function DocsPage() {
           </tr>
           <tr className="hover:bg-white/[0.02]">
             <td className="px-4 py-3 font-medium">Directional (equities)</td>
-            <td className="px-4 py-3"><Pill tone="warn">advisory · twice daily</Pill></td>
+            <td className="px-4 py-3"><Pill tone="warn">advisory · a few times a day</Pill></td>
             <td className="px-4 py-3 text-slate-300">Scanned wide for the recommended portfolio; never auto-traded.</td>
           </tr>
           <tr className="hover:bg-white/[0.02]">
@@ -86,7 +86,7 @@ export default function DocsPage() {
           </tr>
         </Table>
         <p className="mt-3 pl-1 text-sm text-slate-400">
-          The <b className="text-slate-200">CEO convenes twice daily</b> as a checkpoint. It
+          The <b className="text-slate-200">CEO convenes several times a day</b> as a checkpoint. It
           auto-trades crypto (expected output of most checkpoints is{" "}
           <b className="text-amber-300">HOLD — stay in the floor</b>) and refreshes the advisory
           stock recommendation. Calendar-driven action is the enemy.
@@ -241,7 +241,7 @@ export default function DocsPage() {
         <div className="glass p-5 text-sm text-slate-300">
           <ul className="list-disc space-y-1.5 pl-5">
             <li><b className="text-slate-200">Equity curve</b> — deposits + cumulative realized P&amp;L over time.</li>
-            <li><b className="text-slate-200">Next-checkpoint countdown</b> — when the CEO next convenes (twice daily at CHECKPOINT_TIMES).</li>
+            <li><b className="text-slate-200">Next-checkpoint countdown</b> — when the CEO next convenes (several times a day at CHECKPOINT_TIMES).</li>
             <li><b className="text-slate-200">CEO verdict + rationale</b> and the full <b className="text-slate-200">boardroom session</b> — every pitch, the risk-manager veto, the CEO ruling, with reasons.</li>
             <li><b className="text-slate-200">Your portfolio</b> — what you actually hold across both venues: crypto coins + cash on Kraken, stock holdings + cash + unrealized P&amp;L on IBKR, the crypto/stock split, and today’s top movers.</li>
             <li><b className="text-slate-200">Stocks — recommended portfolio</b> — the advisory buy/sell note plus <b className="text-slate-200">current IBKR holdings vs the recommended portfolio</b> side by side.</li>

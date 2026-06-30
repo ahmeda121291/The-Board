@@ -53,9 +53,19 @@ class Settings(BaseSettings):
     # conservative value as equity climbs. Hard caps are unaffected — this only
     # changes how readily the CEO acts.
     ceo_deviation_threshold: float = Field(default=0.02, alias="CEO_DEVIATION_THRESHOLD")
-    ceo_deviation_threshold_low: float = Field(default=0.005, alias="CEO_DEVIATION_THRESHOLD_LOW")
+    # Bolder while small: act on essentially any genuine positive-edge crypto idea
+    # that clears cost + the floor. Rises to the conservative bar as equity grows.
+    ceo_deviation_threshold_low: float = Field(default=0.001, alias="CEO_DEVIATION_THRESHOLD_LOW")
     aggressive_below_cad: float = Field(default=500.0, alias="AGGRESSIVE_BELOW_CAD")
     conservative_above_cad: float = Field(default=5000.0, alias="CONSERVATIVE_ABOVE_CAD")
+
+    # The crypto Event position cap also rides the aggression schedule: while the
+    # account is small it can size a single crypto bet up to ``event_hard_cap_pct_small``
+    # (defaults to the per-trade max — bold while small), tapering to the
+    # conservative ``event_hard_cap_pct`` as equity grows into the thousands. The
+    # daily-loss (6%) and drawdown (15%) circuit breakers are UNCHANGED — they
+    # remain the "don't lose it all in one day" backstop regardless of aggression.
+    event_hard_cap_pct_small: float = Field(default=0.20, alias="EVENT_HARD_CAP_PCT_SMALL")
 
     # The floor's annualized carry — the hurdle every other division must beat.
     # Set this to the APR you actually earn (Kraken staking/lending). When the
@@ -75,7 +85,7 @@ class Settings(BaseSettings):
     # the IBKR holdings diff — at EACH. Defaults to ~9:30am and ~3pm ET (13:30 &
     # 19:00 UTC in summer): one near the open, one before the close. The live
     # runner is driven by Task Scheduler `--once` triggers at these local times.
-    checkpoint_times: str = Field(default="13:30,19:00", alias="CHECKPOINT_TIMES")
+    checkpoint_times: str = Field(default="13:30,15:30,17:30,19:00", alias="CHECKPOINT_TIMES")
 
     # ---- LLM (the agents' brain) --------------------------------------------
     anthropic_api_key: SecretStr | None = Field(default=None, alias="ANTHROPIC_API_KEY")

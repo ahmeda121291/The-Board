@@ -10,10 +10,11 @@
 
 ## 1. What Boardroom is
 
-An autonomous, multi-agent capital-allocation system. **Twice a day** it convenes a
-"boardroom" of specialized agents, looks at real crypto and equity market data,
-and decides where a small pool of capital should go — **usually nothing**. It is
-deliberately low-frequency, floor-first, and skeptical of its own ideas.
+An autonomous, multi-agent capital-allocation system. **Several times a day** (4× by
+default) it convenes a "boardroom" of specialized agents, looks at real crypto and
+equity market data, and decides where a small pool of capital should go — **usually
+nothing**. It is floor-first and skeptical of its own ideas, but tuned to act readily
+on crypto while the account is small (see §4, the aggression schedule).
 
 It operates in **two modes, split by venue:**
 
@@ -49,15 +50,15 @@ trade directly — they propose, and the CEO disposes.
 | **Yield** | Crypto | Kraken | auto-trades | The floor — the safe baseline return every other idea must beat. |
 | **Event** | Crypto | Kraken | auto-trades | Event/catalyst-driven crypto opportunities. The only division the CEO funds with real capital. |
 | **Directional** | Stocks / ETFs | IBKR | **advisory** | Equity ideas — feed the recommended portfolio. Never auto-funded. |
-| **Momentum** | Stocks + crypto | IBKR / Kraken | **advisory** | Volume-confirmed breakouts (catalyst continuation). Advisory. |
+| **Momentum** | Stocks + crypto | IBKR / Kraken | crypto auto / stocks advisory | Volume-confirmed breakouts. Crypto breakouts auto-trade; stock breakouts advise. |
 | **Effort** | — | — | disabled | Disabled. Reserved. |
 
 A pitch carries computed numbers (code) plus a short narrative (LLM). Quant fields
 are never LLM guesses.
 
-**Advisory vs fundable.** Equities are **advisory**: Directional/Momentum pitch stocks,
-but the CEO never funds them. Only crypto (Event) is auto-traded. The advisory equity
-pitches feed the **recommendation engine** (§2a) instead.
+**Funding is by venue.** Only **crypto (Kraken)** pitches are auto-funded — Event, plus
+Momentum's crypto breakouts. Every **equity (IBKR)** pitch is **advisory** and feeds the
+**recommendation engine** (§2a) instead; the system never places a stock order.
 
 **Scanned universe.** Because stocks are advisory, the equity universe is deliberately
 **wide** (~70 liquid stocks/ETFs by default — broad-market & sector ETFs, megacaps,
@@ -115,6 +116,15 @@ dollar amounts to outgrow. Resolved against live equity (falls back to the
 | Max drawdown | 15% | Hard drawdown breaker. |
 | Fee-drag limit | 5% | Cumulative cost ceiling. |
 
+**Aggression schedule (bold while small, calmer as it grows).** Two levers ride an
+equity ramp (`$500`→`$5000`): the CEO's **deviation bar** (how readily it leaves the
+floor) is low while tiny and rises to conservative as equity grows; and the **crypto
+Event position cap** is bold while small (up to the 20% per-trade max,
+`EVENT_HARD_CAP_PCT_SMALL`) tapering to the conservative 5% as equity grows. This is
+deliberate — small play-money account, willing to take real risk for growth, auto-de-risking
+into the thousands. **The daily-loss (6%) and max-drawdown (15%) breakers are never scaled**
+— they remain the catastrophe backstop at every account size.
+
 **Circuit breakers** halt new risk when the daily-loss or drawdown limits trip.
 
 **Gains ratchet & reserve.** As realized equity makes new highs, a fraction of the
@@ -125,9 +135,10 @@ plays with house money over time.
 
 ## 5. When it runs — and the market-hours rule
 
-- **Two checkpoints per day** — `CHECKPOINT_TIMES`, default **`13:30,19:00` UTC**
-  (≈ near the open and ~1h before the close, ET). Each checkpoint auto-trades crypto
-  AND refreshes the advisory stock recommendation + IBKR holdings diff.
+- **Several checkpoints per day** — `CHECKPOINT_TIMES`, default
+  **`13:30,15:30,17:30,19:00` UTC** (4× across the ET session — more shots for crypto
+  while the account is small). Each checkpoint auto-trades crypto AND refreshes the
+  advisory stock recommendation + IBKR holdings diff + portfolio snapshot.
 - Crypto (Kraken) trades **24/7** — the Yield/Event legs can act at any checkpoint.
 - Stocks are **advisory** — nothing auto-executes on IBKR, so there's no equity-fill
   timing concern. The recommendation is computed off the latest daily bars at each
@@ -135,7 +146,7 @@ plays with house money over time.
 - **Market-hours guard** still exists as defense in depth (it would hold any live
   equity order placed while the market is closed), but equities no longer auto-trade.
 
-> **Why twice a day?** See §9.
+> **Why a few times a day and not constant?** See §9.
 
 **On-demand runs.** Besides the scheduled checkpoints you can trigger a run yourself,
 two ways: a **"Run Boardroom Now" desktop shortcut** (fires a live checkpoint on the
@@ -199,23 +210,35 @@ All read-only — the user places any stock orders in IBKR themselves.
 
 ## 9. Open design questions / rationale
 
-**Is twice-a-day enough for 24/7 crypto?** For a ~$200 book, **yes — by design.**
-- Trading more often multiplies **fee drag**, which is fatal on a small account
-  (the fee-drag cap is 5% of equity). Twice daily is a deliberate, conservative cadence.
-- The system **holds the floor most checkpoints** and rarely carries an open crypto
-  position, so there is usually nothing to "manage" intraday.
-- The second daily checkpoint mainly buys responsiveness on the **advisory stock
-  recommendation** (which is free — no fees) and a faster look at the live portfolio,
-  not more crypto churn.
+**Why a few checkpoints a day and not constant trading?** The owner's mandate is
+growth-while-small with real risk tolerance, so the cadence is **4×/day** (up from 2×) —
+more shots for crypto while the account is tiny. But it is deliberately *not* a
+high-frequency churner, because:
+- Every round-trip pays **~0.5% in Kraken fees**; trading constantly turns fees into the
+  dominant cost on a small book (the fee-drag cap is 5% of equity). The cost gate refuses
+  any trade whose edge doesn't clear its own fees, so "constant 1%/day churn" is structurally
+  blocked — it would lose to fees.
+- The system still **holds the floor most checkpoints** unless a genuine positive-edge
+  setup appears; the aggression schedule just lowers the bar to act while small.
 
-This is revisited as the account grows. The natural next step (when equity and
-open-position frequency justify the fees) is an **intraday risk-only check** for
-crypto — i.e. allow the Event division to *exit* a cratering position between
-checkpoints, without increasing entry frequency. Not warranted at current size.
+This is revisited as the account grows. The natural next step (when equity justifies it)
+is an **intraday risk-only check** for crypto — let the Event leg *exit* a cratering
+position between checkpoints — and cadence can rise further if the edge proves out net of
+fees. Pure frequency for its own sake is intentionally avoided.
 
 ---
 
 ## Changelog
+
+- **2026-06-30 (b)** — **Turned up for growth while small.** Per the owner's call (small
+  play-money account, take real risk early, de-risk as it grows): the aggression schedule
+  now scales TWO knobs on the equity ramp — the deviation bar (low 0.001 while small) AND a
+  new bold-while-small **crypto Event position cap** (`EVENT_HARD_CAP_PCT_SMALL`, up to the
+  20% per-trade max, tapering to 5%). Funding is now decided **by venue** (Kraken = funded,
+  IBKR = advisory), so a crypto **Momentum** breakout trades live while stock pitches stay
+  advisory. Crypto universe widened 13→31 pairs; checkpoints went 2×→**4×/day**. The
+  daily-loss (6%) and drawdown (15%) breakers are explicitly NOT scaled. Dashboard tables are
+  now collapsible. 218 tests passing.
 
 - **2026-06-30** — **The crypto-auto / stocks-advisory remodel.** Split the system by
   venue. **Crypto (Kraken) stays fully autonomous** — Event/Yield auto-trade live as
@@ -230,7 +253,7 @@ checkpoints, without increasing entry frequency. Not warranted at current size.
   dashboard as **"Current portfolio in IBKR" vs "Recommended portfolio"**. The equity
   universe went **wide by default** (~70 liquid names incl. SNDK + momentum/growth) so
   runaway winners aren't missed. Cadence moved to **twice daily** (`CHECKPOINT_TIMES`,
-  default `13:30,19:00` UTC). 215 tests passing.
+  default `13:30,19:00` UTC). 218 tests passing.
 
 - **2026-06-29** — **Equity-scaled aggression schedule + real venue balances + a
   human dashboard.** The CEO's deviation bar (how readily it leaves the floor) is now a

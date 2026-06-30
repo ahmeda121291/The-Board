@@ -4,7 +4,7 @@
 > organization, not a trading bot. Specialist *divisions* hunt opportunities
 > backed by **real computed math**, a single *CEO* agent decides where ~$200+ CAD
 > goes (usually nowhere), and a *measurement* layer scores every decision and
-> feeds results back so the system adapts. It runs **twice a day**.
+> feeds results back so the system adapts. It runs **several times a day**.
 >
 > **Two modes by venue:** crypto (Kraken) is **fully autonomous — it auto-trades
 > live**; stocks (IBKR) are **advisory only** — the system publishes a recommended
@@ -34,7 +34,7 @@ qualitative calls.
 | M6 | Kraken + IBKR adapters behind the broker interface (live-gated) | ✅ code · ⏸ live smoke test needs the gateway running |
 | M7–M10 | Event live · go-live floor-dominant · ratchet · Effort | later |
 
-**215 tests pass** across the spine (features, CEO logic, calibration math,
+**218 tests pass** across the spine (features, CEO logic, calibration math,
 measurement, caps, the recommendation engine, the full loop). Everything runs
 **offline in dry-run** today: `LIVE_TRADING` defaults `false` and execution is
 stubbed until you fund accounts and wire venues.
@@ -137,7 +137,7 @@ permission is the single most dangerous thing in this project; don't create one.
 | `KRAKEN_API_KEY` + `KRAKEN_API_SECRET` | Yield + Event | **trade + staking; DISABLE withdraw** |
 | `IBKR_ACCOUNT_ID` (+ Client Portal Gateway session) | reading equity holdings + cash for the recommendation diff (advisory — **no equity orders**) | read-only is sufficient |
 | `MARKET_DATA_API_KEY` | richer Directional signals | read-only (optional) |
-| `CHECKPOINT_TIMES` | twice-daily checkpoint schedule (UTC, default `13:30,19:00`) | n/a |
+| `CHECKPOINT_TIMES` | checkpoint schedule (UTC, default `13:30,15:30,17:30,19:00` — 4×/day) | n/a |
 
 > The system runs **without** the Anthropic key (agents fall back to templated
 > prose) and **without** Supabase (it uses an in-memory repository). Those are
