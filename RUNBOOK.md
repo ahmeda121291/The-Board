@@ -112,18 +112,19 @@ Instead of leaving `boardroom run` open in a terminal, let Windows be the daily
 trigger — survives reboots, wakes the PC, no window to babysit.
 
 ```powershell
-# from the repo root, once. Registers TWO daily triggers: one near the open,
-# one ~1h before the close — so crypto auto-trades twice and the advisory stock
-# recommendation stays fresh through the day.
-powershell -ExecutionPolicy Bypass -File .\install_scheduler.ps1 -Morning 09:30 -Afternoon 15:00
+# from the repo root, once. Registers FOUR daily triggers across the session, so
+# crypto (auto-traded) gets more shots while the account is small and the advisory
+# stock recommendation stays fresh through the day. Pass your own times if you like.
+powershell -ExecutionPolicy Bypass -File .\install_scheduler.ps1
+# or custom:  ... .\install_scheduler.ps1 -Times "09:30,12:30,15:00"
 ```
 
-> **Why twice daily?** Each run uses `--once`, so the trigger time *is* the
-> execution time. Crypto (Kraken) auto-trades 24/7 at each checkpoint. Stocks are
-> **advisory** — nothing auto-executes on IBKR — so the times aren't fill-critical;
-> two looks a day keep the recommended portfolio and the holdings diff current
-> without piling on fees. (A market-hours guard remains as defense in depth, but
-> equities no longer auto-trade.)
+> **Why several times a day?** Each run uses `--once`, so the trigger time *is* the
+> execution time. Crypto (Kraken) auto-trades 24/7 at each checkpoint — more checkpoints
+> = more shots while small. Stocks are **advisory** — nothing auto-executes on IBKR — so
+> the times aren't fill-critical. The cost gate still refuses any crypto trade that
+> doesn't clear its own fees, so frequency can't turn into fee-bleed churn. (A
+> market-hours guard remains as defense in depth, but equities no longer auto-trade.)
 
 That registers a **Boardroom Daily** task that runs `run_boardroom.cmd` →
 `boardroom run --confirm-live --once` (one live checkpoint) at each trigger, logging to
@@ -136,7 +137,7 @@ Remove it with:
 Unregister-ScheduledTask -TaskName "Boardroom Daily" -Confirm:$false
 ```
 
-## Running on demand (besides the twice-daily checkpoints)
+## Running on demand (besides the scheduled checkpoints)
 
 Two ways to fire a checkpoint yourself, in addition to the scheduler.
 

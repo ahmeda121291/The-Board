@@ -44,7 +44,7 @@ export function Portfolio({ rec }: { rec: RecommendationPayload | null }) {
   if (!rec) {
     return (
       <Empty>
-        No stock recommendation yet — it’s published each checkpoint (twice daily). Stocks are
+        No stock recommendation yet — it’s published each checkpoint (a few times a day). Stocks are
         advisory: the system tells you what to buy/sell in IBKR but never trades them itself.
       </Empty>
     );

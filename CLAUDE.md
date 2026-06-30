@@ -6,9 +6,9 @@
 ## What this is
 
 **Boardroom** is an autonomous, multi-agent capital-allocation system funded with
-~$200+ CAD (Canadian resident). **Twice a day** it convenes a "boardroom" of agents,
-looks at real crypto + equity data, and decides where capital goes. Live (real money)
-as of 2026-06. Two modes, split by venue:
+~$200+ CAD (Canadian resident). **Several times a day** (4× by default) it convenes a
+"boardroom" of agents, looks at real crypto + equity data, and decides where capital
+goes. Live (real money) as of 2026-06. Two modes, split by venue:
 
 - **Crypto (Kraken) = fully autonomous, auto-trades live.** Yield = the floor; Event
   takes rare asymmetric bets. Default is still HOLD the floor — most checkpoints do
@@ -30,9 +30,10 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 - **Yield** (crypto/Kraken) = the floor every idea must beat · **Event** (crypto/Kraken,
   auto-trades) · **Directional** (stocks/ETFs via IBKR, **advisory**) · **Effort** (disabled).
-- **Directional is now advisory** (`advisory=True`): it pitches equities but they are
-  **never funded** — they feed the recommendation engine instead. Only crypto (Event) is
-  fundable/auto-traded by the CEO.
+- **Funding rule is by VENUE** (`run_once`): only **Kraken (crypto)** pitches are
+  auto-funded; every **IBKR (equity)** pitch is advisory and feeds the recommendation
+  engine. So a crypto **Momentum** breakout trades live, while the same division's stock
+  pitches never do. Directional (IBKR) is advisory by construction.
 - **Recommendation engine** (`boardroom/recommend.py`): ranks the advisory equity pitches
   into a weighted **target portfolio** (score-proportional, per-trade-capped, within the
   deployable cap), reads the real IBKR holdings (`IBKRBroker.get_positions()`), and diffs
@@ -40,14 +41,15 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   "buy COST / sell SNDK" note. Code computes every number; the LLM only narrates. Persisted
   to `recommendations` (migration 0009); shown on the dashboard each checkpoint.
 - **Momentum** (catalyst-continuation): BUYS volume-confirmed upside breakouts
-  (`models/momentum.py`). Asset-agnostic; also **advisory**. Its equity pitches feed the
-  recommendation engine; advisory pitches are excluded from CEO funding.
+  (`models/momentum.py`). Asset-agnostic — its **crypto** breakouts are auto-funded on
+  Kraken (venue rule), while its **equity** breakouts are advisory and feed the
+  recommendation engine.
 - **News/catalyst feed** (`data/news.py`, keyless Yahoo search): computed `news_intensity`
   (recency-weighted headline burst) confirms a breakout; headlines attached as context via
   `Division.enrich()`. Grounding intact: score is code, headlines are context.
 - **Scanned universe** (factory.py): equities scan **wide by default** (~70 liquid
   stocks/ETFs incl. SNDK + high-momentum names — so a runaway winner isn't missed) since
-  stocks are advisory; crypto ~7–13 pairs. Equities via **Yahoo** (`fetch_equity_daily`,
+  stocks are advisory; crypto scans ~31 liquid Kraken pairs (wide). Equities via **Yahoo** (`fetch_equity_daily`,
   Stooq fallback), crypto via Kraken. Long-only.
 - **CEO** ranks the *fundable* (crypto) pitches deterministically vs hurdle + track record;
   default HOLD; auto-funds ≤1 best crypto idea. **Risk Manager** adversarially vetoes.
@@ -57,10 +59,15 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 - **Caps are percent-of-portfolio** (scale with equity): deployable 80%, per-trade 20%,
   Event 5%, daily-loss 6%, max-drawdown 15%, fee-drag 5%. Circuit breakers on loss/drawdown.
-- **Aggression schedule** (`ceo/engine.py`): the CEO's deviation bar is LOW while the
-  account is small (0.005 ≤ $500) and rises to conservative (0.02 ≥ $5000) as equity grows
-  — bolder small, calmer as it compounds. Tunable via `CEO_DEVIATION_THRESHOLD*` /
-  `AGGRESSIVE_BELOW_CAD` / `CONSERVATIVE_ABOVE_CAD`. Hard caps above are unaffected.
+- **Aggression schedule** (`ceo/engine.py`): bolder while small, calmer as it grows. Two
+  knobs ride an equity ramp ($500→$5000): (1) the CEO's **deviation bar** is LOW while
+  small (0.001 ≤ $500) rising to conservative (0.02 ≥ $5000) — it acts on almost any
+  positive-edge crypto idea while tiny; (2) the **crypto Event position cap** is BOLD while
+  small (up to the 20% per-trade max, `EVENT_HARD_CAP_PCT_SMALL`) tapering to 5% as equity
+  grows. Tunable via `CEO_DEVIATION_THRESHOLD*` / `EVENT_HARD_CAP_PCT_SMALL` /
+  `AGGRESSIVE_BELOW_CAD` / `CONSERVATIVE_ABOVE_CAD`. The **daily-loss (6%) and drawdown
+  (15%) circuit breakers are NEVER scaled** — they're the "don't lose it all in one day"
+  backstop regardless of aggression.
 - **Gains ratchet** sweeps a fraction of new highs into an **untouchable reserve**.
 - **Withdrawals DISABLED on every venue** — no transfer code path exists. Keys are
   trade-only and per-venue isolated (Kraken ⟂ equities).
@@ -69,11 +76,12 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 ## Scheduling & market hours
 
-- **Twice-daily checkpoints** (`CHECKPOINT_TIMES`, default `13:30,19:00` UTC ≈ near the
-  open and ~1h before the close, ET). Windows Task Scheduler runs `boardroom run
-  --confirm-live --once` at each; with `--once` the trigger time IS the execution time.
-  Each checkpoint auto-trades crypto AND refreshes the advisory stock recommendation +
-  IBKR holdings diff.
+- **Checkpoints run several times a day** (`CHECKPOINT_TIMES`, default
+  `13:30,15:30,17:30,19:00` UTC ≈ 4× across the ET session — more shots for crypto while
+  the account is small). Windows Task Scheduler runs `boardroom run --confirm-live --once`
+  at each (installer registers one trigger per time); with `--once` the trigger time IS
+  the execution time. Each checkpoint auto-trades crypto AND refreshes the advisory stock
+  recommendation + IBKR holdings diff + portfolio snapshot.
 - Crypto is 24/7 (auto-traded any checkpoint). Stocks are advisory so there's no
   equity-execution timing concern; the **market-hours guard** still exists for safety
   (would hold any live equity order while the market is closed — but equities don't
@@ -96,7 +104,7 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 - **Code**: `boardroom/` (config, schemas, divisions, ceo, risk, brokers, graph,
   agents, persistence, market.py, **recommend.py**, **portfolio.py**). **Tests**:
-  `tests/` (215 passing; `python -m pytest`).
+  `tests/` (218 passing; `python -m pytest`).
 - **Portfolio view** (`boardroom/portfolio.py`): each checkpoint (and `boardroom
   balances`) snapshots real holdings on BOTH venues — `KrakenBroker.get_positions()`
   (coins priced in CAD + intraday change) and `IBKRBroker.get_positions()` (holdings +
@@ -114,7 +122,7 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   `qyaekaifodgiaxyztpdt`). Dashboard on Vercel (`the-board-amber`), auto-promotes
   `main` → production. GitHub: `ahmeda121291/the-board`.
 - **Live operation runs on the user's Windows machine** (this remote container blocks
-  outbound financial/Supabase hosts). PC must be awake for both daily checkpoints.
+  outbound financial/Supabase hosts). PC must be awake for the daily checkpoints.
 
 ## Working agreements
 
@@ -122,6 +130,6 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   `Claude <noreply@anthropic.com>`.
 - **When behavior changes, update `docs/SCOPE.md` (+ changelog) in the same commit.**
 - Never commit secrets; `.env` is gitignored. Never echo secret values.
-- Twice-daily cadence balances responsiveness against fee drag on a small book (crypto
-  auto-trades; stock recs are free to refresh). Future upgrade as the account grows:
-  intraday **risk-only** crypto exit (not more entries).
+- Cadence is 4×/day — more shots for crypto while small; the cost gate still blocks any
+  trade that doesn't clear its fees, so frequency can't become fee-bleed churn. Future
+  upgrade as the account grows: intraday **risk-only** crypto exit.

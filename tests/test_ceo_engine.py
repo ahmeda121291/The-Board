@@ -177,3 +177,50 @@ def test_no_schedule_keeps_the_fixed_bar():
     eng = CEODecisionEngine(caps=_caps())
     assert eng._effective_threshold(200) == pytest.approx(0.02)
     assert eng._effective_threshold(100000) == pytest.approx(0.02)
+
+
+# ---- equity-scaled Event cap: bold crypto bets while small ------------------
+def test_event_cap_scales_down_as_equity_grows():
+    eng = CEODecisionEngine(
+        caps=_caps(),
+        event_cap_pct_small=0.20,        # bold while small (up to per-trade max)
+        aggressive_below_cad=500.0,
+        conservative_above_cad=5000.0,
+    )
+    assert eng._effective_caps(200).event_hard_cap_pct == pytest.approx(0.20)   # tiny -> bold
+    assert eng._effective_caps(500).event_hard_cap_pct == pytest.approx(0.20)   # floor of ramp
+    assert eng._effective_caps(5000).event_hard_cap_pct == pytest.approx(0.05)  # grown -> conservative
+    assert eng._effective_caps(50000).event_hard_cap_pct == pytest.approx(0.05) # clamped
+    mid = eng._effective_caps(2750).event_hard_cap_pct
+    assert 0.05 < mid < 0.20
+    # The blast-radius breakers are NOT touched by the aggression ramp.
+    eff = eng._effective_caps(200)
+    assert eff.daily_loss_limit_pct == _caps().daily_loss_limit_pct
+    assert eff.max_drawdown_pct == _caps().max_drawdown_pct
+    assert eff.per_trade_max_pct == _caps().per_trade_max_pct
+
+
+def test_no_event_cap_schedule_keeps_fixed_cap():
+    eng = CEODecisionEngine(caps=_caps())  # event_cap_pct_small unset
+    assert eng._effective_caps(200).event_hard_cap_pct == pytest.approx(_caps().event_hard_cap_pct)
+
+
+def test_small_account_funds_a_bigger_crypto_bet():
+    # An Event pitch on a tiny account can size above the conservative 5% cap
+    # (PV=200 → 5% = 10 CAD) once the small-account Event cap is in effect.
+    p = _pitch(
+        division=Division.EVENT, venue=Venue.KRAKEN, expected_return=0.9,
+        capital=40.0, max_loss=8.0, expected_cost=0.2, confidence=0.9,
+    )
+    eng = CEODecisionEngine(
+        caps=_caps(),
+        posteriors={"event": seed_prior(0.8)},
+        leashes={"event": 1.0},
+        deviation_threshold=0.0,
+        event_cap_pct_small=0.20,
+        aggressive_below_cad=500.0,
+        conservative_above_cad=5000.0,
+    )
+    decision, _ = eng.decide([p], hurdle_rate=0.0002, deployed_cad=0.0, portfolio_value_cad=PV)
+    assert decision.kind == DecisionKind.FUND
+    assert decision.size_cad > 0.05 * PV  # exceeds the grown 5% Event cap → bolder while small

@@ -277,7 +277,7 @@ export default async function Page() {
         </div>
         <div className="text-xs leading-relaxed text-slate-400">
           <div>
-            convenes <span className="text-slate-200">{checkpointTimes} UTC</span> · twice daily
+            convenes <span className="text-slate-200">{checkpointTimes} UTC</span>
           </div>
           <div>
             last checkpoint:{" "}
@@ -345,7 +345,7 @@ export default async function Page() {
       {/* Stocks — advisory: recommended portfolio vs your actual IBKR holdings */}
       <Section
         title="Stocks — recommended portfolio"
-        desc="Equities are advisory: the system scans wide twice a day and tells you what to buy or sell in IBKR. It never trades stocks itself. (Crypto on Kraken auto-trades.)"
+        desc="Equities are advisory: the system scans wide a few times a day and tells you what to buy or sell in IBKR. It never trades stocks itself. (Crypto on Kraken auto-trades.)"
       >
         <Portfolio rec={d.recommendation} />
       </Section>
