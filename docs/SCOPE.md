@@ -231,6 +231,15 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-06-30 (g)** — **Real auto-sell (it can now exit, not just buy).** First live BUY
+  filled (SOLCAD $25) — but the resolution loop only booked paper P&L and deleted the
+  tracking row; it never sold, so coins accumulated and "realized" P&L was fictional. Now a
+  resolution **places a real Kraken SELL** to close on stop-loss / take-profit (the predicted
+  band top) / horizon, selling the exact filled qty (`OpenPosition.qty`, migration 0011). The
+  position is finalized only when the sell actually executes — a rejected sell keeps it open to
+  retry and books no outcome. Also fixed `decisions.live` persistence (saved after execution)
+  so the dashboard's LIVE badge is truthful. Exits evaluate on daily closes. 237 tests.
+
 - **2026-06-30 (f)** — **Minimum-order floor (so small trades fill).** With a CAD universe in
   place, the next live FUND tried `SOLCAD` at $6.19 and Kraken rejected it: *volume minimum
   not met*. Weak-conviction sizes on a small account land below the exchange's per-coin
@@ -252,7 +261,7 @@ fees. Pure frequency for its own sake is intentionally avoided.
   account's quote currency (`XBTUSD`→`XBTCAD`, via `exec_pair_for`) and priced in CAD;
   (2) a broker rejection crashed the whole checkpoint — `execute()` now catches it, logs an
   `execute_error`, and finishes the run (balances/recommendations/portfolio still refresh).
-  Coins with no CAD market are skipped, not fatal. 232 tests passing.
+  Coins with no CAD market are skipped, not fatal. 237 tests passing.
 
 - **2026-06-30 (c)** — **Made it actually trade crypto.** Diagnosis: it was HOLDing every
   checkpoint because the crypto strategies only pitch on rare setups (Event = dislocation,
@@ -261,7 +270,7 @@ fees. Pure frequency for its own sake is intentionally avoided.
   reuses the trend/mean-reversion model on the Kraken universe and proposes a long whenever
   there's positive edge — auto-funded under the venue rule, long-only, still cost-gated and
   capped. Also **loosened the Momentum breakout trigger** (z 1.5→1.0, volume 1.5→1.25×). Now
-  the loop regularly funds a crypto position instead of sitting in cash. 232 tests passing.
+  the loop regularly funds a crypto position instead of sitting in cash. 237 tests passing.
 
 - **2026-06-30 (b)** — **Turned up for growth while small.** Per the owner's call (small
   play-money account, take real risk early, de-risk as it grows): the aggression schedule
@@ -271,7 +280,7 @@ fees. Pure frequency for its own sake is intentionally avoided.
   IBKR = advisory), so a crypto **Momentum** breakout trades live while stock pitches stay
   advisory. Crypto universe widened 13→31 pairs; checkpoints went 2×→**4×/day**. The
   daily-loss (6%) and drawdown (15%) breakers are explicitly NOT scaled. Dashboard tables are
-  now collapsible. 232 tests passing.
+  now collapsible. 237 tests passing.
 
 - **2026-06-30** — **The crypto-auto / stocks-advisory remodel.** Split the system by
   venue. **Crypto (Kraken) stays fully autonomous** — Event/Yield auto-trade live as
@@ -286,7 +295,7 @@ fees. Pure frequency for its own sake is intentionally avoided.
   dashboard as **"Current portfolio in IBKR" vs "Recommended portfolio"**. The equity
   universe went **wide by default** (~70 liquid names incl. SNDK + momentum/growth) so
   runaway winners aren't missed. Cadence moved to **twice daily** (`CHECKPOINT_TIMES`,
-  default `13:30,19:00` UTC). 232 tests passing.
+  default `13:30,19:00` UTC). 237 tests passing.
 
 - **2026-06-29** — **Equity-scaled aggression schedule + real venue balances + a
   human dashboard.** The CEO's deviation bar (how readily it leaves the floor) is now a

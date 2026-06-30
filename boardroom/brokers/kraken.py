@@ -238,7 +238,13 @@ class KrakenBroker(Broker):
         # is correct. Coins with no CAD market raise here and are skipped upstream.
         exec_pair = exec_pair_for(order.symbol, self._quote_currency)
         price = self._ticker_price(exec_pair)
-        volume = volume_from_notional(order.notional_cad, price)
+        # Closing a position sells the exact held quantity; opening sizes from the
+        # CAD notional.
+        volume = (
+            round(order.base_qty, 8)
+            if order.base_qty is not None
+            else volume_from_notional(order.notional_cad, price)
+        )
         payload = {
             "pair": exec_pair,
             "type": order.side.value,

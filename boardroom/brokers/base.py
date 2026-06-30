@@ -30,6 +30,10 @@ class Order:
     client_order_id: str
     limit_price: float | None = None  # None == market
     stop_price: float | None = None   # hard stop (mandatory for Event)
+    #: Exact base-asset quantity to trade. Used to CLOSE a position (sell exactly
+    #: what's held) rather than sizing from a CAD notional. When set, it overrides
+    #: ``notional_cad`` for the order volume.
+    base_qty: float | None = None
 
 
 @dataclass(frozen=True)

@@ -256,6 +256,7 @@ class SupabaseRepository(Repository):
                 "horizon_days": position.horizon_days,
                 "opened_at": position.opened_at.isoformat(),
                 "live": position.live,
+                "qty": position.qty,
             }
         ).execute()
 
@@ -279,6 +280,7 @@ class SupabaseRepository(Repository):
                     horizon_days=row["horizon_days"],
                     opened_at=datetime.fromisoformat(row["opened_at"]),
                     live=bool(row.get("live", False)),
+                    qty=float(row.get("qty", 0.0) or 0.0),
                 )
             )
         return out

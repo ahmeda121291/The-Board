@@ -35,7 +35,9 @@ from boardroom.schemas import Decision, Division, Pitch, ResolvedOutcome
 PriceFetcher = Callable[[OpenPosition], "Bars | None"]
 
 
-def build_open_position(pitch: Pitch, decision: Decision, opened_at: datetime | None = None) -> OpenPosition:
+def build_open_position(
+    pitch: Pitch, decision: Decision, opened_at: datetime | None = None, qty: float = 0.0
+) -> OpenPosition:
     """Snapshot a funded pitch into an OpenPosition for later resolution.
 
     The stop fraction is recovered from the pitch's computed ``max_loss``; the
@@ -62,6 +64,7 @@ def build_open_position(pitch: Pitch, decision: Decision, opened_at: datetime | 
         horizon_days=pitch.time_horizon_days,
         opened_at=opened_at or decision.created_at,
         live=decision.live,
+        qty=qty,
     )
 
 
@@ -75,8 +78,11 @@ def resolve_position(
     """Resolve one open position against a fresh price series, or None if not yet.
 
     Long-only (the system only opens BUY): realized return is close-to-close from
-    the entry bar. Resolves at the first post-entry close that breaches the stop,
-    else at the latest close once the horizon has elapsed; otherwise waits.
+    the entry bar. Resolves (i.e. signals an EXIT) at the first post-entry close
+    that breaches the **stop-loss** (``-stop_fraction``) OR hits the **take-profit**
+    (``band_high`` — the top of the predicted move); else at the latest close once
+    the **horizon** has elapsed; otherwise it keeps waiting. The caller turns a
+    resolution into a real sell.
     """
     df = bars.df
     opened_at = _as_utc(pos.opened_at)
@@ -96,10 +102,14 @@ def resolve_position(
 
     cost_fraction = pos.cost_cad / pos.size_cad if pos.size_cad > 0 else 0.0
 
-    # Walk post-entry closes; stop-out at the first breach.
+    # Walk post-entry closes; EXIT at the first stop-loss breach (down) or
+    # take-profit hit (up). Take-profit = the top of the predicted band.
+    take_profit = pos.band_high if pos.band_high and pos.band_high > 0 else None
     for i in range(entry_idx + 1, len(closes)):
         r = closes[i] / entry_price - 1.0
-        if pos.stop_fraction > 0 and r <= -pos.stop_fraction:
+        hit_stop = pos.stop_fraction > 0 and r <= -pos.stop_fraction
+        hit_tp = take_profit is not None and r >= take_profit
+        if hit_stop or hit_tp:
             resolved_time = times.iloc[i]
             resolved_time = resolved_time.to_pydatetime() if hasattr(resolved_time, "to_pydatetime") else resolved_time
             return _make_outcome(pos, r, cost_fraction, _as_utc(resolved_time))
@@ -131,15 +141,25 @@ def _make_outcome(
 
 
 def resolve_open_positions(
-    repo: Repository, fetch_for: PriceFetcher, *, now: datetime | None = None
+    repo: Repository,
+    fetch_for: PriceFetcher,
+    *,
+    now: datetime | None = None,
+    close_live: "Callable[[OpenPosition, ResolvedOutcome], bool] | None" = None,
 ) -> list[LearningUpdate]:
     """Resolve every ready open position and fold each into the adaptive engine.
 
-    For each open position: fetch fresh prices, resolve if ready, persist the
-    outcome (which advances the division's Beta posterior), close the position,
-    and re-derive its leash/retirement via ``update_division``. Per-position
-    failures are isolated so one bad symbol can't stall the others. Returns the
-    learning updates produced this checkpoint.
+    For each open position: fetch fresh prices, resolve if ready, **execute the
+    exit** (``close_live`` sells the held qty on the venue), persist the outcome
+    (which advances the division's Beta posterior), close the tracking row, and
+    re-derive its leash/retirement via ``update_division``. Per-position failures
+    are isolated so one bad symbol can't stall the others.
+
+    ``close_live(pos, outcome) -> bool`` places the real sell and returns whether
+    the position is now actually closed. If it returns False (e.g. the sell was
+    rejected), the position is LEFT OPEN to retry next checkpoint and no outcome
+    is booked — so the system's record never claims a sale that didn't happen.
+    When ``close_live`` is None, positions resolve on paper (dry-run / tests).
     """
     updates: list[LearningUpdate] = []
     for pos in repo.open_positions():
@@ -156,6 +176,16 @@ def resolve_open_positions(
             continue
         if outcome is None:
             continue
+        # Execute the real exit before booking the outcome. If the sell fails,
+        # keep the position open and don't record a fictional realized P&L.
+        if close_live is not None:
+            try:
+                closed = close_live(pos, outcome)
+            except Exception as e:  # noqa: BLE001
+                closed = False
+                repo.audit("exit_error", {"decision_id": pos.decision_id, "symbol": pos.symbol, "error": str(e)[:160]})
+            if not closed:
+                continue
         record_resolution(outcome, repo)
         repo.close_position(pos.decision_id)
         repo.audit(
