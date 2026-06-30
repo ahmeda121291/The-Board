@@ -24,6 +24,10 @@ export const qty = (n: number | null | undefined) => {
     : n.toFixed(4);
 };
 
+// Division enum value → display label ("crypto_trend" → "crypto trend"; the
+// CSS `capitalize` class then title-cases it to "Crypto Trend").
+export const divLabel = (s: string | null | undefined) => (s ?? "—").replace(/_/g, " ");
+
 export const when = (iso: string | null | undefined) => {
   if (!iso) return "—";
   const d = new Date(iso);

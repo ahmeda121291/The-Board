@@ -28,6 +28,7 @@ class Division(str, enum.Enum):
     EVENT = "event"          # rare asymmetric crypto bets (reflexivity)
     EFFORT = "effort"        # non-market operating bets (work) — disabled at launch
     MOMENTUM = "momentum"    # catalyst-continuation: rides volume-confirmed breakouts
+    CRYPTO_TREND = "crypto_trend"  # always-on crypto trend/mean-reversion (auto-traded)
 
 
 class Venue(str, enum.Enum):

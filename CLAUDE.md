@@ -40,10 +40,15 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   them → buy/sell/trim/hold actions. `agents/advisor.py` writes the plain-English
   "buy COST / sell SNDK" note. Code computes every number; the LLM only narrates. Persisted
   to `recommendations` (migration 0009); shown on the dashboard each checkpoint.
+- **Crypto Trend** (`divisions/crypto_trend.py`): the **always-on crypto workhorse** —
+  reuses the trend/mean-reversion `DirectionalModel` on the Kraken universe and proposes a
+  long whenever there's positive edge (not just on a rare trigger), so the system regularly
+  takes crypto positions. Auto-funded (venue rule); long-only; cost-gated and capped. This
+  is what turns "HOLD most checkpoints" into "regularly in the market."
 - **Momentum** (catalyst-continuation): BUYS volume-confirmed upside breakouts
-  (`models/momentum.py`). Asset-agnostic — its **crypto** breakouts are auto-funded on
-  Kraken (venue rule), while its **equity** breakouts are advisory and feed the
-  recommendation engine.
+  (`models/momentum.py`, loosened triggers: breakout ≥1.0 vol on ≥1.25× volume).
+  Asset-agnostic — its **crypto** breakouts are auto-funded on Kraken (venue rule), while
+  its **equity** breakouts are advisory and feed the recommendation engine.
 - **News/catalyst feed** (`data/news.py`, keyless Yahoo search): computed `news_intensity`
   (recency-weighted headline burst) confirms a breakout; headlines attached as context via
   `Division.enrich()`. Grounding intact: score is code, headlines are context.
@@ -104,7 +109,7 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 - **Code**: `boardroom/` (config, schemas, divisions, ceo, risk, brokers, graph,
   agents, persistence, market.py, **recommend.py**, **portfolio.py**). **Tests**:
-  `tests/` (221 passing; `python -m pytest`).
+  `tests/` (223 passing; `python -m pytest`).
 - **Portfolio view** (`boardroom/portfolio.py`): each checkpoint (and `boardroom
   balances`) snapshots real holdings on BOTH venues — `KrakenBroker.get_positions()`
   (coins priced in CAD + intraday change) and `IBKRBroker.get_positions()` (holdings +

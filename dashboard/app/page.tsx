@@ -20,7 +20,7 @@ import {
 } from "@/lib/data";
 import { deposits } from "@/lib/deposits";
 import { nextCheckpointIso, nextCheckpointMultiIso } from "@/lib/schedule";
-import { ago, cad, num, pct, when } from "@/lib/format";
+import { ago, cad, divLabel, num, pct, when } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -394,7 +394,7 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
             {Object.entries(latestSession.universe).map(([div, u]) => (
               <div key={div} className="glass hud p-4">
                 <div className="flex items-center justify-between">
-                  <span className="label capitalize">{div}</span>
+                  <span className="label capitalize">{divLabel(div)}</span>
                   <Pill tone="cyan">{u.symbols.length} · {u.venue}</Pill>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1.5">
@@ -427,7 +427,7 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
               const tone = x.retired ? "bad" : x.shadow ? "warn" : "good";
               return (
                 <tr key={x.division} className="hover:bg-white/[0.02]">
-                  <td className="px-4 py-3 font-medium capitalize">{x.division}</td>
+                  <td className="px-4 py-3 font-medium capitalize">{divLabel(x.division)}</td>
                   <td className="px-4 py-3"><Pill tone={tone}>{status}</Pill></td>
                   <td className="num px-4 py-3">{x.n_resolved > 0 ? pct(mean, 0) : "—"}</td>
                   <td className="num px-4 py-3">{pct(x.leash, 0)}</td>
@@ -449,7 +449,7 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
         ) : (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {Object.entries(attribution).map(([div, v]) => (
-              <Stat key={div} label={div} value={cad(v as number)} tone={(v as number) >= 0 ? "good" : "bad"} />
+              <Stat key={div} label={divLabel(div)} value={cad(v as number)} tone={(v as number) >= 0 ? "good" : "bad"} />
             ))}
             <Stat label="cost drag" value={costDrag === null ? "—" : pct(costDrag)} tone="warn" />
           </div>
@@ -466,7 +466,7 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
               <tr key={x.decision_id} className="hover:bg-white/[0.02]">
                 <td className="px-4 py-3 text-slate-400">{when(x.created_at)}</td>
                 <td className="px-4 py-3"><Pill tone={kindTone(x.kind)}>{x.kind}</Pill></td>
-                <td className="px-4 py-3 capitalize">{x.division ?? "—"}</td>
+                <td className="px-4 py-3 capitalize">{divLabel(x.division)}</td>
                 <td className="num px-4 py-3">{x.size_cad > 0 ? cad(x.size_cad) : "—"}</td>
                 <td className="num px-4 py-3 text-slate-400">{num(x.hurdle_rate, 5)}</td>
                 <td className="px-4 py-3"><Pill tone={x.live ? "bad" : "default"}>{x.live ? "live" : "dry"}</Pill></td>
@@ -485,7 +485,7 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
             {d.pitches.map((p) => (
               <tr key={p.pitch_id} className="hover:bg-white/[0.02]">
                 <td className="px-4 py-3 text-slate-400">{ago(p.created_at)}</td>
-                <td className="px-4 py-3 capitalize">{p.division}</td>
+                <td className="px-4 py-3 capitalize">{divLabel(p.division)}</td>
                 <td className="num px-4 py-3">{p.symbol}</td>
                 <td className={`num px-4 py-3 ${p.expected_return >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                   {pct(p.expected_return)}
@@ -508,7 +508,7 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
             {d.outcomes.slice(0, 25).map((o) => (
               <tr key={o.id} className="hover:bg-white/[0.02]">
                 <td className="px-4 py-3 text-slate-400">{ago(o.resolved_at)}</td>
-                <td className="px-4 py-3 capitalize">{o.division}</td>
+                <td className="px-4 py-3 capitalize">{divLabel(o.division)}</td>
                 <td className="num px-4 py-3">{pct(o.predicted_return)}</td>
                 <td className={`num px-4 py-3 ${o.realized_return >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                   {pct(o.realized_return)}

@@ -109,6 +109,7 @@ def build_default_org(
     # is tagged with it so its pitches route to the matching broker.
     dv = directional_execution_venue()
 
+    from boardroom.divisions.crypto_trend import CryptoTrendDivision
     from boardroom.divisions.momentum import MomentumDivision
 
     # Seed the floor from the configured carry (your real earned APR); the live
@@ -128,9 +129,17 @@ def build_default_org(
         equity_venue=dv,
         universe_symbols=dir_syms + evt_syms,
     )
+    # Crypto Trend — the always-on crypto workhorse. Scans the same Kraken pairs
+    # as Event but with the trend/mean-reversion model, so it proposes a long
+    # whenever there's positive edge (not just on a rare dislocation). Executes on
+    # Kraken → auto-funded under the venue rule. This is what makes the system
+    # regularly take crypto positions instead of holding cash for a trigger.
+    crypto_trend = CryptoTrendDivision(
+        fetchers=list(event_fetchers), universe_symbols=evt_syms
+    )
     effort = EffortDivision()  # disabled
 
-    divisions = [directional, event, momentum, effort]
+    divisions = [directional, event, momentum, crypto_trend, effort]
 
     # Real adapters when requested + credentialed; stubs otherwise. Live
     # execution still requires the LIVE_TRADING master switch regardless.
