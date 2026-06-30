@@ -48,7 +48,8 @@ trade directly — they propose, and the CEO disposes.
 | Division | Asset class | Venue | Funding | Role |
 | --- | --- | --- | --- | --- |
 | **Yield** | Crypto | Kraken | auto-trades | The floor — the safe baseline return every other idea must beat. |
-| **Event** | Crypto | Kraken | auto-trades | Event/catalyst-driven crypto opportunities. The only division the CEO funds with real capital. |
+| **Event** | Crypto | Kraken | auto-trades | Rare dislocation/catalyst crypto bets. |
+| **Crypto Trend** | Crypto | Kraken | auto-trades | **Always-on** trend/mean-reversion long — proposes whenever there's positive edge, so the system is regularly in the market (not just on rare triggers). |
 | **Directional** | Stocks / ETFs | IBKR | **advisory** | Equity ideas — feed the recommended portfolio. Never auto-funded. |
 | **Momentum** | Stocks + crypto | IBKR / Kraken | crypto auto / stocks advisory | Volume-confirmed breakouts. Crypto breakouts auto-trade; stock breakouts advise. |
 | **Effort** | — | — | disabled | Disabled. Reserved. |
@@ -230,6 +231,15 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-06-30 (c)** — **Made it actually trade crypto.** Diagnosis: it was HOLDing every
+  checkpoint because the crypto strategies only pitch on rare setups (Event = dislocation,
+  Momentum = confirmed breakout), so most checkpoints produced zero crypto pitches. Added an
+  **always-on Crypto Trend division** (`crypto_trend.py`, new `CRYPTO_TREND` division) that
+  reuses the trend/mean-reversion model on the Kraken universe and proposes a long whenever
+  there's positive edge — auto-funded under the venue rule, long-only, still cost-gated and
+  capped. Also **loosened the Momentum breakout trigger** (z 1.5→1.0, volume 1.5→1.25×). Now
+  the loop regularly funds a crypto position instead of sitting in cash. 223 tests passing.
+
 - **2026-06-30 (b)** — **Turned up for growth while small.** Per the owner's call (small
   play-money account, take real risk early, de-risk as it grows): the aggression schedule
   now scales TWO knobs on the equity ramp — the deviation bar (low 0.001 while small) AND a
@@ -238,7 +248,7 @@ fees. Pure frequency for its own sake is intentionally avoided.
   IBKR = advisory), so a crypto **Momentum** breakout trades live while stock pitches stay
   advisory. Crypto universe widened 13→31 pairs; checkpoints went 2×→**4×/day**. The
   daily-loss (6%) and drawdown (15%) breakers are explicitly NOT scaled. Dashboard tables are
-  now collapsible. 221 tests passing.
+  now collapsible. 223 tests passing.
 
 - **2026-06-30** — **The crypto-auto / stocks-advisory remodel.** Split the system by
   venue. **Crypto (Kraken) stays fully autonomous** — Event/Yield auto-trade live as
@@ -253,7 +263,7 @@ fees. Pure frequency for its own sake is intentionally avoided.
   dashboard as **"Current portfolio in IBKR" vs "Recommended portfolio"**. The equity
   universe went **wide by default** (~70 liquid names incl. SNDK + momentum/growth) so
   runaway winners aren't missed. Cadence moved to **twice daily** (`CHECKPOINT_TIMES`,
-  default `13:30,19:00` UTC). 221 tests passing.
+  default `13:30,19:00` UTC). 223 tests passing.
 
 - **2026-06-29** — **Equity-scaled aggression schedule + real venue balances + a
   human dashboard.** The CEO's deviation bar (how readily it leaves the floor) is now a

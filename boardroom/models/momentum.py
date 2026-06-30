@@ -31,8 +31,8 @@ class MomentumModel(PredictionModel):
     horizon_days: float = 5.0
     lookback: int = 20
     short: int = 5
-    breakout_z: float = 1.5     # recent move must be >= this many vols, to the upside
-    volume_min: float = 1.5     # AND on >= 1.5x normal volume (catalyst confirmation)
+    breakout_z: float = 1.0     # recent move must be >= this many vols, to the upside
+    volume_min: float = 1.25    # AND on >= this x normal volume (catalyst confirmation)
     base_win_prob: float = 0.55  # modest continuation edge; rises a touch with strength
 
     def predict(self, bars: Bars) -> ModelOutput:

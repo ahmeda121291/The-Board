@@ -40,7 +40,7 @@ def test_standing_empty_system():
     standing = build_standing(repo, 200.0)
     assert standing["equity_cad"] == 200.0
     assert standing["n_resolved_total"] == 0
-    assert len(standing["divisions"]) == 5  # yield, directional, event, momentum, effort
+    assert len(standing["divisions"]) == 6  # yield, directional, event, momentum, crypto_trend, effort
 
 
 def test_recommendations_low_sample_says_hold():
