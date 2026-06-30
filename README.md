@@ -34,7 +34,7 @@ qualitative calls.
 | M6 | Kraken + IBKR adapters behind the broker interface (live-gated) | ✅ code · ⏸ live smoke test needs the gateway running |
 | M7–M10 | Event live · go-live floor-dominant · ratchet · Effort | later |
 
-**223 tests pass** across the spine (features, CEO logic, calibration math,
+**230 tests pass** across the spine (features, CEO logic, calibration math,
 measurement, caps, the recommendation engine, the full loop). Everything runs
 **offline in dry-run** today: `LIVE_TRADING` defaults `false` and execution is
 stubbed until you fund accounts and wire venues.

@@ -109,7 +109,7 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 - **Code**: `boardroom/` (config, schemas, divisions, ceo, risk, brokers, graph,
   agents, persistence, market.py, **recommend.py**, **portfolio.py**). **Tests**:
-  `tests/` (223 passing; `python -m pytest`).
+  `tests/` (230 passing; `python -m pytest`).
 - **Portfolio view** (`boardroom/portfolio.py`): each checkpoint (and `boardroom
   balances`) snapshots real holdings on BOTH venues — `KrakenBroker.get_positions()`
   (coins priced in CAD + intraday change) and `IBKRBroker.get_positions()` (holdings +
