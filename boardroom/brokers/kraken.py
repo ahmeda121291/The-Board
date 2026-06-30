@@ -103,7 +103,12 @@ class KrakenBroker(Broker):
 
         resp = httpx.get(f"{_API}/0/public/Ticker", params={"pair": pair}, timeout=20.0)
         resp.raise_for_status()
-        result = resp.json()["result"]
+        payload = resp.json()
+        # An unknown pair (e.g. a coin with no CAD market) comes back as an error
+        # with an empty result — surface a clear message instead of KeyError.
+        result = payload.get("result") or {}
+        if payload.get("error") or not result:
+            raise RuntimeError(f"Kraken: no market for pair {pair} ({payload.get('error')})")
         key = next(iter(result))
         return float(result[key]["c"][0])  # last trade close price
 
@@ -115,9 +120,9 @@ class KrakenBroker(Broker):
         resp = httpx.get(f"{_API}/0/public/Ticker", params={"pair": pair}, timeout=20.0)
         resp.raise_for_status()
         payload = resp.json()
-        if payload.get("error"):
-            raise RuntimeError(f"Kraken Ticker error: {payload['error']}")
-        result = payload["result"]
+        result = payload.get("result") or {}
+        if payload.get("error") or not result:
+            raise RuntimeError(f"Kraken: no market for pair {pair} ({payload.get('error')})")
         key = next(iter(result))
         row = result[key]
         last = float(row["c"][0])         # last trade close

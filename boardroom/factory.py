@@ -30,8 +30,11 @@ DIRECTIONAL_UNIVERSE = (
     "GOOGL", "META", "LLY", "AVGO",      # incl. high-catalyst megacaps (LLY = the Trump-news case)
     "COST", "UNH", "V",
 )
+# Crypto pairs are CAD-quoted to match the CAD-funded account — a CAD account
+# can only BUY CAD pairs, so data, signals, and execution all use *CAD. (An
+# unknown CAD pair simply fails its data fetch and is skipped, never fatal.)
 EVENT_UNIVERSE = (
-    "XBTUSD", "ETHUSD", "SOLUSD", "XRPUSD", "ADAUSD", "LINKUSD", "DOTUSD",
+    "XBTCAD", "ETHCAD", "SOLCAD", "XRPCAD", "ADACAD", "LINKCAD", "DOTCAD",
 )
 
 # "Wide scan" — the broad equity universe used for the daily recommendation
@@ -51,12 +54,13 @@ DIRECTIONAL_UNIVERSE_WIDE = DIRECTIONAL_UNIVERSE + (
     "SNDK", "PLTR", "SMCI", "ARM", "COIN", "MSTR", "CRWD", "DDOG", "SNOW",
     "NOW", "ANET", "MRVL", "DELL", "WDC", "MARA", "RIOT", "HOOD", "RBLX",
 )
+# Wider crypto — additional CAD-quoted majors/large-caps with Kraken CAD markets.
+# Anything without a real CAD pair just abstains at data-fetch, so the list is
+# safe to keep generous.
 EVENT_UNIVERSE_WIDE = EVENT_UNIVERSE + (
-    # majors / large-cap alts
-    "LTCUSD", "AVAXUSD", "DOGEUSD", "AAVEUSD", "UNIUSD", "ATOMUSD",
-    "BCHUSD", "XLMUSD", "ETCUSD", "TRXUSD", "ALGOUSD", "FILUSD",
-    "NEARUSD", "APTUSD", "ARBUSD", "OPUSD", "INJUSD", "SUIUSD",
-    "TIAUSD", "GRTUSD", "MKRUSD", "LDOUSD", "RENDERUSD", "FTMUSD",
+    "LTCCAD", "AVAXCAD", "DOGECAD", "ATOMCAD", "ALGOCAD", "MATICCAD",
+    "BCHCAD", "XLMCAD", "ETCCAD", "FILCAD", "UNICAD", "AAVECAD",
+    "GRTCAD", "SANDCAD", "MANACAD", "AXSCAD", "EOSCAD", "KAVACAD",
 )
 
 
