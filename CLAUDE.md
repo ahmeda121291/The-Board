@@ -74,6 +74,10 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   `AGGRESSIVE_BELOW_CAD` / `CONSERVATIVE_ABOVE_CAD`. The **daily-loss (6%) and drawdown
   (15%) circuit breakers are NEVER scaled** — they're the "don't lose it all in one day"
   backstop regardless of aggression.
+- **Minimum-order floor** (`MIN_ORDER_CAD`, default 25): a small-conviction crypto order is
+  bumped up to the exchange minimum so it actually fills — clamped to the per-trade cap, so
+  it never breaches the risk envelope. Crypto trades execute in **CAD pairs** (account is
+  CAD-funded; `exec_pair_for` maps USD→CAD).
 - **Gains ratchet** sweeps a fraction of new highs into an **untouchable reserve**.
 - **Withdrawals DISABLED on every venue** — no transfer code path exists. Keys are
   trade-only and per-venue isolated (Kraken ⟂ equities).
@@ -110,7 +114,7 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 - **Code**: `boardroom/` (config, schemas, divisions, ceo, risk, brokers, graph,
   agents, persistence, market.py, **recommend.py**, **portfolio.py**). **Tests**:
-  `tests/` (230 passing; `python -m pytest`).
+  `tests/` (232 passing; `python -m pytest`).
 - **Portfolio view** (`boardroom/portfolio.py`): each checkpoint (and `boardroom
   balances`) snapshots real holdings on BOTH venues — `KrakenBroker.get_positions()`
   (coins priced in CAD + intraday change) and `IBKRBroker.get_positions()` (holdings +

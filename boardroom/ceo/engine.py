@@ -50,6 +50,10 @@ class CEODecisionEngine:
     #: per-trade max); it tapers to ``caps.event_hard_cap_pct`` as equity grows.
     #: The daily-loss / drawdown / fee-drag breakers are untouched.
     event_cap_pct_small: float | None = None
+    #: Exchange minimum-order floor (CAD). A funded size below this is bumped up to
+    #: it (clamped to the per-trade cap / headroom) so small-conviction crypto
+    #: orders clear the venue's minimum instead of being rejected. 0 disables.
+    min_order_cad: float = 0.0
     posteriors: dict[str, CalibrationPosterior] = field(default_factory=dict)
     leashes: dict[str, float] = field(default_factory=dict)
 
@@ -188,18 +192,29 @@ class CEODecisionEngine:
                 ranked,
             )
 
+        # Venue minimum-order floor: a small-conviction size can land below the
+        # exchange's minimum order size and get rejected. Bump it up to the floor
+        # so the trade actually executes — but never above the per-trade cap or
+        # the deployable headroom (so this can't breach the risk envelope).
+        size = best.trusted_size_cad
+        if self.min_order_cad > 0 and 0 < size < self.min_order_cad:
+            per_trade = caps.cap_for(best.pitch.division.value, portfolio_value_cad)
+            headroom = max(0.0, caps.deployable_cad(portfolio_value_cad) - deployed_cad)
+            size = round(min(self.min_order_cad, per_trade, headroom), 2)
+            best.trusted_size_cad = size  # keep the ranking display consistent
+
         return (
             Decision(
                 decision_id=decision_id,
                 kind=DecisionKind.FUND,
                 division=best.pitch.division,
                 pitch_id=best.pitch.pitch_id,
-                size_cad=best.trusted_size_cad,
+                size_cad=size,
                 hurdle_rate=hurdle_rate,
                 ranked_pitch_ids=ranked_ids,
                 rationale=(
                     f"{best.pitch.division.value} cleared the bar: score {best.score:.3f}, "
-                    f"trust {best.trust:.2f}, size {best.trusted_size_cad:.2f} CAD."
+                    f"trust {best.trust:.2f}, size {size:.2f} CAD."
                 ),
             ),
             ranked,

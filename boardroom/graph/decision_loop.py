@@ -68,6 +68,7 @@ class Orchestrator:
                 aggressive_below_cad=self.settings.aggressive_below_cad,
                 conservative_above_cad=self.settings.conservative_above_cad,
                 event_cap_pct_small=self.settings.event_hard_cap_pct_small,
+                min_order_cad=self.settings.min_order_cad,
             )
         # Default to stub brokers; real Kraken/IBKR are injected at Milestone 6.
         self.brokers.setdefault(Venue.KRAKEN, StubBroker(Venue.KRAKEN))

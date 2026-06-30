@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     # remain the "don't lose it all in one day" backstop regardless of aggression.
     event_hard_cap_pct_small: float = Field(default=0.20, alias="EVENT_HARD_CAP_PCT_SMALL")
 
+    # Exchange minimum-order floor (CAD). Kraken rejects orders below a per-coin
+    # minimum; on a small account a weak-conviction size can fall under it. We
+    # bump a funded order up to this floor (never above the per-trade cap) so it
+    # actually fills. ~25 CAD comfortably clears Kraken's minimums for the majors.
+    min_order_cad: float = Field(default=25.0, alias="MIN_ORDER_CAD")
+
     # The floor's annualized carry — the hurdle every other division must beat.
     # Set this to the APR you actually earn (Kraken staking/lending). When the
     # live Kraken venue is wired it can refresh this automatically within a sanity
