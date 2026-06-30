@@ -238,7 +238,7 @@ fees. Pure frequency for its own sake is intentionally avoided.
   IBKR = advisory), so a crypto **Momentum** breakout trades live while stock pitches stay
   advisory. Crypto universe widened 13→31 pairs; checkpoints went 2×→**4×/day**. The
   daily-loss (6%) and drawdown (15%) breakers are explicitly NOT scaled. Dashboard tables are
-  now collapsible. 218 tests passing.
+  now collapsible. 221 tests passing.
 
 - **2026-06-30** — **The crypto-auto / stocks-advisory remodel.** Split the system by
   venue. **Crypto (Kraken) stays fully autonomous** — Event/Yield auto-trade live as
@@ -253,7 +253,7 @@ fees. Pure frequency for its own sake is intentionally avoided.
   dashboard as **"Current portfolio in IBKR" vs "Recommended portfolio"**. The equity
   universe went **wide by default** (~70 liquid names incl. SNDK + momentum/growth) so
   runaway winners aren't missed. Cadence moved to **twice daily** (`CHECKPOINT_TIMES`,
-  default `13:30,19:00` UTC). 218 tests passing.
+  default `13:30,19:00` UTC). 221 tests passing.
 
 - **2026-06-29** — **Equity-scaled aggression schedule + real venue balances + a
   human dashboard.** The CEO's deviation bar (how readily it leaves the floor) is now a
