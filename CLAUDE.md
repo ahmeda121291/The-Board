@@ -6,9 +6,18 @@
 ## What this is
 
 **Boardroom** is an autonomous, multi-agent capital-allocation system funded with
-~$200 CAD (Canadian resident). Once a day it convenes a "boardroom" of agents, looks
-at real crypto + equity data, and decides where capital goes — **usually nothing
-(HOLD the floor)**. It is live (real money) as of 2026-06.
+~$200+ CAD (Canadian resident). **Twice a day** it convenes a "boardroom" of agents,
+looks at real crypto + equity data, and decides where capital goes. Live (real money)
+as of 2026-06. Two modes, split by venue:
+
+- **Crypto (Kraken) = fully autonomous, auto-trades live.** Yield = the floor; Event
+  takes rare asymmetric bets. Default is still HOLD the floor — most checkpoints do
+  nothing.
+- **Stocks (IBKR) = ADVISORY ONLY, never auto-trades.** The system scans a wide equity
+  universe and publishes a **recommended portfolio**, reads the **actual IBKR holdings**,
+  and shows **"Current portfolio in IBKR" vs "Recommended portfolio"** with the AI
+  explaining the diff in plain English ("buy Costco", "sell SanDisk"). The user places
+  those orders by hand.
 
 ## The one rule that governs everything
 
@@ -19,26 +28,30 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 ## Divisions (pitch ideas) → Agents (decide)
 
-- **Yield** (crypto/Kraken) = the floor every idea must beat · **Event** (crypto/Kraken)
-  · **Directional** (stocks/ETFs via Interactive Brokers) · **Effort** (disabled).
-- **Momentum** (catalyst-continuation) = the counterweight to the mean-reversion bias
-  in Directional/Event: BUYS volume-confirmed upside breakouts (`models/momentum.py`,
-  `breakout_strength`+`volume_surge`). Asset-agnostic (stocks+crypto, `venue_for`
-  routes per symbol). Ships **advisory** (`advisory=True` → pitches/logs but never
-  funded) until validated. Advisory pitches are excluded from CEO funding in the loop.
-- **News/catalyst feed** (`data/news.py`, keyless Yahoo search): computed
-  `news_intensity` (recency-weighted headline burst) confirms a breakout; headlines
-  attached as context via `Division.enrich()` (fetched only for breakout candidates).
-  Grounding intact: score is code, headlines are context. Shown on dashboard session.
-- **Scanned universe** (factory.py): core = 14 liquid ETFs/mega-caps + 7 crypto pairs;
-  **wide** = ~40 stocks/ETFs + 10 crypto (the "Run wide scan" button / `--wide`).
-  Equities via **Yahoo** (`fetch_equity_daily`, Stooq fallback), crypto via Kraken.
-  Each division pitches one idea per qualifying symbol (`propose_all`); the CEO ranks
-  across all and funds the single best. Long-only (IBKR cash/Kraken-spot can't short).
-- **CEO** ranks pitches deterministically vs hurdle + track record; default HOLD; funds
-  ≤1 best idea. **Risk Manager** adversarially vetoes. **Critic** challenges reasoning.
-  **CFO/Strategist** studies the scoreboard, writes a review each checkpoint
-  (structural recs tagged `requires_human`).
+- **Yield** (crypto/Kraken) = the floor every idea must beat · **Event** (crypto/Kraken,
+  auto-trades) · **Directional** (stocks/ETFs via IBKR, **advisory**) · **Effort** (disabled).
+- **Directional is now advisory** (`advisory=True`): it pitches equities but they are
+  **never funded** — they feed the recommendation engine instead. Only crypto (Event) is
+  fundable/auto-traded by the CEO.
+- **Recommendation engine** (`boardroom/recommend.py`): ranks the advisory equity pitches
+  into a weighted **target portfolio** (score-proportional, per-trade-capped, within the
+  deployable cap), reads the real IBKR holdings (`IBKRBroker.get_positions()`), and diffs
+  them → buy/sell/trim/hold actions. `agents/advisor.py` writes the plain-English
+  "buy COST / sell SNDK" note. Code computes every number; the LLM only narrates. Persisted
+  to `recommendations` (migration 0009); shown on the dashboard each checkpoint.
+- **Momentum** (catalyst-continuation): BUYS volume-confirmed upside breakouts
+  (`models/momentum.py`). Asset-agnostic; also **advisory**. Its equity pitches feed the
+  recommendation engine; advisory pitches are excluded from CEO funding.
+- **News/catalyst feed** (`data/news.py`, keyless Yahoo search): computed `news_intensity`
+  (recency-weighted headline burst) confirms a breakout; headlines attached as context via
+  `Division.enrich()`. Grounding intact: score is code, headlines are context.
+- **Scanned universe** (factory.py): equities scan **wide by default** (~70 liquid
+  stocks/ETFs incl. SNDK + high-momentum names — so a runaway winner isn't missed) since
+  stocks are advisory; crypto ~7–13 pairs. Equities via **Yahoo** (`fetch_equity_daily`,
+  Stooq fallback), crypto via Kraken. Long-only.
+- **CEO** ranks the *fundable* (crypto) pitches deterministically vs hurdle + track record;
+  default HOLD; auto-funds ≤1 best crypto idea. **Risk Manager** adversarially vetoes.
+  **CFO/Strategist** studies the scoreboard, writes a review each checkpoint.
 
 ## Money & safety (non-negotiable)
 
@@ -56,12 +69,17 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 ## Scheduling & market hours
 
-- **One checkpoint/day at 3pm local** (Windows Task Scheduler runs `boardroom run
-  --confirm-live --once`; with `--once` the trigger time IS the execution time).
-- Crypto is 24/7. Stocks only fill 9:30–16:00 ET; 3pm local = 1h before close
-  (summer & winter). **Market-hours guard** auto-holds any live equity order placed
-  while the market is closed (logs `equity_market_closed`); crypto unaffected.
-- Off-days (weekends/holidays): checkpoint still convenes **crypto-only**.
+- **Twice-daily checkpoints** (`CHECKPOINT_TIMES`, default `13:30,19:00` UTC ≈ near the
+  open and ~1h before the close, ET). Windows Task Scheduler runs `boardroom run
+  --confirm-live --once` at each; with `--once` the trigger time IS the execution time.
+  Each checkpoint auto-trades crypto AND refreshes the advisory stock recommendation +
+  IBKR holdings diff.
+- Crypto is 24/7 (auto-traded any checkpoint). Stocks are advisory so there's no
+  equity-execution timing concern; the **market-hours guard** still exists for safety
+  (would hold any live equity order while the market is closed — but equities don't
+  auto-execute now).
+- Off-days (weekends/holidays): checkpoints still convene; crypto trades, stock
+  recommendations refresh off the latest data.
 - **On-demand runs**: dashboard "Run now" button writes a `run_requests` row; the
   local `boardroom poll` poller (a startup scheduled task on the PC) claims it and
   runs the checkpoint locally (keys stay on PC; dashboard never trades). Also a
@@ -77,7 +95,8 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 ## Where things live
 
 - **Code**: `boardroom/` (config, schemas, divisions, ceo, risk, brokers, graph,
-  agents, persistence, market.py). **Tests**: `tests/` (189 passing; `python -m pytest`).
+  agents, persistence, market.py, **recommend.py**). **Tests**: `tests/` (199 passing;
+  `python -m pytest`).
 - **Dashboard**: `dashboard/` (Next.js 14 on Vercel, reads Supabase read-only; Docs
   page at `/docs`; "Ask the Boardroom" chat = read-only, needs `ANTHROPIC_API_KEY`).
 - **Ops**: `RUNBOOK.md`, `docs/OPERATIONS.md`, `install_scheduler.ps1`, `run_boardroom.ps1`.
@@ -90,7 +109,7 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   `qyaekaifodgiaxyztpdt`). Dashboard on Vercel (`the-board-amber`), auto-promotes
   `main` → production. GitHub: `ahmeda121291/the-board`.
 - **Live operation runs on the user's Windows machine** (this remote container blocks
-  outbound financial/Supabase hosts). PC must be awake before 3pm local for the run.
+  outbound financial/Supabase hosts). PC must be awake for both daily checkpoints.
 
 ## Working agreements
 
@@ -98,5 +117,6 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   `Claude <noreply@anthropic.com>`.
 - **When behavior changes, update `docs/SCOPE.md` (+ changelog) in the same commit.**
 - Never commit secrets; `.env` is gitignored. Never echo secret values.
-- Once-daily cadence is deliberate (fee drag on a small book). Future upgrade when the
-  account grows: intraday **risk-only** crypto exit (not more entries).
+- Twice-daily cadence balances responsiveness against fee drag on a small book (crypto
+  auto-trades; stock recs are free to refresh). Future upgrade as the account grows:
+  intraday **risk-only** crypto exit (not more entries).

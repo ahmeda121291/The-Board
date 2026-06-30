@@ -4,19 +4,29 @@
 > `Boardroom_Scope.docx` and is kept in sync with the code as the system evolves.
 > When behavior changes, this file changes in the same commit.
 >
-> **Last updated:** 2026-06-25 · **Status:** LIVE (real capital) · **Funding:** ~$200 CAD
+> **Last updated:** 2026-06-30 · **Status:** LIVE (real capital) · **Funding:** ~$200+ CAD
 
 ---
 
 ## 1. What Boardroom is
 
-An autonomous, multi-agent capital-allocation system. Once a day it convenes a
+An autonomous, multi-agent capital-allocation system. **Twice a day** it convenes a
 "boardroom" of specialized agents, looks at real crypto and equity market data,
 and decides where a small pool of capital should go — **usually nothing**. It is
 deliberately low-frequency, floor-first, and skeptical of its own ideas.
 
-It is designed to run unattended and be safe by construction: it can place trades
-but **cannot withdraw money** from any venue.
+It operates in **two modes, split by venue:**
+
+- **Crypto (Kraken) — fully autonomous.** The Yield and Event divisions auto-trade
+  live (within the caps, default HOLD). This is the only money the system moves on
+  its own.
+- **Stocks (IBKR) — advisory only.** The system never auto-trades equities. Instead it
+  scans a wide universe, publishes a **recommended portfolio**, reads the user's
+  **actual IBKR holdings**, and presents *current vs recommended* with a plain-English
+  buy/sell explanation. The user executes those trades by hand.
+
+It is designed to run unattended and be safe by construction: it can place crypto
+trades but **cannot withdraw money** from any venue, and it **cannot trade stocks at all**.
 
 ### The grounding law (the single most important rule)
 
@@ -34,23 +44,44 @@ convention.
 Each division is an independent strategy that *pitches* opportunities. They do not
 trade directly — they propose, and the CEO disposes.
 
-| Division | Asset class | Venue | Role |
-| --- | --- | --- | --- |
-| **Yield** | Crypto | Kraken | The floor — the safe baseline return every other idea must beat. |
-| **Event** | Crypto | Kraken | Event/catalyst-driven crypto opportunities. |
-| **Directional** | Stocks / ETFs | Interactive Brokers | Directional equity positions. |
-| **Effort** | — | — | Disabled. Reserved. |
+| Division | Asset class | Venue | Funding | Role |
+| --- | --- | --- | --- | --- |
+| **Yield** | Crypto | Kraken | auto-trades | The floor — the safe baseline return every other idea must beat. |
+| **Event** | Crypto | Kraken | auto-trades | Event/catalyst-driven crypto opportunities. The only division the CEO funds with real capital. |
+| **Directional** | Stocks / ETFs | IBKR | **advisory** | Equity ideas — feed the recommended portfolio. Never auto-funded. |
+| **Momentum** | Stocks + crypto | IBKR / Kraken | **advisory** | Volume-confirmed breakouts (catalyst continuation). Advisory. |
+| **Effort** | — | — | disabled | Disabled. Reserved. |
 
 A pitch carries computed numbers (code) plus a short narrative (LLM). Quant fields
 are never LLM guesses.
 
-**Scanned universe.** Each checkpoint, Directional scans a basket of liquid ETFs and
-mega-caps (SPY, QQQ, IWM, DIA, sector ETFs, AAPL/MSFT/NVDA/AMZN/GOOGL/META) and Event
-scans the major crypto pairs (BTC, ETH, SOL, XRP, ADA, LINK, DOT). Every symbol runs
-the same grounded model + risk/cost gates; the CEO ranks across all of them and funds
-at most the single best. A wider universe means more chances something is a genuine,
-non-stretched, positive-edge buy — so the system actually deploys, rather than holding
-because its only candidate was overbought.
+**Advisory vs fundable.** Equities are **advisory**: Directional/Momentum pitch stocks,
+but the CEO never funds them. Only crypto (Event) is auto-traded. The advisory equity
+pitches feed the **recommendation engine** (§2a) instead.
+
+**Scanned universe.** Because stocks are advisory, the equity universe is deliberately
+**wide** (~70 liquid stocks/ETFs by default — broad-market & sector ETFs, megacaps,
+high-momentum semis/AI/growth names incl. **SNDK** — so a runaway winner isn't missed).
+Event scans the major crypto pairs (BTC, ETH, SOL, XRP, ADA, LINK, DOT, +more wide).
+Every symbol runs the same grounded model + risk/cost gates.
+
+### 2a. The recommendation engine (advisory equities)
+
+`boardroom/recommend.py` turns the advisory equity pitches into a **recommended
+portfolio**, fully deterministically:
+
+1. keep equity pitches that beat the floor net of cost (risk-adjusted score > 0),
+2. rank by the same risk-adjusted score the CEO uses for crypto,
+3. weight proportional to score, cap each name at the per-trade cap (20%), and keep the
+   book within the deployable cap (80%) — the remainder is cash,
+4. read the user's **actual IBKR holdings** (`IBKRBroker.get_positions()`),
+5. **diff** current vs recommended → ordered `buy / sell / trim / hold` actions with
+   dollar deltas (a rebalance band suppresses trading noise).
+
+`agents/advisor.py` writes the plain-English summary ("Buy Costco, sell SanDisk").
+Every number is code-computed; the LLM only narrates. The output is persisted to the
+`recommendations` table each checkpoint and rendered on the dashboard as **"Current
+portfolio in IBKR" vs "Recommended portfolio"**.
 
 ---
 
@@ -58,7 +89,7 @@ because its only candidate was overbought.
 
 | Agent | What it does |
 | --- | --- |
-| **CEO** | Deterministically ranks surviving pitches against the hurdle rate and each division's demonstrated track record. Default action is **HOLD** (stay in the floor). Funds at most the single best idea, or nothing. |
+| **CEO** | Deterministically ranks the surviving **fundable (crypto)** pitches against the hurdle rate and each division's demonstrated track record. Default action is **HOLD** (stay in the floor). Auto-funds at most the single best crypto idea, or nothing. Equity pitches are advisory and bypass funding — they go to the recommendation engine. |
 | **Risk Manager** | Adversarial. Tries to *veto* each pitch (e.g. "edge doesn't clear cost"). Vetoes drop the pitch before the CEO sees it. |
 | **Critic** | Challenges reasoning quality. |
 | **CFO / Chief Strategist** | Studies the whole scoreboard — calibration, attribution, cost drag, drawdown — and writes a strategic review with recommendations each checkpoint. Structural changes it proposes are tagged `requires_human` and never auto-applied. |
@@ -94,20 +125,19 @@ plays with house money over time.
 
 ## 5. When it runs — and the market-hours rule
 
-- **One checkpoint per day** at **3:00pm local (≈19:00 UTC summer)**.
+- **Two checkpoints per day** — `CHECKPOINT_TIMES`, default **`13:30,19:00` UTC**
+  (≈ near the open and ~1h before the close, ET). Each checkpoint auto-trades crypto
+  AND refreshes the advisory stock recommendation + IBKR holdings diff.
 - Crypto (Kraken) trades **24/7** — the Yield/Event legs can act at any checkpoint.
-- Stocks (Interactive Brokers) only fill during the **regular session, 9:30am–4:00pm ET**.
-  3pm local is **1 hour before the close** in both summer and winter, so the
-  Directional leg fills while the market is open.
-- **Market-hours guard:** if a live equity order is ever attempted while the market
-  is closed, the system **holds that leg** and logs `equity_market_closed` instead
-  of queuing a blind after-hours order at an unknown price. Crypto is unaffected.
-- On weekends/holidays the checkpoint still convenes **crypto-only** (the equity
-  leg is auto-held).
+- Stocks are **advisory** — nothing auto-executes on IBKR, so there's no equity-fill
+  timing concern. The recommendation is computed off the latest daily bars at each
+  checkpoint regardless of session.
+- **Market-hours guard** still exists as defense in depth (it would hold any live
+  equity order placed while the market is closed), but equities no longer auto-trade.
 
-> **Why once a day?** See §9.
+> **Why twice a day?** See §9.
 
-**On-demand runs.** Besides the daily 3pm checkpoint you can trigger a run yourself,
+**On-demand runs.** Besides the scheduled checkpoints you can trigger a run yourself,
 two ways: a **"Run Boardroom Now" desktop shortcut** (fires a live checkpoint on the
 PC immediately), or a **"Run now" button on the dashboard**. The dashboard button
 only *requests* a run (inserts a row in `run_requests`) — it never trades, because
@@ -119,8 +149,10 @@ dashboard's read-only safety property. The daily scheduler stays on alongside th
 
 ## 6. The three loops (the engine)
 
-1. **Decision loop (daily):** gather data → divisions pitch → risk vetoes → CEO
-   ranks & funds/holds → execute (live behind the flag) → log everything.
+1. **Decision loop (per checkpoint):** gather data → divisions pitch → risk vetoes →
+   CEO ranks & funds/holds the **crypto** legs → execute (live behind the flag) →
+   build the **equities recommendation** (rank advisory pitches → read IBKR holdings →
+   diff → narrate → persist) → log everything.
 2. **Measurement loop (per outcome):** every resolved trade updates each division's
    calibration (a Beta posterior — *demonstrated* accuracy, not stated confidence),
    attribution, and the scoreboard.
@@ -135,8 +167,9 @@ dashboard's read-only safety property. The daily scheduler stays on alongside th
 | Property | Guarantee |
 | --- | --- |
 | Withdrawals | **Disabled everywhere.** No transfer/withdraw code path exists. Trade access cannot move your money. |
+| Stocks | **No equity execution path at all.** The IBKR integration is read-only (holdings + cash); the system only *recommends* stock trades. |
 | Keys | Trade-only, scoped per venue. Kraken and the equities account are **isolated** — a leak in one can't touch the other. |
-| Live gate | A live order requires **both** the global `LIVE_TRADING=true` flag **and** a per-call `--confirm-live`. Otherwise every run is a dry-run simulation. |
+| Live gate | A live (crypto) order requires **both** the global `LIVE_TRADING=true` flag **and** a per-call `--confirm-live`. Otherwise every run is a dry-run simulation. |
 
 ---
 
@@ -147,26 +180,47 @@ live/armed status, next-checkpoint countdown, equity curve, the CEO's latest ver
 and the full session, division calibration, attribution, the CFO review, and the
 "Ask the Boardroom" chat. Password-gated.
 
+It also shows the **Stocks — recommended portfolio** section: the plain-English
+advisory note, the actionable buy/sell/trim list, and **"Current portfolio in IBKR"
+vs "Recommended portfolio"** side by side. This is read-only like everything else —
+the user places the stock orders in IBKR themselves.
+
 ---
 
 ## 9. Open design questions / rationale
 
-**Is once-a-day enough for 24/7 crypto?** For a ~$200 book, **yes — by design.**
+**Is twice-a-day enough for 24/7 crypto?** For a ~$200 book, **yes — by design.**
 - Trading more often multiplies **fee drag**, which is fatal on a small account
-  (the fee-drag cap is 5% of equity).
-- The system **holds the floor most days** and rarely carries an open directional
-  crypto position, so there is usually nothing to "manage" intraday.
-- More frequent entries invite reactive churn — the opposite of the floor-first,
-  skeptical philosophy.
+  (the fee-drag cap is 5% of equity). Twice daily is a deliberate, conservative cadence.
+- The system **holds the floor most checkpoints** and rarely carries an open crypto
+  position, so there is usually nothing to "manage" intraday.
+- The second daily checkpoint mainly buys responsiveness on the **advisory stock
+  recommendation** (which is free — no fees) and a faster look at the live portfolio,
+  not more crypto churn.
 
 This is revisited as the account grows. The natural next step (when equity and
 open-position frequency justify the fees) is an **intraday risk-only check** for
-crypto — i.e. allow the Event division to *exit* a cratering position between daily
+crypto — i.e. allow the Event division to *exit* a cratering position between
 checkpoints, without increasing entry frequency. Not warranted at current size.
 
 ---
 
 ## Changelog
+
+- **2026-06-30** — **The crypto-auto / stocks-advisory remodel.** Split the system by
+  venue. **Crypto (Kraken) stays fully autonomous** — Event/Yield auto-trade live as
+  before. **Stocks (IBKR) are now advisory only**: `DirectionalDivision.advisory=True`
+  (Momentum already advisory), so equities are never auto-funded. Added the
+  **recommendation engine** (`boardroom/recommend.py`): it ranks the advisory equity
+  pitches into a weighted target portfolio (score-proportional, per-trade-capped, within
+  the deployable cap), reads the **real IBKR holdings** (`IBKRBroker.get_positions()`),
+  and **diffs** current vs recommended → buy/sell/trim/hold actions; `agents/advisor.py`
+  writes the plain-English "buy COST / sell SNDK" note (code computes every number).
+  Persisted to a new `recommendations` table (migration 0009) and rendered on the
+  dashboard as **"Current portfolio in IBKR" vs "Recommended portfolio"**. The equity
+  universe went **wide by default** (~70 liquid names incl. SNDK + momentum/growth) so
+  runaway winners aren't missed. Cadence moved to **twice daily** (`CHECKPOINT_TIMES`,
+  default `13:30,19:00` UTC). 199 tests passing.
 
 - **2026-06-29** — **Equity-scaled aggression schedule + real venue balances + a
   human dashboard.** The CEO's deviation bar (how readily it leaves the floor) is now a
