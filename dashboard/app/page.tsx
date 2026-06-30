@@ -383,12 +383,12 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
       </Section>
 
       {/* Session history — scroll back through past checkpoints */}
-      <Section title="Session history" desc="The last several checkpoints at a glance.">
+      <Section collapsible defaultOpen={false} title="Session history" desc="The last several checkpoints at a glance.">
         <SessionHistory decisions={d.decisions} />
       </Section>
 
       {/* Tracked universe — what gets scanned every run */}
-      <Section title="Tracked universe" desc="Every symbol the divisions scan each checkpoint. The CEO ranks across all and funds the single best.">
+      <Section collapsible defaultOpen={false} title="Tracked universe" desc="Every symbol the divisions scan each checkpoint. The CEO ranks across all and funds the single best.">
         {latestSession?.universe && Object.keys(latestSession.universe).length > 0 ? (
           <div className="grid gap-3 md:grid-cols-3">
             {Object.entries(latestSession.universe).map(([div, u]) => (
@@ -457,7 +457,7 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
       </Section>
 
       {/* Decisions */}
-      <Section title="Decision log" desc="Every checkpoint and what the CEO decided — buy something, or hold the cash floor.">
+      <Section collapsible defaultOpen={false} count={d.decisions.length} title="Decision log" desc="Every checkpoint and what the CEO decided — buy something, or hold the cash floor.">
         {d.decisions.length === 0 ? (
           <Empty>No decisions logged yet.</Empty>
         ) : (
@@ -477,7 +477,7 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
       </Section>
 
       {/* Pitches */}
-      <Section title="Recent ideas" desc="Every idea a team pitched recently, newest first — whether or not it got funded.">
+      <Section collapsible defaultOpen={false} count={d.pitches.length} title="Recent ideas" desc="Every idea a team pitched recently, newest first — whether or not it got funded.">
         {d.pitches.length === 0 ? (
           <Empty>No ideas yet.</Empty>
         ) : (
@@ -500,7 +500,7 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
       </Section>
 
       {/* Outcomes */}
-      <Section title="How past bets turned out" desc="Once a trade closes: what we predicted vs what actually happened, and whether it was good process or just luck.">
+      <Section collapsible defaultOpen={false} count={d.outcomes.length} title="How past bets turned out" desc="Once a trade closes: what we predicted vs what actually happened, and whether it was good process or just luck.">
         {d.outcomes.length === 0 ? (
           <Empty>Nothing resolved yet.</Empty>
         ) : (
@@ -531,7 +531,7 @@ boardroom decide --confirm-live   # live (LIVE_TRADING=true + funded)</pre>
       ) : null}
 
       {/* Audit */}
-      <Section title="Audit log" desc="Cross-cutting events — executions, vetoes, breakers, retirements.">
+      <Section collapsible defaultOpen={false} count={d.audit.length} title="Audit log" desc="Cross-cutting events — executions, vetoes, breakers, retirements.">
         {d.audit.length === 0 ? (
           <Empty>No events yet.</Empty>
         ) : (
