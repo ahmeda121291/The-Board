@@ -243,6 +243,7 @@ export default function DocsPage() {
             <li><b className="text-slate-200">Equity curve</b> — deposits + cumulative realized P&amp;L over time.</li>
             <li><b className="text-slate-200">Next-checkpoint countdown</b> — when the CEO next convenes (twice daily at CHECKPOINT_TIMES).</li>
             <li><b className="text-slate-200">CEO verdict + rationale</b> and the full <b className="text-slate-200">boardroom session</b> — every pitch, the risk-manager veto, the CEO ruling, with reasons.</li>
+            <li><b className="text-slate-200">Your portfolio</b> — what you actually hold across both venues: crypto coins + cash on Kraken, stock holdings + cash + unrealized P&amp;L on IBKR, the crypto/stock split, and today’s top movers.</li>
             <li><b className="text-slate-200">Stocks — recommended portfolio</b> — the advisory buy/sell note plus <b className="text-slate-200">current IBKR holdings vs the recommended portfolio</b> side by side.</li>
             <li><b className="text-slate-200">Chief Strategist (CFO)</b> review + recommendations.</li>
             <li><b className="text-slate-200">Divisions table</b> — calibration, leash, shadow/retired — where trust accrues.</li>

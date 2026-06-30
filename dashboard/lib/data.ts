@@ -143,6 +143,43 @@ export type RecommendationPayload = {
   universe_size: number;
 };
 
+// ---- portfolio snapshot (what's actually held, both venues) -----------------
+export type PortfolioHolding = {
+  symbol: string;
+  venue: string;
+  qty: number;
+  market_value_cad: number | null;
+  weight: number | null;
+  avg_cost: number | null;
+  unrealized_pnl_cad: number | null;
+  unrealized_pnl_pct: number | null;
+  day_change_pct: number | null;
+};
+export type PortfolioVenueBook = {
+  venue: string;
+  cash_cad: number | null;
+  holdings: PortfolioHolding[];
+  holdings_value_cad: number | null;
+  total_value_cad: number | null;
+  unrealized_pnl_cad: number | null;
+};
+export type PortfolioMover = {
+  symbol: string;
+  venue: string;
+  day_change_pct: number;
+  market_value_cad: number;
+};
+export type PortfolioSnapshot = {
+  generated_at: string;
+  crypto: PortfolioVenueBook;
+  stocks: PortfolioVenueBook;
+  total_value_cad: number;
+  crypto_weight: number;
+  stocks_weight: number;
+  top_gainers: PortfolioMover[];
+  top_losers: PortfolioMover[];
+};
+
 export type Dashboard = {
   configured: boolean;
   error: string | null;
@@ -164,6 +201,8 @@ export type Dashboard = {
   balances_at: string | null;
   // Latest advisory equities recommendation (target book vs actual holdings).
   recommendation: RecommendationPayload | null;
+  // Latest portfolio snapshot (crypto + stocks + merged, with performance).
+  portfolio: PortfolioSnapshot | null;
 };
 
 export async function loadDashboard(): Promise<Dashboard> {
@@ -186,13 +225,14 @@ export async function loadDashboard(): Promise<Dashboard> {
     equity_cad: null,
     balances_at: null,
     recommendation: null,
+    portfolio: null,
   };
 
   const sb = serverClient();
   if (!sb) return { ...empty, configured: false };
 
   try {
-    const [divisions, decisions, pitches, outcomes, perf, weekly, audit, strategist, sys, rec] =
+    const [divisions, decisions, pitches, outcomes, perf, weekly, audit, strategist, sys, rec, pf] =
       await Promise.all([
         sb.from("division_state").select("*").order("division"),
         sb.from("decisions").select("*").order("created_at", { ascending: false }).limit(50),
@@ -204,6 +244,7 @@ export async function loadDashboard(): Promise<Dashboard> {
         sb.from("strategist_reviews").select("*").order("created_at", { ascending: false }).limit(1),
         sb.from("system_state").select("*").eq("id", 1).limit(1),
         sb.from("recommendations").select("*").order("created_at", { ascending: false }).limit(1),
+        sb.from("portfolio_snapshots").select("*").order("created_at", { ascending: false }).limit(1),
       ]);
 
     const firstError =
@@ -229,6 +270,7 @@ export async function loadDashboard(): Promise<Dashboard> {
       equity_cad: sysRow?.equity_cad ?? null,
       balances_at: sysRow?.balances_at ?? null,
       recommendation: ((rec.data as any[]) ?? [])[0]?.payload ?? null,
+      portfolio: ((pf.data as any[]) ?? [])[0]?.payload ?? null,
     };
   } catch (e: any) {
     return { ...empty, configured: true, error: e?.message ?? "Unknown error" };

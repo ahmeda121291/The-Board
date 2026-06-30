@@ -157,6 +157,17 @@ class Repository(abc.ABC):
         """The most recent recommendation payload, or None if never generated."""
         ...
 
+    @abc.abstractmethod
+    def save_portfolio(self, payload: dict) -> None:
+        """Persist the latest portfolio snapshot (crypto + stocks + merged) for
+        the dashboard — what's held, cash, and per-holding performance."""
+        ...
+
+    @abc.abstractmethod
+    def latest_portfolio(self) -> dict | None:
+        """The most recent portfolio snapshot, or None if never taken."""
+        ...
+
 
 @dataclass
 class InMemoryRepository(Repository):
@@ -177,6 +188,7 @@ class InMemoryRepository(Repository):
     strategy_reviews: list[dict] = field(default_factory=list)
     run_requests: list[dict] = field(default_factory=list)
     recommendations: list[dict] = field(default_factory=list)
+    portfolios: list[dict] = field(default_factory=list)
 
     def save_pitch(self, pitch: Pitch) -> None:
         self.pitches.append(pitch)
@@ -285,6 +297,12 @@ class InMemoryRepository(Repository):
 
     def latest_recommendation(self) -> dict | None:
         return dict(self.recommendations[-1]) if self.recommendations else None
+
+    def save_portfolio(self, payload: dict) -> None:
+        self.portfolios.append(dict(payload))
+
+    def latest_portfolio(self) -> dict | None:
+        return dict(self.portfolios[-1]) if self.portfolios else None
 
 
 def get_repository() -> Repository:

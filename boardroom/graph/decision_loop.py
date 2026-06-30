@@ -336,6 +336,49 @@ class Orchestrator:
         self.repo.save_recommendation(report.as_dict())
         return report
 
+    def snapshot_portfolio(self) -> dict | None:
+        """Read what's actually held on each venue and persist a full portfolio
+        snapshot (crypto coins + stock holdings + cash + performance + merged
+        split) for the dashboard. Best-effort per venue; never raises into the
+        loop. Returns the snapshot dict, or None on total failure."""
+        from boardroom.portfolio import build_portfolio_snapshot
+        from boardroom.schemas import utcnow
+
+        def _read(venue):
+            broker = self.brokers.get(venue)
+            if broker is None or type(broker).__name__ == "StubBroker":
+                return None, []
+            cash = None
+            try:
+                cash = round(float(broker.get_cash_cad()), 2)
+            except Exception:
+                cash = None
+            positions: list = []
+            try:
+                positions = broker.get_positions() or []
+            except Exception:
+                positions = []
+            return cash, positions
+
+        kraken_cash, kraken_pos = _read(Venue.KRAKEN)
+        ibkr_cash, ibkr_pos = _read(Venue.IBKR)
+        if kraken_cash is None and ibkr_cash is None and not kraken_pos and not ibkr_pos:
+            return None  # nothing live to snapshot (e.g. all stubs / offline)
+
+        snapshot = build_portfolio_snapshot(
+            generated_at=utcnow().isoformat(),
+            kraken_cash_cad=kraken_cash,
+            kraken_positions=kraken_pos,
+            ibkr_cash_cad=ibkr_cash,
+            ibkr_positions=ibkr_pos,
+        )
+        payload = snapshot.as_dict()
+        try:
+            self.repo.save_portfolio(payload)
+        except Exception as e:  # noqa: BLE001
+            self.repo.audit("portfolio_snapshot_error", {"error": str(e)[:160]})
+        return payload
+
     def resolve_positions(self) -> list:
         """Resolve any ready open positions against fresh prices and fold the
         outcomes into calibration/leash/retirement.
@@ -405,6 +448,13 @@ class Orchestrator:
             self.generate_recommendations(pitches, hurdle_rate)
         except Exception as e:  # noqa: BLE001
             self.repo.audit("recommendation_error", {"error": str(e)[:160]})
+
+        # Snapshot what's actually held on each venue (crypto coins + stock
+        # holdings + cash + performance) for the dashboard. Best-effort.
+        try:
+            self.snapshot_portfolio()
+        except Exception as e:  # noqa: BLE001
+            self.repo.audit("portfolio_snapshot_error", {"error": str(e)[:160]})
 
         return LoopResult(decision, pitches, ranked, challenges, fills)
 

@@ -5,6 +5,7 @@ import { Countdown } from "@/components/Countdown";
 import { SessionView } from "@/components/Session";
 import { SessionHistory } from "@/components/SessionHistory";
 import { Portfolio } from "@/components/Portfolio";
+import { PortfolioOverview } from "@/components/PortfolioOverview";
 import { EquityChart } from "@/components/EquityChart";
 import { AskBoardroom } from "@/components/AskBoardroom";
 import { RunNow } from "@/components/RunNow";
@@ -332,6 +333,14 @@ export default async function Page() {
         <EquityChart points={series} start={dep.total} />
         <StrategistPanel review={d.strategist} />
       </div>
+
+      {/* Your portfolio — what you actually hold across both venues */}
+      <Section
+        title="Your portfolio"
+        desc="What you actually hold right now — crypto on Kraken (auto-traded) and stocks in IBKR (advisory) — with cash, weights, and today's movers. Synced each checkpoint."
+      >
+        <PortfolioOverview snap={d.portfolio} />
+      </Section>
 
       {/* Stocks — advisory: recommended portfolio vs your actual IBKR holdings */}
       <Section

@@ -95,8 +95,13 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 ## Where things live
 
 - **Code**: `boardroom/` (config, schemas, divisions, ceo, risk, brokers, graph,
-  agents, persistence, market.py, **recommend.py**). **Tests**: `tests/` (199 passing;
-  `python -m pytest`).
+  agents, persistence, market.py, **recommend.py**, **portfolio.py**). **Tests**:
+  `tests/` (215 passing; `python -m pytest`).
+- **Portfolio view** (`boardroom/portfolio.py`): each checkpoint (and `boardroom
+  balances`) snapshots real holdings on BOTH venues — `KrakenBroker.get_positions()`
+  (coins priced in CAD + intraday change) and `IBKRBroker.get_positions()` (holdings +
+  unrealized P&L) — into crypto/stock/merged books with weights + top movers. Persisted
+  to `portfolio_snapshots` (migration 0010); dashboard "Your portfolio" section.
 - **Dashboard**: `dashboard/` (Next.js 14 on Vercel, reads Supabase read-only; Docs
   page at `/docs`; "Ask the Boardroom" chat = read-only, needs `ANTHROPIC_API_KEY`).
 - **Ops**: `RUNBOOK.md`, `docs/OPERATIONS.md`, `install_scheduler.ps1`, `run_boardroom.ps1`.

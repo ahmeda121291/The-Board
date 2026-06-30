@@ -180,10 +180,20 @@ live/armed status, next-checkpoint countdown, equity curve, the CEO's latest ver
 and the full session, division calibration, attribution, the CFO review, and the
 "Ask the Boardroom" chat. Password-gated.
 
-It also shows the **Stocks — recommended portfolio** section: the plain-English
-advisory note, the actionable buy/sell/trim list, and **"Current portfolio in IBKR"
-vs "Recommended portfolio"** side by side. This is read-only like everything else —
-the user places the stock orders in IBKR themselves.
+It also shows two holdings views:
+
+- **Your portfolio** — what's actually held across both venues, from a portfolio
+  snapshot taken each checkpoint (`boardroom/portfolio.py`, persisted via migration
+  0010): crypto coins + cash on Kraken (with each coin's intraday change), stock
+  holdings + cash + unrealized P&L on IBKR, the crypto/stock split, and the day's top
+  gainers/losers. `KrakenBroker.get_positions()` / `IBKRBroker.get_positions()` read
+  the real books; every derived number is code-computed (unpriced holdings show as
+  such rather than guessed).
+- **Stocks — recommended portfolio** — the plain-English advisory note, the actionable
+  buy/sell/trim list, and **"Current portfolio in IBKR" vs "Recommended portfolio"**
+  side by side.
+
+All read-only — the user places any stock orders in IBKR themselves.
 
 ---
 
@@ -220,7 +230,7 @@ checkpoints, without increasing entry frequency. Not warranted at current size.
   dashboard as **"Current portfolio in IBKR" vs "Recommended portfolio"**. The equity
   universe went **wide by default** (~70 liquid names incl. SNDK + momentum/growth) so
   runaway winners aren't missed. Cadence moved to **twice daily** (`CHECKPOINT_TIMES`,
-  default `13:30,19:00` UTC). 199 tests passing.
+  default `13:30,19:00` UTC). 215 tests passing.
 
 - **2026-06-29** — **Equity-scaled aggression schedule + real venue balances + a
   human dashboard.** The CEO's deviation bar (how readily it leaves the floor) is now a

@@ -123,12 +123,22 @@ class IBKRBroker(Broker):
                         qty = float(row.get("position", 0.0) or 0.0)
                         if qty == 0.0:
                             continue  # closed/zero lots aren't holdings
+                        mkt_value = float(row.get("mktValue", 0.0) or 0.0)
+                        # IBKR reports unrealized P&L directly; prefer it over
+                        # re-deriving from avg cost (which can be in mixed units).
+                        upnl = row.get("unrealizedPnl")
+                        upnl = float(upnl) if upnl is not None else None
+                        mkt_price = float(row.get("mktPrice", 0.0) or 0.0)
+                        avg_price = float(row.get("avgPrice", 0.0) or 0.0)
                         out.append(
                             {
                                 "symbol": (row.get("contractDesc") or row.get("ticker") or "").upper(),
                                 "qty": qty,
                                 "avg_cost": float(row.get("avgCost", 0.0) or 0.0),
-                                "market_value_cad": float(row.get("mktValue", 0.0) or 0.0),
+                                "market_value_cad": mkt_value,
+                                "unrealized_pnl_cad": upnl,
+                                "mkt_price": mkt_price,
+                                "avg_price": avg_price,
                             }
                         )
                     if len(rows) < 30:  # CP returns 30/page; a short page is the last
