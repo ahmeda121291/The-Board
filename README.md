@@ -2,9 +2,14 @@
 
 > An autonomous multi-agent **capital-allocation system** — a decision-making
 > organization, not a trading bot. Specialist *divisions* hunt opportunities
-> backed by **real computed math**, a single *CEO* agent decides where ~$200 CAD
-> goes each day (usually nowhere), and a *measurement* layer scores every
-> decision and feeds results back so the system adapts.
+> backed by **real computed math**, a single *CEO* agent decides where ~$200+ CAD
+> goes (usually nowhere), and a *measurement* layer scores every decision and
+> feeds results back so the system adapts. It runs **twice a day**.
+>
+> **Two modes by venue:** crypto (Kraken) is **fully autonomous — it auto-trades
+> live**; stocks (IBKR) are **advisory only** — the system publishes a recommended
+> portfolio and diffs it against your real holdings ("buy Costco, sell SanDisk"),
+> but you place the stock orders yourself.
 >
 > Canada build · Kraken + Interactive Brokers · live-capable, gated behind a flag.
 
@@ -29,10 +34,10 @@ qualitative calls.
 | M6 | Kraken + IBKR adapters behind the broker interface (live-gated) | ✅ code · ⏸ live smoke test needs the gateway running |
 | M7–M10 | Event live · go-live floor-dominant · ratchet · Effort | later |
 
-**189 tests pass** across the spine (features, CEO logic, calibration math,
-measurement, caps, the full loop). Everything runs **offline in dry-run** today:
-`LIVE_TRADING` defaults `false` and execution is stubbed until you fund accounts
-and wire venues.
+**199 tests pass** across the spine (features, CEO logic, calibration math,
+measurement, caps, the recommendation engine, the full loop). Everything runs
+**offline in dry-run** today: `LIVE_TRADING` defaults `false` and execution is
+stubbed until you fund accounts and wire venues.
 
 ---
 
@@ -50,10 +55,12 @@ boardroom decide --synthetic     # run one daily decision loop, offline
 boardroom decide                 # same, using real keyless public data feeds
 ```
 
-**Going live:** see [`RUNBOOK.md`](RUNBOOK.md). The Directional leg executes via
-**Interactive Brokers** (Client Portal Gateway, run locally); Kraken handles crypto.
-Live trading needs egress to `api.kraken.com` and your equity data host, plus the
-IBKR gateway running on `localhost:5000` — easiest is to run on your own machine.
+**Going live:** see [`RUNBOOK.md`](RUNBOOK.md). **Crypto auto-trades on Kraken.**
+**Stocks are advisory** — the system reads your **Interactive Brokers** holdings
+(Client Portal Gateway, run locally) and publishes a recommended portfolio, but
+never places equity orders. Live crypto trading needs egress to `api.kraken.com`;
+the IBKR gateway on `localhost:5000` is used read-only (holdings + cash) for the
+recommendation diff — easiest is to run on your own machine.
 
 `boardroom decide` prints the day's pitches, the trust-weighted ranking, the
 floor hurdle, and the CEO's verdict — one of **FUND / FUND_NONE / HOLD**. Most
@@ -69,10 +76,11 @@ Three layers, three loops (scope §2, §10):
  Divisions (sensory organs)        CEO (the cortex)            Measurement (conscience)
  ─────────────────────────         ─────────────────          ────────────────────────
  Yield  → the floor/hurdle         price vs the floor          Performance: ROI vs floor
- Directional → equities (IBKR)     null default = HOLD           AND vs buy-and-hold
- Event  → asymmetric crypto        trust = demonstrated        Critic: calibration,
- Effort → non-market (disabled)      calibration, not vibes      process-vs-luck
-                                   conviction sizing
+ Event  → asymmetric crypto        null default = HOLD           AND vs buy-and-hold
+   (auto-trades on Kraken)         trust = demonstrated        Critic: calibration,
+ Directional/Momentum → stocks       calibration, not vibes      process-vs-luck
+   (ADVISORY — recommend only)     conviction sizing (crypto)  Recommendation engine:
+ Effort → non-market (disabled)                                  rank → diff vs IBKR
         every pitch is COMPUTED ───────────►  ◄─────────── Adaptive engine feeds back
 ```
 
@@ -86,7 +94,10 @@ Three layers, three loops (scope §2, §10):
 - **`boardroom/agents`** — the thin LLM layer: a narrator, the CEO's rationale,
   the adversarial risk manager, the Critic's post-mortems. **Prose only.**
 - **`boardroom/ceo`** — deterministic hurdle, trust-weighting, conviction sizing,
-  ranking, and the null-default arbitration.
+  ranking, and the null-default arbitration (crypto funding only).
+- **`boardroom/recommend.py`** — the advisory **equities recommendation engine**:
+  ranks advisory stock pitches into a weighted target portfolio and diffs it against
+  the real IBKR holdings → buy/sell/trim/hold actions (code computes; LLM narrates).
 - **`boardroom/risk`** — the cost model (a *decision input*), and the hard caps +
   circuit breakers the CEO **cannot** override.
 - **`boardroom/measurement`** — the two scorers, the two benchmarks.
@@ -124,8 +135,9 @@ permission is the single most dangerous thing in this project; don't create one.
 | `ANTHROPIC_API_KEY` | every agent's reasoning | n/a (usage-billed) |
 | `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` | state + metrics | data only, **no** trading power |
 | `KRAKEN_API_KEY` + `KRAKEN_API_SECRET` | Yield + Event | **trade + staking; DISABLE withdraw** |
-| `IBKR_ACCOUNT_ID` (+ Client Portal Gateway session) | Directional (equities) | **trading on; transfers/withdrawals off** |
+| `IBKR_ACCOUNT_ID` (+ Client Portal Gateway session) | reading equity holdings + cash for the recommendation diff (advisory — **no equity orders**) | read-only is sufficient |
 | `MARKET_DATA_API_KEY` | richer Directional signals | read-only (optional) |
+| `CHECKPOINT_TIMES` | twice-daily checkpoint schedule (UTC, default `13:30,19:00`) | n/a |
 
 > The system runs **without** the Anthropic key (agents fall back to templated
 > prose) and **without** Supabase (it uses an in-memory repository). Those are
@@ -138,7 +150,7 @@ permission is the single most dangerous thing in this project; don't create one.
 State lives in a dedicated **`boardroom`** Postgres schema on the project at
 `https://qyaekaifodgiaxyztpdt.supabase.co` (the `public` schema is untouched).
 Tables: `division_state`, `pitches`, `decisions`, `outcomes`,
-`performance_snapshots`, `weekly_reports`, `audit_log`. Migrations are in
+`performance_snapshots`, `weekly_reports`, `audit_log`, `recommendations`. Migrations are in
 [`supabase/migrations`](supabase/migrations). RLS is **enabled with no policies**
 — anon/public access is denied; the backend's service key bypasses RLS.
 
@@ -151,12 +163,14 @@ the dashboard toggle is the durable home for it).
 ## Wiring the venues (Milestone 6)
 
 The broker interface (`boardroom/brokers/base.py`) is venue-agnostic.
-`KrakenBroker` (crypto) and `IBKRBroker` (the Directional/equities leg) are
+`KrakenBroker` (crypto — auto-trades) and `IBKRBroker` (equities — used **read-only**
+for holdings + cash; `get_positions()` feeds the recommendation diff) are
 **implemented** (`boardroom/brokers/`). Each sits behind two hard safety
 properties: `supports_withdrawal` is `False` with no withdraw/transfer code path,
 and a live order is placed **only** when the per-call `live` flag **and** the
 global `LIVE_TRADING` flag **and** credentials are all present — otherwise it
-simulates (no network, no money). `make_brokers(prefer_live=True)` selects real
+simulates (no network, no money). In the current model only crypto is funded, so
+IBKR never receives an order regardless. `make_brokers(prefer_live=True)` selects real
 adapters vs stubs; `build_default_org(prefer_live_brokers=True)` injects them.
 
 To run the **live smoke test** (smallest possible real order), set in the

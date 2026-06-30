@@ -71,8 +71,8 @@ export default function DocsPage() {
           </tr>
           <tr className="hover:bg-white/[0.02]">
             <td className="px-4 py-3 font-medium">Directional (equities)</td>
-            <td className="px-4 py-3"><Pill tone="cyan">review daily · hold days–weeks</Pill></td>
-            <td className="px-4 py-3 text-slate-300">Look daily; expect to mostly hold or pass.</td>
+            <td className="px-4 py-3"><Pill tone="warn">advisory · twice daily</Pill></td>
+            <td className="px-4 py-3 text-slate-300">Scanned wide for the recommended portfolio; never auto-traded.</td>
           </tr>
           <tr className="hover:bg-white/[0.02]">
             <td className="px-4 py-3 font-medium">Event (crypto)</td>
@@ -86,9 +86,10 @@ export default function DocsPage() {
           </tr>
         </Table>
         <p className="mt-3 pl-1 text-sm text-slate-400">
-          The <b className="text-slate-200">CEO convenes once daily</b> as a checkpoint. The expected
-          output of most checkpoints is <b className="text-amber-300">HOLD — stay in the floor.</b>{" "}
-          Calendar-driven action is the enemy.
+          The <b className="text-slate-200">CEO convenes twice daily</b> as a checkpoint. It
+          auto-trades crypto (expected output of most checkpoints is{" "}
+          <b className="text-amber-300">HOLD — stay in the floor</b>) and refreshes the advisory
+          stock recommendation. Calendar-driven action is the enemy.
         </p>
       </Section>
 
@@ -148,34 +149,35 @@ export default function DocsPage() {
       </Section>
 
       <Section
-        title="Two asset classes, one checkpoint"
-        desc="Each daily run scans crypto and stocks together, then the CEO ranks across them."
+        title="Two asset classes, two modes"
+        desc="Crypto auto-trades; stocks are advisory. Each checkpoint handles both."
       >
-        <Table head={["Asset class", "Venue", "Divisions"]}>
+        <Table head={["Asset class", "Venue", "Mode", "Divisions"]}>
           <tr className="hover:bg-white/[0.02]">
             <td className="px-4 py-3 font-medium">Crypto</td>
             <td className="px-4 py-3 text-slate-300">Kraken</td>
+            <td className="px-4 py-3"><Pill tone="good">auto-trades live</Pill></td>
             <td className="px-4 py-3"><Pill tone="good">Yield (floor)</Pill> <Pill tone="warn">Event</Pill></td>
           </tr>
           <tr className="hover:bg-white/[0.02]">
             <td className="px-4 py-3 font-medium">Stocks / ETFs</td>
             <td className="px-4 py-3 text-slate-300">Interactive Brokers</td>
+            <td className="px-4 py-3"><Pill tone="violet">advisory only</Pill></td>
             <td className="px-4 py-3"><Pill tone="cyan">Directional</Pill> <Pill tone="warn">Momentum</Pill></td>
           </tr>
         </Table>
         <p className="mt-3 pl-1 text-sm text-slate-400">
-          At every checkpoint, Directional pulls equity data, Event pulls crypto data, and Yield
-          reports carry — all at once. The CEO then compares them on common terms (excess over the
-          floor, per unit of risk, net of cost) and funds the single best, or holds. One run, both
-          markets, ranked head-to-head.
+          <b className="text-slate-200">Crypto is fully autonomous.</b> The CEO ranks the Event/Yield
+          pitches against the floor (excess over carry, per unit of risk, net of cost) and{" "}
+          <b className="text-slate-200">auto-funds the single best on Kraken</b>, or holds.
         </p>
         <p className="mt-3 pl-1 text-sm text-slate-400">
-          <b className="text-slate-200">Market hours.</b> Crypto trades 24/7, so the Event/Yield legs
-          fill at any checkpoint time. Stocks only fill during the regular session (9:30am–4:00pm ET),
-          so the daily run is scheduled for <b className="text-slate-200">3pm ET — 1 hour before the
-          close</b>. As a backstop, a market-hours guard <b>auto-holds</b> any live equity order placed
-          while the market is closed (logged as <code className="text-sky-300">equity_market_closed</code>)
-          rather than queuing a blind after-hours order at an unknown gap price.
+          <b className="text-slate-200">Stocks are advisory.</b> The equity divisions scan a wide
+          universe (~70 liquid names incl. high-momentum movers like SNDK) and the recommendation
+          engine ranks them into a <b className="text-slate-200">target portfolio</b>. The system
+          reads your <b className="text-slate-200">actual IBKR holdings</b> and shows{" "}
+          <b className="text-slate-200">current vs recommended</b> with a plain-English buy/sell note
+          — but it <b className="text-slate-200">never places a stock order</b>. You do that in IBKR.
         </p>
       </Section>
 
@@ -239,8 +241,9 @@ export default function DocsPage() {
         <div className="glass p-5 text-sm text-slate-300">
           <ul className="list-disc space-y-1.5 pl-5">
             <li><b className="text-slate-200">Equity curve</b> — deposits + cumulative realized P&amp;L over time.</li>
-            <li><b className="text-slate-200">Next-checkpoint countdown</b> — when the CEO next convenes (daily at CHECKPOINT_UTC).</li>
+            <li><b className="text-slate-200">Next-checkpoint countdown</b> — when the CEO next convenes (twice daily at CHECKPOINT_TIMES).</li>
             <li><b className="text-slate-200">CEO verdict + rationale</b> and the full <b className="text-slate-200">boardroom session</b> — every pitch, the risk-manager veto, the CEO ruling, with reasons.</li>
+            <li><b className="text-slate-200">Stocks — recommended portfolio</b> — the advisory buy/sell note plus <b className="text-slate-200">current IBKR holdings vs the recommended portfolio</b> side by side.</li>
             <li><b className="text-slate-200">Chief Strategist (CFO)</b> review + recommendations.</li>
             <li><b className="text-slate-200">Divisions table</b> — calibration, leash, shadow/retired — where trust accrues.</li>
             <li><b className="text-slate-200">Session history</b>, resolved outcomes, attribution, the reserve, and the audit log.</li>
@@ -254,6 +257,7 @@ export default function DocsPage() {
             <li><code className="text-sky-300">LIVE_TRADING</code> defaults false; the CLI also requires <code className="text-sky-300">--confirm-live</code>.</li>
             <li>Venue credentials are <b>trade-only, withdrawals disabled</b> — the broker classes have no withdraw code path.</li>
             <li>Kraken and the equities venue are <b>isolated</b> accounts — a leak in one can’t touch the other.</li>
+            <li>Stocks are <b>advisory only</b> — there is no equity-execution code path; IBKR is read-only (holdings + cash).</li>
             <li>Stale / missing / insane data → the division <b>abstains</b>. No trade on garbage.</li>
             <li>A division can’t deploy real capital until a <b>backtest gate</b> shows edge net of cost.</li>
           </ul>

@@ -64,6 +64,15 @@ class Broker(abc.ABC):
     def get_cash_cad(self) -> float:
         """Free CAD balance available to this venue's divisions."""
 
+    def get_positions(self) -> list[dict]:
+        """Open positions held at this venue.
+
+        Returns a list of ``{symbol, qty, avg_cost, market_value_cad}`` dicts.
+        Default is empty (stubs / venues we don't read holdings from); IBKR
+        overrides this to read the real equity book for the recommendation diff.
+        """
+        return []
+
     @abc.abstractmethod
     def place_order(self, order: Order, *, live: bool) -> Fill:
         """Place ``order``. When ``live`` is False, simulate without touching funds.

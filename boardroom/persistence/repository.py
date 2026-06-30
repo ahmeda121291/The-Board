@@ -146,6 +146,17 @@ class Repository(abc.ABC):
     @abc.abstractmethod
     def recent_strategy_reviews(self, limit: int = 10) -> list[dict]: ...
 
+    @abc.abstractmethod
+    def save_recommendation(self, payload: dict) -> None:
+        """Persist the latest equities recommendation (target portfolio, current
+        holdings, the diff actions, and the advisor narrative) for the dashboard."""
+        ...
+
+    @abc.abstractmethod
+    def latest_recommendation(self) -> dict | None:
+        """The most recent recommendation payload, or None if never generated."""
+        ...
+
 
 @dataclass
 class InMemoryRepository(Repository):
@@ -165,6 +176,7 @@ class InMemoryRepository(Repository):
     )
     strategy_reviews: list[dict] = field(default_factory=list)
     run_requests: list[dict] = field(default_factory=list)
+    recommendations: list[dict] = field(default_factory=list)
 
     def save_pitch(self, pitch: Pitch) -> None:
         self.pitches.append(pitch)
@@ -267,6 +279,12 @@ class InMemoryRepository(Repository):
 
     def recent_strategy_reviews(self, limit: int = 10) -> list[dict]:
         return self.strategy_reviews[-limit:]
+
+    def save_recommendation(self, payload: dict) -> None:
+        self.recommendations.append(dict(payload))
+
+    def latest_recommendation(self) -> dict | None:
+        return dict(self.recommendations[-1]) if self.recommendations else None
 
 
 def get_repository() -> Repository:

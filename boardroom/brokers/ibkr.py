@@ -98,6 +98,46 @@ class IBKRBroker(Broker):
             cad = ledger.get("CAD") or {}
             return float(cad.get("cashbalance", 0.0))
 
+    def get_positions(self) -> list[dict]:
+        """Read the real equity holdings from the gateway's portfolio endpoint.
+
+        Returns ``{symbol, qty, avg_cost, market_value_cad}`` per position. The
+        Client Portal ``/portfolio/{acct}/positions/{page}`` endpoint paginates;
+        we read pages until one comes back short. Best-effort — any failure
+        returns what we have so far (the recommendation diff degrades to "no
+        holdings known" rather than crashing).
+        """
+        if not self._configured:
+            return []
+        out: list[dict] = []
+        try:
+            with self._client() as c:
+                page = 0
+                while page < 20:  # hard page cap; a $200 book never approaches it
+                    r = c.get(f"/v1/api/portfolio/{self._account}/positions/{page}")
+                    r.raise_for_status()
+                    rows = r.json() or []
+                    if not rows:
+                        break
+                    for row in rows:
+                        qty = float(row.get("position", 0.0) or 0.0)
+                        if qty == 0.0:
+                            continue  # closed/zero lots aren't holdings
+                        out.append(
+                            {
+                                "symbol": (row.get("contractDesc") or row.get("ticker") or "").upper(),
+                                "qty": qty,
+                                "avg_cost": float(row.get("avgCost", 0.0) or 0.0),
+                                "market_value_cad": float(row.get("mktValue", 0.0) or 0.0),
+                            }
+                        )
+                    if len(rows) < 30:  # CP returns 30/page; a short page is the last
+                        break
+                    page += 1
+        except Exception:
+            return out  # whatever we managed to read; never raise into the loop
+        return out
+
     def place_order(self, order: Order, *, live: bool) -> Fill:
         if not self._effective_live(live):
             return self._simulate(order)

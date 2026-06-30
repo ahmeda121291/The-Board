@@ -24,18 +24,20 @@ refresh. Review often (cheap), act rarely (consequential).
 | Division | Scan / decision cadence | Why |
 |---|---|---|
 | **Yield** (floor) | Continuous / passive | The default resting state, not a decision. |
-| **Directional** (equities) | Review **daily**, hold days–weeks | Look daily; expect to mostly hold or pass. |
-| **Event** (crypto) | **Trigger-driven**, unscheduled | Pitches only when quantitative triggers fire — maybe zero for weeks. |
+| **Directional** (equities) | **Advisory**, twice daily | Scanned wide for the recommended portfolio; never auto-traded. |
+| **Event** (crypto) | **Trigger-driven**, unscheduled | Auto-trades on Kraken. Pitches only when quantitative triggers fire — maybe zero for weeks. |
 | **Effort** (disabled) | Weekly at most | Feedback too slow to touch more often. |
 
-The **CEO convenes once daily** as a checkpoint. The expected output of most
-checkpoints is **HOLD — stay in the floor.** Calendar-driven action is the enemy;
-the null default is the single most important rule.
+The **CEO convenes twice daily** as a checkpoint — auto-trading crypto and refreshing
+the advisory stock recommendation. The expected output of most checkpoints is
+**HOLD — stay in the floor.** Calendar-driven action is the enemy; the null default is
+the single most important rule.
 
 Three nested loops (`boardroom/graph`):
-1. **Decision loop** (daily) — divisions pull fresh data → compute → pitch or
-   abstain → cost gate → risk manager → CEO decides FUND / FUND_NONE / HOLD →
-   execute (live only behind the flag) → log everything.
+1. **Decision loop** (per checkpoint) — divisions pull fresh data → compute → pitch or
+   abstain → cost gate → risk manager → CEO decides FUND / FUND_NONE / HOLD for crypto →
+   execute (live only behind the flag) → build the advisory equities recommendation →
+   log everything.
 2. **Performance loop** (daily snapshot + weekly) — ROI vs both benchmarks,
    attribution, drawdown, cost drag; trips circuit breakers if limits are crossed.
 3. **Learning loop** (per resolved decision + weekly) — the Critic scores each

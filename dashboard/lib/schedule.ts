@@ -11,3 +11,14 @@ export function nextCheckpointIso(checkpointUtc: string, from = new Date()): str
   if (t.getTime() <= from.getTime()) t.setUTCDate(t.getUTCDate() + 1);
   return t.toISOString();
 }
+
+// Soonest upcoming checkpoint across several daily times ("13:30,19:00").
+export function nextCheckpointMultiIso(checkpointTimes: string, from = new Date()): string {
+  const times = (checkpointTimes || "19:00")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const isos = (times.length ? times : ["19:00"]).map((t) => nextCheckpointIso(t, from));
+  isos.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+  return isos[0];
+}

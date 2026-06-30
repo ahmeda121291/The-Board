@@ -96,12 +96,13 @@ Then set `IBKR_ACCOUNT_ID` in `.env` (account id from
 [portal.interactivebrokers.com](https://www.interactivebrokers.com/en/trading/client-portal.php)).
 Enable trading on the account; keep transfers/withdrawals OFF.
 
-> **The gateway must be running and authenticated when Boardroom runs.** The
-> session **expires daily / on inactivity**, so re-log-in before each checkpoint
-> (people automate this with [IBeam](https://github.com/voyz/ibeam); manual
-> re-login is fine to start). If the gateway is down or logged out, the Directional
-> leg simply abstains that checkpoint — Kraken (crypto) is unaffected and executes
-> live regardless.
+> **The gateway is used READ-ONLY** — Boardroom reads your IBKR holdings + cash to
+> build the recommendation diff; it never places equity orders. The session
+> **expires daily / on inactivity**, so re-log-in before a checkpoint if you want the
+> "Current portfolio in IBKR" panel to be current (people automate this with
+> [IBeam](https://github.com/voyz/ibeam); manual re-login is fine). If the gateway is
+> down or logged out, the recommendation simply shows no current holdings that
+> checkpoint — Kraken (crypto) is unaffected and **auto-trades live** regardless.
 
 ---
 
@@ -111,20 +112,21 @@ Instead of leaving `boardroom run` open in a terminal, let Windows be the daily
 trigger — survives reboots, wakes the PC, no window to babysit.
 
 ```powershell
-# from the repo root, once. 15:00 local = always 1h before the 4pm equities
-# close, so the stock leg fires while the market is open and can fill.
-powershell -ExecutionPolicy Bypass -File .\install_scheduler.ps1 -Time 15:00
+# from the repo root, once. Registers TWO daily triggers: one near the open,
+# one ~1h before the close — so crypto auto-trades twice and the advisory stock
+# recommendation stays fresh through the day.
+powershell -ExecutionPolicy Bypass -File .\install_scheduler.ps1 -Morning 09:30 -Afternoon 15:00
 ```
 
-> **Why 15:00 local?** The run uses `--once`, so the Task Scheduler trigger time
-> *is* the execution time. Equities (Interactive Brokers) only fill during
-> the 9:30am–4:00pm ET regular session; 15:00 local is 1h before the close in both
-> summer and winter. Crypto (Kraken) is 24/7. As a backstop, a market-hours guard
-> auto-holds any live equity order placed while the market is closed (it logs an
-> `equity_market_closed` event rather than queuing a blind after-hours order).
+> **Why twice daily?** Each run uses `--once`, so the trigger time *is* the
+> execution time. Crypto (Kraken) auto-trades 24/7 at each checkpoint. Stocks are
+> **advisory** — nothing auto-executes on IBKR — so the times aren't fill-critical;
+> two looks a day keep the recommended portfolio and the holdings diff current
+> without piling on fees. (A market-hours guard remains as defense in depth, but
+> equities no longer auto-trade.)
 
-That registers a **Boardroom Daily** task that runs `run_boardroom.ps1` →
-`boardroom run --confirm-live --once` (one live checkpoint) each day, logging to
+That registers a **Boardroom Daily** task that runs `run_boardroom.cmd` →
+`boardroom run --confirm-live --once` (one live checkpoint) at each trigger, logging to
 `logs\scheduler.log`. It only runs while you're logged in to Windows; for fully
 headless operation, open Task Scheduler → Boardroom Daily → Properties → General
 → "Run whether user is logged on or not" (stores your Windows password).
@@ -134,7 +136,7 @@ Remove it with:
 Unregister-ScheduledTask -TaskName "Boardroom Daily" -Confirm:$false
 ```
 
-## Running on demand (besides the daily 3pm checkpoint)
+## Running on demand (besides the twice-daily checkpoints)
 
 Two ways to fire a checkpoint yourself, in addition to the scheduler.
 
