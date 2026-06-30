@@ -45,6 +45,22 @@ def volume_from_notional(notional_cad: float, price: float) -> float:
     return round(notional_cad / price, 8)
 
 
+def exec_pair_for(symbol: str, quote: str = "CAD") -> str:
+    """Translate a data-universe pair to the account's quote currency for orders.
+
+    Our crypto signals run on USD-quoted pairs (deeper history), but the order
+    must settle in the account's funding currency. A CAD account can't buy
+    ``XBTUSD`` (no USD balance) — it buys ``XBTCAD``. So swap a trailing USD/USDT
+    quote for the account quote. Already-correct pairs pass through unchanged.
+    """
+    s = symbol.upper()
+    q = quote.upper()
+    for stub in ("USDT", "USDC", "USD"):
+        if s.endswith(stub) and not s.endswith(q):
+            return s[: -len(stub)] + q
+    return s
+
+
 class KrakenBroker(Broker):
     venue = Venue.KRAKEN
     supports_withdrawal = False  # never enabled; no withdraw code exists here
@@ -52,6 +68,9 @@ class KrakenBroker(Broker):
     def __init__(self, *, cad_asset: str = "ZCAD") -> None:
         self._settings = get_settings()
         self._cad_asset = cad_asset
+        # The account's funding/quote currency — live orders settle in this, so
+        # USD-quoted signal pairs are translated to it before execution.
+        self._quote_currency = getattr(self._settings, "account_base_currency", "CAD") or "CAD"
 
     # ---- credentials / gating ------------------------------------------------
     @property
@@ -207,10 +226,16 @@ class KrakenBroker(Broker):
         if not effective_live:
             return self._simulate(order)
 
-        price = self._ticker_price(order.symbol)
+        # Execute in the ACCOUNT's quote currency. The data/signal universe is
+        # USD-quoted (deeper history), but a CAD-funded account can only buy CAD
+        # pairs — buying a USD pair fails with "Insufficient funds". Translate the
+        # quote to CAD for the live order and price it in CAD so the CAD notional
+        # is correct. Coins with no CAD market raise here and are skipped upstream.
+        exec_pair = exec_pair_for(order.symbol, self._quote_currency)
+        price = self._ticker_price(exec_pair)
         volume = volume_from_notional(order.notional_cad, price)
         payload = {
-            "pair": order.symbol,
+            "pair": exec_pair,
             "type": order.side.value,
             "ordertype": "limit" if order.limit_price else "market",
             "volume": volume,

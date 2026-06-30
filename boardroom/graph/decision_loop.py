@@ -235,7 +235,26 @@ class Orchestrator:
             client_order_id=str(uuid.uuid4()),
             stop_price=None,
         )
-        fill = broker.place_order(order, live=live)
+        # A broker rejection (e.g. insufficient funds, no market for the pair,
+        # below min order size) must NOT crash the checkpoint — log it and finish
+        # so balances/recommendations/portfolio still refresh. No position is
+        # recorded when the order didn't go through.
+        try:
+            fill = broker.place_order(order, live=live)
+        except Exception as e:  # noqa: BLE001
+            decision.live = False
+            self.repo.audit(
+                "execute_error",
+                {
+                    "decision_id": decision.decision_id,
+                    "venue": pitch.venue.value,
+                    "symbol": pitch.symbol,
+                    "size_cad": decision.size_cad,
+                    "error": str(e)[:200],
+                },
+            )
+            return fills
+
         decision.live = fill.is_live
         fills.append(fill)
         self.repo.audit("execute", {"decision_id": decision.decision_id, "live": fill.is_live})
