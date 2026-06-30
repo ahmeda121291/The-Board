@@ -4,6 +4,7 @@ import { Refresher } from "@/components/Refresher";
 import { Countdown } from "@/components/Countdown";
 import { SessionView } from "@/components/Session";
 import { SessionHistory } from "@/components/SessionHistory";
+import { Portfolio } from "@/components/Portfolio";
 import { EquityChart } from "@/components/EquityChart";
 import { AskBoardroom } from "@/components/AskBoardroom";
 import { RunNow } from "@/components/RunNow";
@@ -17,7 +18,7 @@ import {
   type StrategyReview,
 } from "@/lib/data";
 import { deposits } from "@/lib/deposits";
-import { nextCheckpointIso } from "@/lib/schedule";
+import { nextCheckpointIso, nextCheckpointMultiIso } from "@/lib/schedule";
 import { ago, cad, num, pct, when } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -183,7 +184,7 @@ export default async function Page() {
   const isFresh = d.decisions.length === 0 && d.pitches.length === 0 && d.outcomes.length === 0;
   const asOf = new Date().toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" });
 
-  const checkpointUtc = process.env.CHECKPOINT_UTC || "19:00";
+  const checkpointTimes = process.env.CHECKPOINT_TIMES || process.env.CHECKPOINT_UTC || "13:30,19:00";
   const hb = d.audit.find((a) => a.event === "scheduler_heartbeat");
   const hbNext = (hb?.payload as any)?.next_run_at as string | undefined;
   const hbLive = (hb?.payload as any)?.live === true;
@@ -197,7 +198,9 @@ export default async function Page() {
   const tradedLive = Boolean(latest?.live);
   const armedLive = tradedLive || d.live_armed || hbLive || envArmed;
   const targetIso =
-    hbNext && new Date(hbNext).getTime() > Date.now() ? hbNext : nextCheckpointIso(checkpointUtc);
+    hbNext && new Date(hbNext).getTime() > Date.now()
+      ? hbNext
+      : nextCheckpointMultiIso(checkpointTimes);
   const schedulerActive = hb ? Date.now() - new Date(hb.created_at).getTime() < 26 * 3600 * 1000 : false;
   const latestSession: Session | null =
     latest && latest.ranked && typeof latest.ranked === "object" && !Array.isArray(latest.ranked)
@@ -228,7 +231,7 @@ export default async function Page() {
                 tradedLive
                   ? "A live trade has executed and been logged."
                   : armedLive
-                  ? `Configured & scheduled for live trading. No live trade yet — next checkpoint ${checkpointUtc} UTC.`
+                  ? `Configured & scheduled for live trading. No live trade yet — next checkpoint ${checkpointTimes} UTC.`
                   : "No live trade logged and live mode not detected."
               }
             >
@@ -266,14 +269,14 @@ export default async function Page() {
       {/* Next checkpoint countdown */}
       <div className="glass hud mt-5 flex flex-wrap items-center gap-x-8 gap-y-3 p-4">
         <div>
-          <div className="label">Next daily checkpoint</div>
+          <div className="label">Next checkpoint</div>
           <div className="mt-1 text-4xl font-bold">
             <Countdown targetIso={targetIso} />
           </div>
         </div>
         <div className="text-xs leading-relaxed text-slate-400">
           <div>
-            convenes <span className="text-slate-200">{checkpointUtc} UTC</span> daily
+            convenes <span className="text-slate-200">{checkpointTimes} UTC</span> · twice daily
           </div>
           <div>
             last checkpoint:{" "}
@@ -329,6 +332,14 @@ export default async function Page() {
         <EquityChart points={series} start={dep.total} />
         <StrategistPanel review={d.strategist} />
       </div>
+
+      {/* Stocks — advisory: recommended portfolio vs your actual IBKR holdings */}
+      <Section
+        title="Stocks — recommended portfolio"
+        desc="Equities are advisory: the system scans wide twice a day and tells you what to buy or sell in IBKR. It never trades stocks itself. (Crypto on Kraken auto-trades.)"
+      >
+        <Portfolio rec={d.recommendation} />
+      </Section>
 
       {/* Onboarding when fresh */}
       {isFresh ? (
