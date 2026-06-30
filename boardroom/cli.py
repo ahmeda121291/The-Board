@@ -206,7 +206,22 @@ def _balances(args: argparse.Namespace) -> int:
     console.print(f"  Kraken (crypto) : {f'{kr:.2f} CAD' if kr is not None else '[yellow]unavailable[/yellow]'}")
     console.print(f"  IBKR (stocks)   : {f'{ib:.2f} CAD' if ib is not None else '[yellow]unavailable (gateway not authenticated?)[/yellow]'}")
     console.print(f"  [bold]Total cash[/bold]      : {bal['equity_cad'] if bal['equity_cad'] is not None else '—'} CAD")
-    console.print("[dim]Written to Supabase — the dashboard reads these as your live balances.[/dim]")
+
+    # Also snapshot the full holdings view (coins + stocks + performance).
+    snap = org.snapshot_portfolio()
+    if snap:
+        cb = snap["crypto"]
+        sb = snap["stocks"]
+        console.print(
+            f"\n  Crypto holdings : {len(cb['holdings'])} coin(s), "
+            f"value {cb['holdings_value_cad'] if cb['holdings_value_cad'] is not None else '—'} CAD"
+        )
+        console.print(
+            f"  Stock holdings  : {len(sb['holdings'])} position(s), "
+            f"value {sb['holdings_value_cad'] if sb['holdings_value_cad'] is not None else '—'} CAD"
+        )
+        console.print(f"  [bold]Total equity[/bold]    : {snap['total_value_cad']} CAD")
+    console.print("[dim]Written to Supabase — the dashboard reads these as your live portfolio.[/dim]")
     return 0
 
 

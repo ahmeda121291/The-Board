@@ -88,6 +88,71 @@ class KrakenBroker(Broker):
         key = next(iter(result))
         return float(result[key]["c"][0])  # last trade close price
 
+    def _ticker_full(self, pair: str) -> tuple[float, float]:
+        """(last_price, today_open) for a pair — used to value a holding and
+        compute its intraday change. Raises on an unknown pair (caller skips)."""
+        import httpx
+
+        resp = httpx.get(f"{_API}/0/public/Ticker", params={"pair": pair}, timeout=20.0)
+        resp.raise_for_status()
+        payload = resp.json()
+        if payload.get("error"):
+            raise RuntimeError(f"Kraken Ticker error: {payload['error']}")
+        result = payload["result"]
+        key = next(iter(result))
+        row = result[key]
+        last = float(row["c"][0])         # last trade close
+        opn = float(row["o"])             # today's opening price
+        return last, opn
+
+    def get_positions(self) -> list[dict]:
+        """Read crypto holdings from the Balance endpoint and value each in CAD.
+
+        Returns ``{symbol, qty, market_value_cad, day_change_pct}`` per coin held
+        (fiat CAD cash is excluded — that's reported by ``get_cash_cad``). Each
+        coin is priced via the public ``{ASSET}CAD`` ticker; a coin with no CAD
+        market (or any per-coin error) is skipped rather than guessed, so the
+        numbers shown are always real. Best-effort: returns what it can, never
+        raises into the loop.
+        """
+        if not self._has_creds:
+            return []
+        try:
+            balances = self._private("Balance")
+        except Exception:
+            return []
+        out: list[dict] = []
+        for asset, amount_str in (balances or {}).items():
+            try:
+                qty = float(amount_str)
+            except (TypeError, ValueError):
+                continue
+            if qty <= 1e-8:
+                continue  # dust / zero
+            if asset.upper().startswith("Z") or asset == self._cad_asset:
+                continue  # fiat (ZCAD/ZUSD/ZEUR…) is cash, not a coin holding
+            base = _normalize_kraken_asset(asset)
+            try:
+                last, opn = self._ticker_full(f"{base}CAD")
+            except Exception:
+                # No CAD market or a transient error — list the coin without a
+                # fabricated value rather than dropping it silently.
+                out.append(
+                    {"symbol": base, "qty": round(qty, 8), "market_value_cad": None,
+                     "day_change_pct": None}
+                )
+                continue
+            day_change = ((last - opn) / opn) if opn else None
+            out.append(
+                {
+                    "symbol": base,
+                    "qty": round(qty, 8),
+                    "market_value_cad": round(qty * last, 2),
+                    "day_change_pct": round(day_change, 4) if day_change is not None else None,
+                }
+            )
+        return out
+
     # ---- Broker interface ----------------------------------------------------
     def health_check(self) -> bool:
         if not self._has_creds:
@@ -189,3 +254,17 @@ class KrakenBroker(Broker):
 def _userref(client_order_id: str) -> int:
     # Kraken userref is a 32-bit int; derive a stable one from the client id.
     return int(hashlib.sha256(client_order_id.encode()).hexdigest(), 16) % (2**31)
+
+
+def _normalize_kraken_asset(asset: str) -> str:
+    """Map a Kraken Balance asset code to a tradable base symbol.
+
+    Kraken's legacy 4-char codes are X-prefixed (XXBT→XBT, XETH→ETH, XXRP→XRP,
+    XLTC→LTC, XXDG→XDG); newer assets (SOL, ADA, DOT, USDC…) are already clean.
+    Staked variants carry suffixes like ``.S``/``.F``/``.B`` (ETH2.S, DOT.S) —
+    we strip those so the staked position prices against the spot pair.
+    """
+    code = asset.split(".")[0]  # drop staking suffix (.S, .F, .B, .M …)
+    if len(code) == 4 and code.startswith("X"):
+        return code[1:]         # XXBT→XBT, XETH→ETH
+    return code
