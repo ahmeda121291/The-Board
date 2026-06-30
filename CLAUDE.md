@@ -54,7 +54,8 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   `Division.enrich()`. Grounding intact: score is code, headlines are context.
 - **Scanned universe** (factory.py): equities scan **wide by default** (~70 liquid
   stocks/ETFs incl. SNDK + high-momentum names — so a runaway winner isn't missed) since
-  stocks are advisory; crypto scans ~31 liquid Kraken pairs (wide). Equities via **Yahoo** (`fetch_equity_daily`,
+  stocks are advisory; crypto scans ~25 liquid **CAD-quoted** Kraken pairs (the account is
+  CAD-funded, so it can only buy CAD pairs). Equities via **Yahoo** (`fetch_equity_daily`,
   Stooq fallback), crypto via Kraken. Long-only.
 - **CEO** ranks the *fundable* (crypto) pitches deterministically vs hurdle + track record;
   default HOLD; auto-funds ≤1 best crypto idea. **Risk Manager** adversarially vetoes.

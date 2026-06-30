@@ -231,6 +231,14 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-06-30 (e)** — **Crypto universe → CAD pairs (so it can actually buy).** The first
+  live FUND tried `AAVEUSD`→`AAVECAD`, which has no Kraken CAD market, so it skipped (cleanly,
+  thanks to (d)). Root cause: the universe was USD-quoted alts a CAD account can't buy. Pinned
+  the crypto universe to **CAD-quoted majors** (core 7 + ~18 wide) so data, signals, and
+  execution all align and every funded coin is tradeable; unknown CAD pairs just abstain at
+  data-fetch. Also made the Kraken ticker lookup raise a clear "no market for pair" message
+  instead of a cryptic `KeyError: 'result'`.
+
 - **2026-06-30 (d)** — **Live-execution fixes (first real order).** The first live crypto
   FUND surfaced two issues: (1) the account is CAD-funded but signals run on USD-quoted
   pairs, so the order hit `EOrder:Insufficient funds` — now orders are translated to the
