@@ -311,6 +311,11 @@ class Orchestrator:
         holdings_value = sum(c.market_value_cad for c in current)
         base_cash = ibkr_cash if ibkr_cash is not None else self.settings.starting_portfolio_cad
         stock_equity = round(base_cash + holdings_value, 2)
+        # Always size the recommendation against SOMETHING so the ranked target
+        # book shows even before the IBKR account is funded — the user asked for
+        # "which stocks to buy", not just sizing for cash they already hold.
+        if stock_equity <= 0:
+            stock_equity = round(self.settings.starting_portfolio_cad, 2)
 
         recommended = build_recommended_portfolio(
             pitches, hurdle_rate=hurdle_rate, stock_equity_cad=stock_equity, caps=self.settings.caps
