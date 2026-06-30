@@ -68,8 +68,17 @@ def _decide(args: argparse.Namespace) -> int:
     result = org.run_once()
     d = result.decision
 
-    console.print(f"\n[bold]Pitches gathered:[/bold] {len(result.pitches)}")
-    vetoed = [p for p in result.pitches if not result.challenges[p.pitch_id].approved]
+    # Only crypto pitches are risk-reviewed/funded; equities are advisory and
+    # carry no challenge — so look challenges up defensively (not every pitch has one).
+    advisory = [p for p in result.pitches if p.pitch_id not in result.challenges]
+    console.print(
+        f"\n[bold]Pitches gathered:[/bold] {len(result.pitches)} "
+        f"[dim]({len(advisory)} advisory equity — recommendation only)[/dim]"
+    )
+    vetoed = [
+        p for p in result.pitches
+        if p.pitch_id in result.challenges and not result.challenges[p.pitch_id].approved
+    ]
     for p in vetoed:
         ch = result.challenges[p.pitch_id]
         console.print(
