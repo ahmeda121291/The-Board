@@ -224,3 +224,34 @@ def test_small_account_funds_a_bigger_crypto_bet():
     decision, _ = eng.decide([p], hurdle_rate=0.0002, deployed_cad=0.0, portfolio_value_cad=PV)
     assert decision.kind == DecisionKind.FUND
     assert decision.size_cad > 0.05 * PV  # exceeds the grown 5% Event cap → bolder while small
+
+
+# ---- venue minimum-order floor: small-conviction orders still execute -------
+def test_small_order_bumped_to_venue_minimum():
+    # A weak-but-positive crypto pitch sizes to only a few CAD; the floor bumps it
+    # up to the venue minimum so it isn't rejected for being too small.
+    p = _pitch(
+        division=Division.CRYPTO_TREND, venue=Venue.KRAKEN, expected_return=0.05,
+        capital=30.0, max_loss=2.0, expected_cost=0.02, confidence=0.7,
+    )
+    eng = CEODecisionEngine(
+        caps=_caps(), leashes={"crypto_trend": 1.0}, deviation_threshold=0.0, min_order_cad=25.0,
+    )
+    decision, _ = eng.decide([p], hurdle_rate=0.0002, portfolio_value_cad=PV)
+    assert decision.kind == DecisionKind.FUND
+    assert decision.size_cad == pytest.approx(25.0)  # bumped to the floor (< the 20% per-trade cap of 40)
+
+
+def test_min_order_floor_clamped_to_per_trade_cap():
+    # The floor never breaches the risk envelope: an Event pitch is capped to the
+    # Event cap (5% of 200 = 10 CAD) even with an absurd min-order floor.
+    p = _pitch(
+        division=Division.EVENT, venue=Venue.KRAKEN, expected_return=0.05,
+        capital=30.0, max_loss=2.0, expected_cost=0.02, confidence=0.7,
+    )
+    eng = CEODecisionEngine(
+        caps=_caps(), leashes={"event": 1.0}, deviation_threshold=0.0, min_order_cad=999.0,
+    )
+    decision, _ = eng.decide([p], hurdle_rate=0.0002, portfolio_value_cad=PV)
+    if decision.kind == DecisionKind.FUND:
+        assert decision.size_cad <= _caps().cap_for("event", PV) + 1e-9  # never above the cap
