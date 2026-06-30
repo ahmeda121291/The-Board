@@ -130,7 +130,7 @@ def _run(args: argparse.Namespace) -> int:
     from datetime import datetime, timezone
 
     from boardroom.factory import build_default_org
-    from boardroom.schedule import next_checkpoint
+    from boardroom.schedule import next_checkpoint_multi
 
     s = get_settings()
     if args.confirm_live and not s.live_trading:
@@ -143,16 +143,16 @@ def _run(args: argparse.Namespace) -> int:
         prefer_live_brokers=not args.synthetic,
     )
     console.rule(f"[bold]Boardroom scheduler ({'LIVE' if live else 'dry-run'})")
-    console.print(f"Daily checkpoint at [bold]{s.checkpoint_utc} UTC[/bold]. Ctrl+C to stop.\n")
+    console.print(f"Daily checkpoints at [bold]{s.checkpoint_times} UTC[/bold]. Ctrl+C to stop.\n")
     if live:
         org.repo.set_live_armed(True)  # durable: dashboard shows LIVE-armed across redeploys
 
     try:
         while True:
-            nxt = next_checkpoint(datetime.now(timezone.utc), s.checkpoint_utc)
+            nxt = next_checkpoint_multi(datetime.now(timezone.utc), s.checkpoint_times)
             org.repo.audit(
                 "scheduler_heartbeat",
-                {"next_run_at": nxt.isoformat(), "checkpoint_utc": s.checkpoint_utc, "live": live},
+                {"next_run_at": nxt.isoformat(), "checkpoint_utc": s.checkpoint_times, "live": live},
             )
             console.print(f"[dim]next checkpoint: {nxt:%Y-%m-%d %H:%M UTC}[/dim]")
             if not args.once:

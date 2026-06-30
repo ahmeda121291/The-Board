@@ -208,6 +208,21 @@ class SupabaseRepository(Repository):
         )
         return res.data or []
 
+    def save_recommendation(self, payload: dict) -> None:
+        self._t("recommendations").insert({"payload": payload}).execute()
+
+    def latest_recommendation(self) -> dict | None:
+        res = (
+            self._t("recommendations")
+            .select("*")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if res.data:
+            return res.data[0].get("payload")
+        return None
+
     # ---- open positions ------------------------------------------------------
     def save_open_position(self, position: OpenPosition) -> None:
         self._t("open_positions").upsert(

@@ -269,6 +269,68 @@ class Orchestrator:
         self.repo.set_balances(kraken_cash_cad=kraken, ibkr_cash_cad=ibkr, equity_cad=equity)
         return {"kraken_cash_cad": kraken, "ibkr_cash_cad": ibkr, "equity_cad": equity}
 
+    def generate_recommendations(self, pitches: list[Pitch], hurdle_rate: float):
+        """Build the advisory equities recommendation and persist it.
+
+        Stocks are never auto-traded — this turns the advisory equity pitches into
+        a target portfolio, reads the user's ACTUAL IBKR holdings (when a real
+        gateway is wired; empty otherwise), diffs them, and writes the plain-English
+        buy/sell note the dashboard shows. Best-effort: any failure is logged and
+        returns None rather than breaking the decision loop.
+        """
+        from boardroom.agents.advisor import write_discrepancy_note
+        from boardroom.recommend import (
+            CurrentHolding,
+            RecommendationReport,
+            build_recommended_portfolio,
+            diff_portfolio,
+        )
+        from boardroom.schemas import utcnow
+
+        broker = self.brokers.get(Venue.IBKR)
+        current: list = []
+        ibkr_cash: float | None = None
+        if broker is not None and type(broker).__name__ != "StubBroker":
+            try:
+                for r in broker.get_positions():
+                    current.append(
+                        CurrentHolding(
+                            symbol=r.get("symbol", ""),
+                            qty=float(r.get("qty", 0.0) or 0.0),
+                            avg_cost=float(r.get("avg_cost", 0.0) or 0.0),
+                            market_value_cad=float(r.get("market_value_cad", 0.0) or 0.0),
+                        )
+                    )
+            except Exception:
+                current = []
+            try:
+                ibkr_cash = round(float(broker.get_cash_cad()), 2)
+            except Exception:
+                ibkr_cash = None
+
+        holdings_value = sum(c.market_value_cad for c in current)
+        base_cash = ibkr_cash if ibkr_cash is not None else self.settings.starting_portfolio_cad
+        stock_equity = round(base_cash + holdings_value, 2)
+
+        recommended = build_recommended_portfolio(
+            pitches, hurdle_rate=hurdle_rate, stock_equity_cad=stock_equity, caps=self.settings.caps
+        )
+        actions = diff_portfolio(current, recommended)
+        narrative = write_discrepancy_note(actions, recommended, current, self.llm)
+        invested = sum(h.target_weight for h in recommended)
+        report = RecommendationReport(
+            generated_at=utcnow().isoformat(),
+            stock_equity_cad=stock_equity,
+            cash_weight=max(0.0, 1.0 - invested),
+            holdings=recommended,
+            current=current,
+            actions=actions,
+            narrative=narrative,
+            universe_size=len([p for p in pitches if p.venue == Venue.IBKR]),
+        )
+        self.repo.save_recommendation(report.as_dict())
+        return report
+
     def resolve_positions(self) -> list:
         """Resolve any ready open positions against fresh prices and fold the
         outcomes into calibration/leash/retirement.
@@ -330,6 +392,15 @@ class Orchestrator:
         session = self._build_session(decision, pitches, challenges, ranked, hurdle_rate, portfolio)
         self.repo.save_decision(decision, session)
         fills = self.execute(decision, pitches)
+
+        # Advisory equities: publish the recommended stock portfolio + the diff
+        # against the real IBKR holdings. Never trades; best-effort so a failure
+        # here can't affect the (crypto) execution above.
+        try:
+            self.generate_recommendations(pitches, hurdle_rate)
+        except Exception as e:  # noqa: BLE001
+            self.repo.audit("recommendation_error", {"error": str(e)[:160]})
+
         return LoopResult(decision, pitches, ranked, challenges, fills)
 
     def _build_session(self, decision, pitches, challenges, ranked, hurdle_rate, portfolio) -> dict:

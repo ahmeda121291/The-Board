@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     # matters; set it to 15:00 local (always 1h before the 4pm-local close).
     checkpoint_utc: str = Field(default="19:00", alias="CHECKPOINT_UTC")
 
+    # Twice-daily checkpoints (UTC, comma-separated "HH:MM,HH:MM"). The CEO
+    # convenes — auto-trading crypto, refreshing the advisory stock portfolio and
+    # the IBKR holdings diff — at EACH. Defaults to ~9:30am and ~3pm ET (13:30 &
+    # 19:00 UTC in summer): one near the open, one before the close. The live
+    # runner is driven by Task Scheduler `--once` triggers at these local times.
+    checkpoint_times: str = Field(default="13:30,19:00", alias="CHECKPOINT_TIMES")
+
     # ---- LLM (the agents' brain) --------------------------------------------
     anthropic_api_key: SecretStr | None = Field(default=None, alias="ANTHROPIC_API_KEY")
     llm_model: str = Field(default="claude-opus-4-8", alias="BOARDROOM_LLM_MODEL")

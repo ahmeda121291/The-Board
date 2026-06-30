@@ -162,3 +162,34 @@ def test_stub_broker_has_no_positions():
 def test_ibkr_positions_empty_without_account():
     # No account id configured (test env strips creds) → no positions, no crash.
     assert IBKRBroker().get_positions() == []
+
+
+# ---- loop integration -------------------------------------------------------
+def test_run_once_persists_a_recommendation():
+    from boardroom.factory import build_default_org
+    from boardroom.persistence.repository import InMemoryRepository
+
+    repo = InMemoryRepository()
+    org = build_default_org(data_mode="synthetic", repo=repo)
+    org.run_once(bankroll_cad=200)
+    rec = repo.latest_recommendation()
+    assert rec is not None
+    # The advisory report always carries the structural keys, even if empty.
+    for key in ("holdings", "current", "actions", "narrative", "stock_equity_cad"):
+        assert key in rec
+
+
+# ---- twice-daily scheduling -------------------------------------------------
+def test_next_checkpoint_multi_picks_soonest():
+    import datetime as _dt
+
+    from boardroom.schedule import next_checkpoint_multi, parse_checkpoints
+
+    assert parse_checkpoints("13:30,19:00") == [(13, 30), (19, 0)]
+    now = _dt.datetime(2026, 6, 30, 15, 0, tzinfo=_dt.timezone.utc)
+    nxt = next_checkpoint_multi(now, "13:30,19:00")
+    assert (nxt.hour, nxt.minute) == (19, 0)  # 13:30 already passed today
+    # After both, it rolls to tomorrow's first.
+    later = _dt.datetime(2026, 6, 30, 20, 0, tzinfo=_dt.timezone.utc)
+    nxt2 = next_checkpoint_multi(later, "13:30,19:00")
+    assert (nxt2.hour, nxt2.minute) == (13, 30) and nxt2.day == 1
