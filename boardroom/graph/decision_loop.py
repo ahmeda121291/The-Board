@@ -264,7 +264,8 @@ class Orchestrator:
         # later checkpoint and fed back into the adaptive engine.
         from boardroom.graph.resolution_loop import build_open_position
 
-        self.repo.save_open_position(build_open_position(pitch, decision))
+        # Record the filled quantity so the exit can later sell exactly what we hold.
+        self.repo.save_open_position(build_open_position(pitch, decision, qty=fill.filled_qty))
         return fills
 
     def snapshot_balances(self) -> dict:
@@ -424,7 +425,47 @@ class Orchestrator:
                 if bars is not None:
                     cache[bars.symbol] = bars
 
-        return resolve_open_positions(self.repo, lambda pos: cache.get(pos.symbol))
+        return resolve_open_positions(
+            self.repo, lambda pos: cache.get(pos.symbol), close_live=self._close_position_live
+        )
+
+    def _close_position_live(self, pos, outcome) -> bool:
+        """Execute the EXIT for a resolved position: sell the held quantity on the
+        venue. Returns whether the position is now actually closed.
+
+        - A paper position (never executed live) needs no real sell → closed.
+        - A live position is sold for the qty we hold (falling back to its CAD
+          notional if the qty wasn't recorded). If the sell can't go live — no
+          real broker, or LIVE_TRADING off — we DON'T finalize it (return False),
+          so we never book a sale that didn't happen; it retries next checkpoint.
+        """
+        if not pos.live:
+            return True  # paper position — resolve on paper, nothing to sell
+        broker = self.brokers.get(Venue(pos.venue))
+        if broker is None or type(broker).__name__ == "StubBroker":
+            return False
+        order = Order(
+            symbol=pos.symbol,
+            side=OrderSide.SELL,
+            notional_cad=pos.size_cad,
+            division=pos.division,
+            client_order_id=str(uuid.uuid4()),
+            base_qty=pos.qty if pos.qty and pos.qty > 0 else None,
+        )
+        fill = broker.place_order(order, live=self.settings.live_trading)
+        if not fill.is_live:
+            return False  # dry-run can't close a real live position — keep it open
+        self.repo.audit(
+            "exit_executed",
+            {
+                "decision_id": pos.decision_id,
+                "symbol": pos.symbol,
+                "qty": round(pos.qty, 8),
+                "realized_return": round(outcome.realized_return, 5),
+                "pnl_cad": round(outcome.pnl_cad, 2),
+            },
+        )
+        return True
 
     # ---- the whole loop ------------------------------------------------------
     def run_once(
@@ -459,8 +500,10 @@ class Orchestrator:
         decision, ranked = self.decide(survivors, hurdle_rate, deployed_cad, portfolio)
 
         session = self._build_session(decision, pitches, challenges, ranked, hurdle_rate, portfolio)
-        self.repo.save_decision(decision, session)
+        # Execute FIRST so decision.live reflects the actual fill, then persist —
+        # otherwise the dashboard's LIVE badge reads a stale (pre-execution) value.
         fills = self.execute(decision, pitches)
+        self.repo.save_decision(decision, session)
 
         # Advisory equities: publish the recommended stock portfolio + the diff
         # against the real IBKR holdings. Never trades; best-effort so a failure

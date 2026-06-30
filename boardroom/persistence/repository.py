@@ -52,6 +52,7 @@ class OpenPosition:
     horizon_days: float
     opened_at: datetime
     live: bool = False
+    qty: float = 0.0  # filled base-asset quantity — what a close() sells
 
 
 class Repository(abc.ABC):

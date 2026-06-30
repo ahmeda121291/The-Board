@@ -32,7 +32,7 @@ class StubBroker(Broker):
         # In dry-run the stub never executes "live", regardless of the flag.
         self.placed.append(order)
         price = order.limit_price if order.limit_price is not None else 1.0
-        qty = order.notional_cad / price if price else 0.0
+        qty = order.base_qty if order.base_qty is not None else (order.notional_cad / price if price else 0.0)
         # Modeled costs: 0.26% taker-style fee + a hair of FX. Pessimistic on purpose.
         fee = abs(order.notional_cad) * 0.0026
         fx = abs(order.notional_cad) * 0.0002 if order.symbol.upper().endswith("USD") else 0.0

@@ -78,6 +78,13 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   bumped up to the exchange minimum so it actually fills — clamped to the per-trade cap, so
   it never breaches the risk envelope. Crypto trades execute in **CAD pairs** (account is
   CAD-funded; `exec_pair_for` maps USD→CAD).
+- **Auto-sell / exits** (`graph/resolution_loop.py`): each checkpoint the resolution loop
+  checks open crypto positions and **places a real Kraken SELL** to close on a **stop-loss**
+  (close ≤ −stop), a **take-profit** (close ≥ the predicted band top), or **horizon elapse**.
+  It sells the exact filled qty (`OpenPosition.qty`, migration 0011). A position is only
+  finalized (P&L booked, tracking row deleted) when the sell actually executes — a rejected
+  sell leaves it open to retry, so the record never claims a sale that didn't happen.
+  Exits evaluate on daily closes (intraday-tick exits are a future upgrade).
 - **Gains ratchet** sweeps a fraction of new highs into an **untouchable reserve**.
 - **Withdrawals DISABLED on every venue** — no transfer code path exists. Keys are
   trade-only and per-venue isolated (Kraken ⟂ equities).
@@ -114,7 +121,7 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 - **Code**: `boardroom/` (config, schemas, divisions, ceo, risk, brokers, graph,
   agents, persistence, market.py, **recommend.py**, **portfolio.py**). **Tests**:
-  `tests/` (232 passing; `python -m pytest`).
+  `tests/` (237 passing; `python -m pytest`).
 - **Portfolio view** (`boardroom/portfolio.py`): each checkpoint (and `boardroom
   balances`) snapshots real holdings on BOTH venues — `KrakenBroker.get_positions()`
   (coins priced in CAD + intraday change) and `IBKRBroker.get_positions()` (holdings +
