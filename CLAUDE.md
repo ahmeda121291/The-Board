@@ -8,16 +8,18 @@
 **Boardroom** is an autonomous, multi-agent capital-allocation system funded with
 ~$200+ CAD (Canadian resident). **Several times a day** (4× by default) it convenes a
 "boardroom" of agents, looks at real crypto + equity data, and decides where capital
-goes. Live (real money) as of 2026-06. Two modes, split by venue:
+goes. Live (real money) as of 2026-06. **Crypto-first since 2026-07:**
 
-- **Crypto (Kraken) = fully autonomous, auto-trades live.** Yield = the floor; Event
-  takes rare asymmetric bets. Default is still HOLD the floor — most checkpoints do
-  nothing.
-- **Stocks (IBKR) = ADVISORY ONLY, never auto-trades.** The system scans a wide equity
-  universe and publishes a **recommended portfolio**, reads the **actual IBKR holdings**,
-  and shows **"Current portfolio in IBKR" vs "Recommended portfolio"** with the AI
-  explaining the diff in plain English ("buy Costco", "sell SanDisk"). The user places
-  those orders by hand.
+- **Crypto (Kraken) = fully autonomous, auto-trades live, buy AND sell.** Analysis on
+  deep USD-pair data (~37 coins); execution auto-translates to CAD pairs
+  (`exec_pair_for`; a coin with no CAD market errors cleanly and is skipped). Up to
+  `MAX_FUNDINGS_PER_CHECKPOINT` (2) DIFFERENT assets fund per checkpoint, and the
+  per-asset aggregate cap (`ASSET_MAX_EXPOSURE_PCT`, 20%) diverts capital to the
+  next-best coin once a winner holds its max share — re-buying below the cap stays
+  allowed (no hard no-rebuy rule).
+- **Equities = SUNSET** (`ENABLE_EQUITIES=false` default): no stock scans, no
+  recommendations, no IBKR dependency. The advisory recommended-portfolio code is
+  dormant, not deleted — flip the flag to resurrect it.
 
 ## The one rule that governs everything
 
@@ -29,7 +31,8 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 ## Divisions (pitch ideas) → Agents (decide)
 
 - **Yield** (crypto/Kraken) = the floor every idea must beat · **Event** (crypto/Kraken,
-  auto-trades) · **Directional** (stocks/ETFs via IBKR, **advisory**) · **Effort** (disabled).
+  auto-trades) · **Directional** (stocks/ETFs, **SUNSET** behind `ENABLE_EQUITIES`) ·
+  **Effort** (disabled).
 - **Funding rule is by VENUE** (`run_once`): only **Kraken (crypto)** pitches are
   auto-funded; every **IBKR (equity)** pitch is advisory and feeds the recommendation
   engine. So a crypto **Momentum** breakout trades live, while the same division's stock
@@ -52,13 +55,12 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 - **News/catalyst feed** (`data/news.py`, keyless Yahoo search): computed `news_intensity`
   (recency-weighted headline burst) confirms a breakout; headlines attached as context via
   `Division.enrich()`. Grounding intact: score is code, headlines are context.
-- **Scanned universe** (factory.py): equities scan **wide by default** (~70 liquid
-  stocks/ETFs incl. SNDK + high-momentum names — so a runaway winner isn't missed) since
-  stocks are advisory; crypto scans ~25 liquid **CAD-quoted** Kraken pairs (the account is
-  CAD-funded, so it can only buy CAD pairs). Equities via **Yahoo** (`fetch_equity_daily`,
-  Stooq fallback), crypto via Kraken. Long-only.
+- **Scanned universe** (factory.py): crypto scans ~37 coins on **USD-quoted** Kraken
+  pairs (deep data); execution translates to CAD (`exec_pair_for`) — no CAD market →
+  clean skip. Equity universe only loads when `ENABLE_EQUITIES=true`. Long-only.
 - **CEO** ranks the *fundable* (crypto) pitches deterministically vs hurdle + track record;
-  default HOLD; auto-funds ≤1 best crypto idea. **Risk Manager** adversarially vetoes.
+  default HOLD; funds up to `MAX_FUNDINGS_PER_CHECKPOINT` (2) best DIFFERENT-asset ideas,
+  respecting the per-asset aggregate cap. **Risk Manager** adversarially vetoes.
   **CFO/Strategist** studies the scoreboard, writes a review each checkpoint.
 
 ## Money & safety (non-negotiable)

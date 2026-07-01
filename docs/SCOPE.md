@@ -16,15 +16,21 @@ equity market data, and decides where a small pool of capital should go — **us
 nothing**. It is floor-first and skeptical of its own ideas, but tuned to act readily
 on crypto while the account is small (see §4, the aggression schedule).
 
-It operates in **two modes, split by venue:**
+**Boardroom is a crypto agent (since 2026-07).** The equity leg is **sunset**:
+no stock scans, no recommendations, no IBKR dependency — all effort goes into
+deeper crypto analysis. The advisory stock code remains dormant behind
+`ENABLE_EQUITIES=true` (flip it to resurrect the recommended-portfolio /
+IBKR-diff feature), but by default:
 
-- **Crypto (Kraken) — fully autonomous.** The Yield and Event divisions auto-trade
-  live (within the caps, default HOLD). This is the only money the system moves on
-  its own.
-- **Stocks (IBKR) — advisory only.** The system never auto-trades equities. Instead it
-  scans a wide universe, publishes a **recommended portfolio**, reads the user's
-  **actual IBKR holdings**, and presents *current vs recommended* with a plain-English
-  buy/sell explanation. The user executes those trades by hand.
+- **Crypto (Kraken) — fully autonomous.** The divisions auto-trade live within
+  the caps (default HOLD). Analysis runs on deep **USD-pair data** (~37 coins);
+  execution translates to the account's **CAD pairs** at order time — a coin
+  with no CAD market fails the order cleanly and the next idea gets the capital.
+- Up to **`MAX_FUNDINGS_PER_CHECKPOINT` (default 2) different coins** can be
+  funded per checkpoint, and a **per-asset aggregate cap**
+  (`ASSET_MAX_EXPOSURE_PCT`, default 20% of the book) stops any single trending
+  coin from eating every slot — without ever banning re-buying a coin the
+  system still likes.
 
 It is designed to run unattended and be safe by construction: it can place crypto
 trades but **cannot withdraw money** from any venue, and it **cannot trade stocks at all**.
@@ -50,24 +56,35 @@ trade directly — they propose, and the CEO disposes.
 | **Yield** | Crypto | Kraken | auto-trades | The floor — the safe baseline return every other idea must beat. |
 | **Event** | Crypto | Kraken | auto-trades | Rare dislocation/catalyst crypto bets. |
 | **Crypto Trend** | Crypto | Kraken | auto-trades | **Always-on** trend/mean-reversion long — proposes whenever there's positive edge, so the system is regularly in the market (not just on rare triggers). |
-| **Directional** | Stocks / ETFs | IBKR | **advisory** | Equity ideas — feed the recommended portfolio. Never auto-funded. |
-| **Momentum** | Stocks + crypto | IBKR / Kraken | crypto auto / stocks advisory | Volume-confirmed breakouts. Crypto breakouts auto-trade; stock breakouts advise. |
+| **Momentum** | Crypto | Kraken | auto-trades | Volume-confirmed breakouts on the crypto universe. |
+| **Directional** | Stocks / ETFs | IBKR | **SUNSET** | Dormant behind `ENABLE_EQUITIES` — advisory recommended-portfolio only, never auto-funded. |
 | **Effort** | — | — | disabled | Disabled. Reserved. |
 
 A pitch carries computed numbers (code) plus a short narrative (LLM). Quant fields
 are never LLM guesses.
 
-**Funding is by venue.** Only **crypto (Kraken)** pitches are auto-funded — Event, plus
-Momentum's crypto breakouts. Every **equity (IBKR)** pitch is **advisory** and feeds the
-**recommendation engine** (§2a) instead; the system never places a stock order.
+**Scanned universe (crypto-first).** Analysis runs on **USD-quoted Kraken pairs**
+— that's where the deep, liquid OHLC history lives — across ~37 coins (BTC, ETH,
+SOL, XRP, ADA, LINK, DOT core; wide adds LTC, AVAX, DOGE, ATOM, NEAR, APT, ARB,
+OP, INJ, SUI, TIA, PEPE, and more). **Execution translates to CAD pairs** at
+order time (`exec_pair_for`); a coin with no CAD market fails the order cleanly
+(audited, skipped) and the next-best idea takes the slot. Every symbol runs the
+same grounded model + risk/cost gates.
 
-**Scanned universe.** Because stocks are advisory, the equity universe is deliberately
-**wide** (~70 liquid stocks/ETFs by default — broad-market & sector ETFs, megacaps,
-high-momentum semis/AI/growth names incl. **SNDK** — so a runaway winner isn't missed).
-Event scans the major crypto pairs (BTC, ETH, SOL, XRP, ADA, LINK, DOT, +more wide).
-Every symbol runs the same grounded model + risk/cost gates.
+**Diversification is structural, not a ban.** Two rules replace winner-take-all:
+(1) up to `MAX_FUNDINGS_PER_CHECKPOINT` (default 2) ideas fund per checkpoint,
+each clearing the bar and every cap independently, always **different assets**;
+(2) the **per-asset aggregate cap** (`ASSET_MAX_EXPOSURE_PCT`, default 20%)
+lets the CEO keep adding to a coin it still likes until that coin holds the max
+share of the book — then its pitches step aside (`asset_cap_skip` audit, shown
+with the reason in the session) and capital flows to the next-best coin.
 
-### 2a. The recommendation engine (advisory equities)
+### 2a. The recommendation engine (advisory equities — SUNSET)
+
+> **Sunset 2026-07.** Everything below is dormant unless `ENABLE_EQUITIES=true`:
+> no equity scans run, no recommendations are generated, and the dashboard hides
+> the stocks section once the last recommendation ages out. The code is kept,
+> not deleted, so the stock leg can return when the account justifies it.
 
 `boardroom/recommend.py` turns the advisory equity pitches into a **recommended
 portfolio**, fully deterministically:
@@ -251,6 +268,16 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-07-01 (d)** — **Crypto-first.** Equities SUNSET by default
+  (`ENABLE_EQUITIES=false`): no stock scans, no recommendations, no IBKR
+  dependency — code dormant, not deleted. Crypto analysis widened to ~37 coins
+  on deep **USD-pair data** with **CAD execution** via `exec_pair_for` (a coin
+  without a CAD market errors cleanly and is skipped). New **per-asset
+  aggregate exposure cap** (`ASSET_MAX_EXPOSURE_PCT`, 20%): re-buying a winner
+  stays allowed until the asset holds the max share of the book, then the
+  next-best coin gets the capital (no hard no-rebuy rule). The CEO may now fund
+  up to `MAX_FUNDINGS_PER_CHECKPOINT` (2) **different** assets per checkpoint —
+  diversification instead of winner-take-all (the SOL monoculture fix). 260 tests.
 - **2026-07-01 (c)** — **Position-save FK bug fixed (the actual root cause).**
   `open_positions` has a foreign key to `decisions`; since 2026-06-30 the
   decision was saved *after* execution, so **every** new position insert

@@ -73,6 +73,21 @@ class Settings(BaseSettings):
     # actually fills. ~25 CAD comfortably clears Kraken's minimums for the majors.
     min_order_cad: float = Field(default=25.0, alias="MIN_ORDER_CAD")
 
+    # ---- Crypto-first controls ------------------------------------------------
+    # Equities are SUNSET by default (2026-07): no equity scans, no stock
+    # recommendations — Boardroom is a crypto agent. Flip true to resurrect the
+    # advisory stock leg (the code stays dormant, not deleted).
+    enable_equities: bool = Field(default=False, alias="ENABLE_EQUITIES")
+    # Aggregate exposure ceiling PER ASSET (fraction of portfolio) across all
+    # open positions. Not a "never rebuy" rule: the CEO may keep adding to a
+    # winner until the asset reaches this share of the book, then the next-best
+    # idea gets the capital. Prevents a single trending coin eating everything.
+    asset_max_exposure_pct: float = Field(default=0.20, alias="ASSET_MAX_EXPOSURE_PCT")
+    # How many ideas the CEO may fund in ONE checkpoint (each must clear the bar
+    # and every cap independently; same-asset repeats are excluded within a
+    # checkpoint). >1 diversifies instead of winner-take-all.
+    max_fundings_per_checkpoint: int = Field(default=2, alias="MAX_FUNDINGS_PER_CHECKPOINT")
+
     # The floor's annualized carry — the hurdle every other division must beat.
     # Set this to the APR you actually earn (Kraken staking/lending). When the
     # live Kraken venue is wired it can refresh this automatically within a sanity
