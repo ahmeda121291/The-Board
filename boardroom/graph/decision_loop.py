@@ -638,8 +638,13 @@ class Orchestrator:
         decision, ranked = self.decide(survivors, hurdle_rate, deployed_cad, portfolio)
 
         session = self._build_session(decision, pitches, challenges, ranked, hurdle_rate, portfolio)
-        # Execute FIRST so decision.live reflects the actual fill, then persist —
-        # otherwise the dashboard's LIVE badge reads a stale (pre-execution) value.
+        # Persist the decision BEFORE execution: open_positions has a foreign key
+        # to decisions, so the parent row must exist before the position insert.
+        # (Saving it only after execution is what broke every position save since
+        # 2026-06-30 — and crashed the 2026-07-01 run outright.) Then re-save
+        # after execution so decision.live reflects the actual fill, keeping the
+        # dashboard's LIVE badge truthful.
+        self.repo.save_decision(decision, session)
         fills = self.execute(decision, pitches)
         self.repo.save_decision(decision, session)
 

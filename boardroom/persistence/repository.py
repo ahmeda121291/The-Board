@@ -229,6 +229,13 @@ class InMemoryRepository(Repository):
         self.pitches.append(pitch)
 
     def save_decision(self, decision: Decision, ranking: list[dict]) -> None:
+        # Upsert by decision_id, matching the Supabase repo — run_once saves the
+        # decision before execution (FK parent for the position) and again after
+        # (refreshing the live flag); that must not duplicate the row.
+        for i, (d, _) in enumerate(self.decisions):
+            if d.decision_id == decision.decision_id:
+                self.decisions[i] = (decision, ranking)
+                return
         self.decisions.append((decision, ranking))
 
     def save_outcome(self, outcome: ResolvedOutcome) -> None:

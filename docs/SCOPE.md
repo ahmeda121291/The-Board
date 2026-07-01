@@ -251,6 +251,15 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-07-01 (c)** — **Position-save FK bug fixed (the actual root cause).**
+  `open_positions` has a foreign key to `decisions`; since 2026-06-30 the
+  decision was saved *after* execution, so **every** new position insert
+  violated the FK — unhandled, it crashed the 2026-07-01 20:06 run; handled
+  (post-rework), it still left the 21:27 buy untracked. `run_once` now saves
+  the decision **before** executing (FK parent exists) and re-saves it after
+  (live flag stays truthful); the in-memory repo upserts decisions by id to
+  match Supabase semantics. Both affected positions adopted manually. 252 tests.
+
 - **2026-07-01 (b)** — **Execution truth + dashboard rework.** New `fills` table:
   every broker fill (buy and sell, live and paper) is persisted the instant the
   broker returns — before any other write — with qty/price/fee/txid, so a mid-run
