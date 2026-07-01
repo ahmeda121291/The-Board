@@ -4,7 +4,7 @@
 > `Boardroom_Scope.docx` and is kept in sync with the code as the system evolves.
 > When behavior changes, this file changes in the same commit.
 >
-> **Last updated:** 2026-06-30 · **Status:** LIVE (real capital) · **Funding:** ~$200+ CAD
+> **Last updated:** 2026-07-01 · **Status:** LIVE (real capital) · **Funding:** ~$200+ CAD
 
 ---
 
@@ -187,10 +187,30 @@ dashboard's read-only safety property. The daily scheduler stays on alongside th
 
 ## 8. The dashboard
 
-A Vercel-hosted dashboard reads the logged state from Supabase (read-only) and shows:
-live/armed status, next-checkpoint countdown, equity curve, the CEO's latest verdict
-and the full session, division calibration, attribution, the CFO review, and the
-"Ask the Boardroom" chat. Password-gated.
+A Vercel-hosted dashboard reads the logged state from Supabase (read-only),
+password-gated, organized as a **health strip + four glanceable sections**:
+
+1. **Executed** — confirmed fills only (`fills` table, written the moment the
+   broker returns: side, qty, price, notional, fee, live/paper, exit reason).
+   Paper trades sit behind a toggle. A reconciliation alert appears when the
+   venue holds coins with no tracked position behind them.
+2. **Positions** — every open position with cost basis, current value,
+   unrealized P&L, and the exit plan fixed at entry (stop / take-profit /
+   horizon date), plus the full venue holdings snapshot.
+3. **Reasoning log** — one expandable card per checkpoint: every idea with the
+   reason it was funded / vetoed / passed over, the CEO's rationale, and the
+   CFO's standing view. **Crashed runs appear inline in red** (`runs` table).
+4. **Recommendations** — the advisory stock portfolio and the diff against the
+   real IBKR holdings, clearly labeled as never auto-traded.
+
+The health strip on top shows mode (LIVE/armed/dry-run), live equity, the
+next-checkpoint countdown, last-run status (including crashes), breaker status
+(**"clear" only when actually evaluated**), and scheduler/poller liveness with
+a stuck-"Run now" warning. Performance (equity curve, attribution, outcomes),
+teams, universe, the event log (plain language), and "Ask the Boardroom" are
+one click below. `/docs` renders `docs/SCOPE.md`, `docs/OPERATIONS.md`, and
+`RUNBOOK.md` **directly from the repo at build time** — every merge to main
+redeploys and re-syncs them, so the dashboard docs can never drift.
 
 It also shows two holdings views:
 
@@ -230,6 +250,21 @@ fees. Pure frequency for its own sake is intentionally avoided.
 ---
 
 ## Changelog
+
+- **2026-07-01 (b)** — **Execution truth + dashboard rework.** New `fills` table:
+  every broker fill (buy and sell, live and paper) is persisted the instant the
+  broker returns — before any other write — with qty/price/fee/txid, so a mid-run
+  crash can never again lose the record of money moving (a 2026-07-01 wide-scan
+  run crashed after a live SOLCAD buy and lost its decision + position; both were
+  reconstructed manually and the position adopted). New `runs` table: every
+  checkpoint records started/ok/**crashed** with the error, the breaker
+  evaluation, and a **venue reconciliation** (Kraken holdings vs tracked
+  positions → orphans surface as alerts). Circuit breakers are now evaluated
+  **inside every run** and halt new entries deterministically. NaN/Infinity are
+  sanitized before every Supabase write. The poller writes a liveness heartbeat.
+  Dashboard rebuilt around Executed / Positions / Reasoning / Recommendations
+  with an honest health strip; `/docs` now renders the repo's markdown at build
+  time (the deploy pipeline is the docs-update loop). 251 tests.
 
 - **2026-07-01** — **Two-key live gate enforced in the execution layer.** Both the
   buy path (`Orchestrator.execute`) and the live sell path (`_close_position_live`)

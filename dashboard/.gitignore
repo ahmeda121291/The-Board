@@ -7,3 +7,6 @@ build/
 .vercel
 *.tsbuildinfo
 next-env.d.ts
+
+# Synced at build from ../docs by scripts/sync-docs.mjs
+content/

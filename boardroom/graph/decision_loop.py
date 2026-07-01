@@ -39,6 +39,7 @@ class LoopResult:
     ranked: list[Any]
     challenges: dict[str, RiskChallenge]
     fills: list[Any] = field(default_factory=list)
+    breakers: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -267,15 +268,72 @@ class Orchestrator:
 
         decision.live = fill.is_live
         fills.append(fill)
+
+        # 1. The fill is the record of truth that money moved — persist it FIRST,
+        #    with everything needed to reconstruct the trade, before any other
+        #    write can fail. (A mid-run crash on 2026-07-01 lost a live BUY's
+        #    decision AND position because both were saved after execution.)
+        self._record_fill(fill, decision_id=decision.decision_id, notional_cad=decision.size_cad)
         self.repo.audit("execute", {"decision_id": decision.decision_id, "live": fill.is_live})
 
-        # Record the open position so it can be resolved (paper or live) at a
-        # later checkpoint and fed back into the adaptive engine.
+        # 2. The open position (isolated: a failure here is loudly audited and
+        #    must not prevent the decision itself from being saved by run_once).
         from boardroom.graph.resolution_loop import build_open_position
 
-        # Record the filled quantity so the exit can later sell exactly what we hold.
-        self.repo.save_open_position(build_open_position(pitch, decision, qty=fill.filled_qty))
+        try:
+            self.repo.save_open_position(build_open_position(pitch, decision, qty=fill.filled_qty))
+        except Exception as e:  # noqa: BLE001
+            self.repo.audit(
+                "position_record_error",
+                {
+                    "decision_id": decision.decision_id,
+                    "symbol": pitch.symbol,
+                    "size_cad": decision.size_cad,
+                    "error": str(e)[:200],
+                },
+            )
         return fills
+
+    def _record_fill(
+        self,
+        fill,
+        *,
+        decision_id: str | None = None,
+        exit_reason: str | None = None,
+        notional_cad: float | None = None,
+    ) -> None:
+        """Persist a broker fill into the ``fills`` table. Never raises — but a
+        failure is loudly audited, because losing a fill record means the
+        dashboard's 'Executed' section lies."""
+        order_ref = None
+        raw = getattr(fill, "raw", None)
+        if isinstance(raw, dict):
+            tx = raw.get("txid")
+            if isinstance(tx, (list, tuple)) and tx:
+                order_ref = str(tx[0])
+        row = {
+            "run_id": getattr(self, "_run_id", None),
+            "decision_id": decision_id,
+            "venue": fill.venue.value if hasattr(fill.venue, "value") else str(fill.venue),
+            "symbol": fill.symbol,
+            "side": fill.side.value if hasattr(fill.side, "value") else str(fill.side),
+            "qty": fill.filled_qty,
+            "price": fill.avg_price,
+            "notional_cad": round(abs(fill.filled_qty * fill.avg_price), 2)
+            if fill.filled_qty and fill.avg_price
+            else round(notional_cad or 0.0, 2),
+            "fee_cad": fill.fee_cad,
+            "is_live": fill.is_live,
+            "order_ref": order_ref,
+            "exit_reason": exit_reason,
+        }
+        try:
+            self.repo.save_fill(row)
+        except Exception as e:  # noqa: BLE001
+            self.repo.audit(
+                "fill_record_error",
+                {"symbol": fill.symbol, "side": row["side"], "error": str(e)[:200]},
+            )
 
     def snapshot_balances(self) -> dict:
         """Pull real cash from each venue (we hold the keys here) and persist it
@@ -464,6 +522,18 @@ class Orchestrator:
         fill = broker.place_order(order, live=self.effective_live)
         if not fill.is_live:
             return False  # dry-run can't close a real live position — keep it open
+        # The sell filled — record it before anything else can fail.
+        r = outcome.realized_return
+        exit_reason = (
+            "stop_loss"
+            if pos.stop_fraction > 0 and r <= -pos.stop_fraction
+            else "take_profit"
+            if pos.band_high and pos.band_high > 0 and r >= pos.band_high
+            else "horizon"
+        )
+        self._record_fill(
+            fill, decision_id=pos.decision_id, exit_reason=exit_reason, notional_cad=pos.size_cad
+        )
         self.repo.audit(
             "exit_executed",
             {
@@ -483,6 +553,43 @@ class Orchestrator:
         portfolio_value_cad: float | None = None,
         bankroll_cad: float | None = None,  # deprecated alias for portfolio_value_cad
         deployed_cad: float = 0.0,
+        trigger: str = "manual",
+    ) -> LoopResult:
+        """One checkpoint, wrapped in a durable run record.
+
+        The run row (status running → ok/crashed) is what makes a mid-run crash
+        VISIBLE on the dashboard instead of silent. The body itself is ordered
+        so the highest-stakes facts persist earliest: fills at execution time,
+        then the position, then the decision, then the advisory extras.
+        """
+        run_id = str(uuid.uuid4())
+        self._run_id = run_id
+        try:
+            self.repo.start_run(run_id, trigger, self.effective_live)
+        except Exception:  # noqa: BLE001 — health record must not block the run
+            pass
+        try:
+            result = self._run_once_body(
+                run_id,
+                portfolio_value_cad=portfolio_value_cad,
+                bankroll_cad=bankroll_cad,
+                deployed_cad=deployed_cad,
+            )
+        except BaseException as e:
+            try:
+                self.repo.finish_run(run_id, status="crashed", error=str(e)[:300])
+            except Exception:  # noqa: BLE001
+                pass
+            raise
+        return result
+
+    def _run_once_body(
+        self,
+        run_id: str,
+        *,
+        portfolio_value_cad: float | None,
+        bankroll_cad: float | None,
+        deployed_cad: float,
     ) -> LoopResult:
         portfolio = (
             portfolio_value_cad
@@ -499,6 +606,28 @@ class Orchestrator:
         self.yield_division.refresh_floor()  # live APR if wired; else configured carry
         hurdle_rate = self.yield_division.hurdle_for(horizon_days=1.0)
 
+        # Circuit breakers, evaluated EVERY run: any trip halts all new risk
+        # today (the exits above already ran — they reduce risk). The evaluation
+        # result is persisted either way, so "breakers clear" on the dashboard
+        # means "evaluated and clear", never "never checked".
+        breakers = self.check_circuit_breakers(portfolio)
+        if breakers:
+            decision = Decision(
+                decision_id=str(uuid.uuid4()),
+                kind=DecisionKind.HOLD,
+                hurdle_rate=hurdle_rate,
+                rationale=(
+                    "Circuit breaker tripped — all new risk halted, capital stays "
+                    "in the floor: " + "; ".join(breakers)
+                ),
+            )
+            self.repo.audit("circuit_breaker", {"tripped": breakers})
+            session = self._build_session(decision, [], {}, [], hurdle_rate, portfolio)
+            session["circuit_breakers"] = breakers
+            self.repo.save_decision(decision, session)
+            self._finish_run_ok(run_id, decision, breakers, recon=None)
+            return LoopResult(decision, [], [], {}, [], breakers)
+
         pitches = self.gather_pitches(portfolio)
         # Funding rule: ONLY crypto (Kraken) is auto-traded. Every equity (IBKR)
         # pitch is advisory and feeds the recommendation engine instead — so a
@@ -513,6 +642,10 @@ class Orchestrator:
         # otherwise the dashboard's LIVE badge reads a stale (pre-execution) value.
         fills = self.execute(decision, pitches)
         self.repo.save_decision(decision, session)
+
+        # Reconcile what the venue actually holds against what we track — the
+        # net that catches an orphaned position no matter how it was created.
+        recon = self.reconcile_positions()
 
         # Advisory equities: publish the recommended stock portfolio + the diff
         # against the real IBKR holdings. Never trades; best-effort so a failure
@@ -529,7 +662,99 @@ class Orchestrator:
         except Exception as e:  # noqa: BLE001
             self.repo.audit("portfolio_snapshot_error", {"error": str(e)[:160]})
 
+        self._finish_run_ok(run_id, decision, [], recon=recon)
         return LoopResult(decision, pitches, ranked, challenges, fills)
+
+    def _finish_run_ok(self, run_id: str, decision: Decision, breakers: list[str], recon) -> None:
+        try:
+            self.repo.finish_run(
+                run_id,
+                status="ok",
+                decision_id=decision.decision_id,
+                decision_kind=decision.kind.value,
+                breakers=breakers,
+                breakers_evaluated=True,
+                recon=recon,
+            )
+        except Exception:  # noqa: BLE001 — health record must not fail the run
+            pass
+
+    def check_circuit_breakers(self, equity_cad: float) -> list[str]:
+        """Evaluate daily-loss / drawdown / fee-drag against realized outcomes.
+        Non-empty == halt all NEW risk this checkpoint. Pure inputs, pure rule
+        (``risk.caps.circuit_breaker_tripped``); this just assembles the state."""
+        from datetime import datetime, timezone
+
+        from boardroom.risk.caps import PortfolioState, circuit_breaker_tripped
+
+        outcomes = self.repo.recent_outcomes(limit=10000)
+        today = datetime.now(timezone.utc).date()
+        pnl_today = sum(
+            o.pnl_cad - o.cost_cad for o in outcomes if o.resolved_at.date() == today
+        )
+        s = self.repo.get_system_state()
+        peak = max(s.get("hwm_cad", 0.0) or 0.0, self.settings.starting_portfolio_cad)
+        state = PortfolioState(
+            equity_cad=equity_cad,
+            peak_equity_cad=peak,
+            realized_pnl_today_cad=pnl_today,
+            cumulative_cost_cad=sum(o.cost_cad for o in outcomes),
+            cumulative_gross_return_cad=sum(max(0.0, o.pnl_cad) for o in outcomes),
+        )
+        return circuit_breaker_tripped(state, self.settings.caps)
+
+    def reconcile_positions(self) -> dict | None:
+        """Compare the coins Kraken actually holds against tracked open positions.
+
+        Any asset held on the venue with no tracked position is an ORPHAN — money
+        the auto-sell loop would never manage (it happened on 2026-07-01 when a
+        crash lost a filled BUY's position row). Result is persisted on the run
+        row and surfaced on the dashboard. Best-effort, never raises.
+        """
+        from datetime import datetime, timezone
+
+        broker = self.brokers.get(Venue.KRAKEN)
+        if broker is None or type(broker).__name__ == "StubBroker":
+            return None
+        try:
+            held = broker.get_positions()  # [{symbol, qty, market_value_cad, ...}]
+        except Exception:  # noqa: BLE001
+            return None
+
+        tracked: dict[str, float] = {}
+        for pos in self.repo.open_positions():
+            if pos.venue != "kraken":
+                continue
+            base = pos.symbol
+            for quote in ("CAD", "USDT", "USDC", "USD"):
+                if base.endswith(quote) and len(base) > len(quote):
+                    base = base[: -len(quote)]
+                    break
+            tracked[base] = tracked.get(base, 0.0) + (pos.qty or 0.0)
+
+        untracked = []
+        for h in held or []:
+            sym = h.get("symbol", "")
+            qty = float(h.get("qty", 0.0) or 0.0)
+            if qty <= 1e-8:
+                continue
+            if sym not in tracked:
+                untracked.append(
+                    {"asset": sym, "qty": qty, "market_value_cad": h.get("market_value_cad")}
+                )
+
+        recon = {
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "held": [
+                {"asset": h.get("symbol"), "qty": h.get("qty"), "market_value_cad": h.get("market_value_cad")}
+                for h in (held or [])
+            ],
+            "tracked_assets": sorted(tracked),
+            "untracked": untracked,
+        }
+        if untracked:
+            self.repo.audit("reconciliation_untracked", {"untracked": untracked})
+        return recon
 
     def _build_session(self, decision, pitches, challenges, ranked, hurdle_rate, portfolio) -> dict:
         """The full boardroom session — every division's status, what it pitched,

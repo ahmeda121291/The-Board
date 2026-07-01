@@ -85,11 +85,23 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   finalized (P&L booked, tracking row deleted) when the sell actually executes — a rejected
   sell leaves it open to retry, so the record never claims a sale that didn't happen.
   Exits evaluate on daily closes (intraday-tick exits are a future upgrade).
+- **Execution truth** (`fills` table, migration 0012): every broker fill (buy AND
+  sell, live AND paper) persists the instant the broker returns — BEFORE any other
+  write — with qty/price/fee/txid. A mid-run crash can never lose the record of
+  money moving again (one did on 2026-07-01: live SOLCAD buy, decision+position
+  lost, reconstructed manually).
+- **Run health** (`runs` table): every checkpoint records started→ok/**crashed**
+  (+error), the breaker evaluation, and a **venue reconciliation** (Kraken
+  holdings vs tracked positions; orphans → `reconciliation_untracked` audit +
+  dashboard alert). **Circuit breakers are evaluated inside every run** and force
+  a deterministic HOLD when tripped. NaN/Inf sanitized before every Supabase
+  write (`_json_safe`). Poller writes `system_state.poller_seen_at` heartbeat.
 - **Gains ratchet** sweeps a fraction of new highs into an **untouchable reserve**.
 - **Withdrawals DISABLED on every venue** — no transfer code path exists. Keys are
   trade-only and per-venue isolated (Kraken ⟂ equities).
 - **Live gate**: a real order needs BOTH `LIVE_TRADING=true` AND per-call `--confirm-live`.
-  Otherwise every run is a dry-run simulation.
+  Otherwise every run is a dry-run simulation. Enforced in the execution layer
+  (`Orchestrator.effective_live`) for buys and sells alike.
 
 ## Scheduling & market hours
 
@@ -121,14 +133,24 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 - **Code**: `boardroom/` (config, schemas, divisions, ceo, risk, brokers, graph,
   agents, persistence, market.py, **recommend.py**, **portfolio.py**). **Tests**:
-  `tests/` (237 passing; `python -m pytest`).
+  `tests/` (251 passing; `python -m pytest`).
 - **Portfolio view** (`boardroom/portfolio.py`): each checkpoint (and `boardroom
   balances`) snapshots real holdings on BOTH venues — `KrakenBroker.get_positions()`
   (coins priced in CAD + intraday change) and `IBKRBroker.get_positions()` (holdings +
   unrealized P&L) — into crypto/stock/merged books with weights + top movers. Persisted
   to `portfolio_snapshots` (migration 0010); dashboard "Your portfolio" section.
-- **Dashboard**: `dashboard/` (Next.js 14 on Vercel, reads Supabase read-only; Docs
-  page at `/docs`; "Ask the Boardroom" chat = read-only, needs `ANTHROPIC_API_KEY`).
+- **Dashboard**: `dashboard/` (Next.js 14 on Vercel, reads Supabase read-only).
+  Layout: **health strip** (mode, equity, countdown, last-run status incl.
+  crashes, breaker status, scheduler/poller liveness) + four sections:
+  **1 Executed** (fills, paper behind a toggle, orphan alert) · **2 Positions**
+  (cost basis, value, unrealized, exit plan) · **3 Reasoning log** (per-checkpoint
+  cards, crashed runs inline) · **4 Recommendations** (advisory stocks).
+  "Ask the Boardroom" chat = read-only, needs `ANTHROPIC_API_KEY`.
+- **Docs loop**: `/docs` renders `docs/SCOPE.md` + `OPERATIONS.md` + `RUNBOOK.md`
+  from the repo — `dashboard/scripts/sync-docs.mjs` copies them into
+  `dashboard/content/` on every build (npm pre-hooks), so every merge to main
+  auto-updates the dashboard docs. Keep updating SCOPE.md in the same commit as
+  behavior changes; the deploy pipeline handles the rest.
 - **Ops**: `RUNBOOK.md`, `docs/OPERATIONS.md`, `install_scheduler.ps1`, `run_boardroom.ps1`.
 - **Spec**: `docs/SCOPE.md` (living). **Migrations**: `supabase/migrations/`.
 
