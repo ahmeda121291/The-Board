@@ -250,3 +250,45 @@ def test_json_safe_strips_nan_and_infinity():
     dirty = {"a": float("nan"), "b": [1.0, float("inf")], "c": {"d": float("-inf"), "e": 2.0}}
     clean = _json_safe(dirty)
     assert clean == {"a": None, "b": [1.0, None], "c": {"d": None, "e": 2.0}}
+
+
+# ---- persistence ORDER: decision row must exist before the position insert ---------
+
+def test_decision_saved_before_position_and_resaved_after():
+    """open_positions has an FK to decisions — the decision row must be the
+    parent that exists BEFORE the position insert, and it must be re-saved
+    after execution so decision.live reflects the actual fill. (The wrong
+    order broke every position save from 2026-06-30 and crashed the
+    2026-07-01 run.)"""
+
+    class OrderSpyRepo(InMemoryRepository):
+        def __init__(self):
+            super().__init__()
+            self.calls: list[str] = []
+
+        def save_decision(self, decision, ranking):
+            self.calls.append("save_decision")
+            super().save_decision(decision, ranking)
+
+        def save_open_position(self, position):
+            self.calls.append("save_open_position")
+            super().save_open_position(position)
+
+    repo = OrderSpyRepo()
+    org = build_default_org(data_mode="synthetic", repo=repo)
+    pitch = _crypto_pitch()
+    decision = Decision(
+        decision_id=str(uuid.uuid4()), kind=DecisionKind.FUND, division=pitch.division,
+        pitch_id=pitch.pitch_id, size_cad=20.0,
+    )
+    org.gather_pitches = lambda pv: [pitch]
+    org.risk_review = lambda ps, pv: (ps, {})
+    org.decide = lambda ps, hurdle, deployed, pv: (decision, [])
+
+    org.run_once(portfolio_value_cad=250.0)
+
+    assert "save_open_position" in repo.calls, "the funded pitch must open a position"
+    first_decision = repo.calls.index("save_decision")
+    position_at = repo.calls.index("save_open_position")
+    assert first_decision < position_at, "decision (FK parent) must be saved before the position"
+    assert repo.calls.count("save_decision") == 2, "decision re-saved after execution for the live flag"
