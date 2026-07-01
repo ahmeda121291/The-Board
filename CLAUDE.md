@@ -55,13 +55,12 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 - **News/catalyst feed** (`data/news.py`, keyless Yahoo search): computed `news_intensity`
   (recency-weighted headline burst) confirms a breakout; headlines attached as context via
   `Division.enrich()`. Grounding intact: score is code, headlines are context.
-- **Scanned universe** (factory.py): equities scan **wide by default** (~70 liquid
-  stocks/ETFs incl. SNDK + high-momentum names — so a runaway winner isn't missed) since
-  stocks are advisory; crypto scans ~25 liquid **CAD-quoted** Kraken pairs (the account is
-  CAD-funded, so it can only buy CAD pairs). Equities via **Yahoo** (`fetch_equity_daily`,
-  Stooq fallback), crypto via Kraken. Long-only.
+- **Scanned universe** (factory.py): crypto scans ~37 coins on **USD-quoted** Kraken
+  pairs (deep data); execution translates to CAD (`exec_pair_for`) — no CAD market →
+  clean skip. Equity universe only loads when `ENABLE_EQUITIES=true`. Long-only.
 - **CEO** ranks the *fundable* (crypto) pitches deterministically vs hurdle + track record;
-  default HOLD; auto-funds ≤1 best crypto idea. **Risk Manager** adversarially vetoes.
+  default HOLD; funds up to `MAX_FUNDINGS_PER_CHECKPOINT` (2) best DIFFERENT-asset ideas,
+  respecting the per-asset aggregate cap. **Risk Manager** adversarially vetoes.
   **CFO/Strategist** studies the scoreboard, writes a review each checkpoint.
 
 ## Money & safety (non-negotiable)
