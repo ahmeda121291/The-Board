@@ -180,6 +180,64 @@ export type PortfolioSnapshot = {
   top_losers: PortfolioMover[];
 };
 
+// ---- fills — confirmed executions (the record of truth) ---------------------
+export type FillRow = {
+  id: number;
+  created_at: string;
+  run_id: string | null;
+  decision_id: string | null;
+  venue: string;
+  symbol: string;
+  side: "buy" | "sell";
+  qty: number | null;
+  price: number | null;
+  notional_cad: number;
+  fee_cad: number | null;
+  is_live: boolean;
+  order_ref: string | null;
+  exit_reason: string | null; // stop_loss | take_profit | horizon (sells only)
+};
+
+// ---- runs — per-checkpoint health ------------------------------------------
+export type RunRow = {
+  run_id: string;
+  started_at: string;
+  finished_at: string | null;
+  trigger: string; // scheduled | run_now | wide | decide | manual
+  status: "running" | "ok" | "crashed";
+  live: boolean;
+  decision_id: string | null;
+  decision_kind: string | null;
+  error: string | null;
+  breakers: string[];
+  breakers_evaluated: boolean;
+  recon: {
+    checked_at?: string;
+    untracked?: { asset: string; qty: number; market_value_cad: number | null }[];
+  } | null;
+};
+
+// ---- open positions — what the system is actively managing -------------------
+export type OpenPositionRow = {
+  decision_id: string;
+  division: string;
+  venue: string;
+  symbol: string;
+  size_cad: number;
+  predicted_return: number;
+  predicted_confidence: number;
+  cost_cad: number;
+  stop_fraction: number;
+  band_low: number;
+  band_high: number;
+  horizon_days: number;
+  opened_at: string;
+  live: boolean;
+  qty: number;
+};
+
+export type PendingRequest = { id: number; created_at: string; mode: string; status: string };
+
 export type Dashboard = {
   configured: boolean;
   error: string | null;
@@ -203,6 +261,12 @@ export type Dashboard = {
   recommendation: RecommendationPayload | null;
   // Latest portfolio snapshot (crypto + stocks + merged, with performance).
   portfolio: PortfolioSnapshot | null;
+  // Confirmed executions, run health, managed positions, poller liveness.
+  fills: FillRow[];
+  runs: RunRow[];
+  open_positions: OpenPositionRow[];
+  pending_requests: PendingRequest[];
+  poller_seen_at: string | null;
 };
 
 export async function loadDashboard(): Promise<Dashboard> {
@@ -226,13 +290,18 @@ export async function loadDashboard(): Promise<Dashboard> {
     balances_at: null,
     recommendation: null,
     portfolio: null,
+    fills: [],
+    runs: [],
+    open_positions: [],
+    pending_requests: [],
+    poller_seen_at: null,
   };
 
   const sb = serverClient();
   if (!sb) return { ...empty, configured: false };
 
   try {
-    const [divisions, decisions, pitches, outcomes, perf, weekly, audit, strategist, sys, rec, pf] =
+    const [divisions, decisions, pitches, outcomes, perf, weekly, audit, strategist, sys, rec, pf, fills, runs, openPos, pendingReqs] =
       await Promise.all([
         sb.from("division_state").select("*").order("division"),
         sb.from("decisions").select("*").order("created_at", { ascending: false }).limit(50),
@@ -245,6 +314,10 @@ export async function loadDashboard(): Promise<Dashboard> {
         sb.from("system_state").select("*").eq("id", 1).limit(1),
         sb.from("recommendations").select("*").order("created_at", { ascending: false }).limit(1),
         sb.from("portfolio_snapshots").select("*").order("created_at", { ascending: false }).limit(1),
+        sb.from("fills").select("*").order("created_at", { ascending: false }).limit(60),
+        sb.from("runs").select("*").order("started_at", { ascending: false }).limit(15),
+        sb.from("open_positions").select("*").order("opened_at", { ascending: false }),
+        sb.from("run_requests").select("id,created_at,mode,status").in("status", ["pending", "running"]).order("created_at", { ascending: false }).limit(5),
       ]);
 
     const firstError =
@@ -271,6 +344,14 @@ export async function loadDashboard(): Promise<Dashboard> {
       balances_at: sysRow?.balances_at ?? null,
       recommendation: ((rec.data as any[]) ?? [])[0]?.payload ?? null,
       portfolio: ((pf.data as any[]) ?? [])[0]?.payload ?? null,
+      fills: (fills.data as FillRow[]) ?? [],
+      runs: ((runs.data as any[]) ?? []).map((r) => ({
+        ...r,
+        breakers: Array.isArray(r.breakers) ? r.breakers : [],
+      })) as RunRow[],
+      open_positions: (openPos.data as OpenPositionRow[]) ?? [],
+      pending_requests: (pendingReqs.data as PendingRequest[]) ?? [],
+      poller_seen_at: sysRow?.poller_seen_at ?? null,
     };
   } catch (e: any) {
     return { ...empty, configured: true, error: e?.message ?? "Unknown error" };

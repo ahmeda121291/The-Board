@@ -169,6 +169,38 @@ class Repository(abc.ABC):
         """The most recent portfolio snapshot, or None if never taken."""
         ...
 
+    # ---- fills — the execution record of truth --------------------------------
+    @abc.abstractmethod
+    def save_fill(self, fill: dict) -> None:
+        """Persist a broker fill (buy or sell, live or paper).
+
+        Called SYNCHRONOUSLY the moment the broker returns, before any other
+        persistence — a mid-run crash must never lose the record that money moved.
+        """
+        ...
+
+    @abc.abstractmethod
+    def recent_fills(self, limit: int = 100) -> list[dict]: ...
+
+    # ---- runs — per-checkpoint health record -----------------------------------
+    @abc.abstractmethod
+    def start_run(self, run_id: str, trigger: str, live: bool) -> None:
+        """Open a run row (status 'running') at the top of a checkpoint."""
+        ...
+
+    @abc.abstractmethod
+    def finish_run(self, run_id: str, **fields) -> None:
+        """Close a run row: status ok/crashed, decision, breakers, recon, error."""
+        ...
+
+    @abc.abstractmethod
+    def recent_runs(self, limit: int = 20) -> list[dict]: ...
+
+    @abc.abstractmethod
+    def set_poller_seen(self) -> None:
+        """Heartbeat: the Run-now poller is alive (dashboard health strip)."""
+        ...
+
 
 @dataclass
 class InMemoryRepository(Repository):
@@ -190,6 +222,8 @@ class InMemoryRepository(Repository):
     run_requests: list[dict] = field(default_factory=list)
     recommendations: list[dict] = field(default_factory=list)
     portfolios: list[dict] = field(default_factory=list)
+    fills: list[dict] = field(default_factory=list)
+    runs: dict[str, dict] = field(default_factory=dict)
 
     def save_pitch(self, pitch: Pitch) -> None:
         self.pitches.append(pitch)
@@ -304,6 +338,39 @@ class InMemoryRepository(Repository):
 
     def latest_portfolio(self) -> dict | None:
         return dict(self.portfolios[-1]) if self.portfolios else None
+
+    def save_fill(self, fill: dict) -> None:
+        self.fills.append(dict(fill))
+
+    def recent_fills(self, limit: int = 100) -> list[dict]:
+        return [dict(f) for f in self.fills[-limit:]][::-1]
+
+    def start_run(self, run_id: str, trigger: str, live: bool) -> None:
+        from boardroom.schemas import utcnow
+
+        self.runs[run_id] = {
+            "run_id": run_id,
+            "trigger": trigger,
+            "live": live,
+            "status": "running",
+            "started_at": utcnow().isoformat(),
+        }
+
+    def finish_run(self, run_id: str, **fields) -> None:
+        from boardroom.schemas import utcnow
+
+        row = self.runs.setdefault(run_id, {"run_id": run_id})
+        row.update(fields)
+        row.setdefault("finished_at", utcnow().isoformat())
+
+    def recent_runs(self, limit: int = 20) -> list[dict]:
+        rows = sorted(self.runs.values(), key=lambda r: r.get("started_at", ""), reverse=True)
+        return [dict(r) for r in rows[:limit]]
+
+    def set_poller_seen(self) -> None:
+        from boardroom.schemas import utcnow
+
+        self.system_state["poller_seen_at"] = utcnow().isoformat()
 
 
 def get_repository() -> Repository:

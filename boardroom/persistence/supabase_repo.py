@@ -7,6 +7,7 @@ schema is created by ``supabase/migrations`` and exposed to PostgREST there.
 from __future__ import annotations
 
 import json
+import math
 
 from datetime import datetime, timezone
 
@@ -19,6 +20,28 @@ _SCHEMA = "boardroom"
 
 def _jsonable(obj) -> dict:
     return json.loads(obj.model_dump_json()) if hasattr(obj, "model_dump_json") else obj
+
+
+def _json_safe(obj):
+    """Recursively replace NaN/Infinity with None so PostgREST never rejects a
+    write. A NaN feature slipping into a session payload must degrade to null,
+    not crash the checkpoint mid-persistence (that's how a live fill got
+    orphaned on 2026-07-01)."""
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
+def _finite(x: float, default: float = 0.0) -> float:
+    try:
+        f = float(x)
+    except (TypeError, ValueError):
+        return default
+    return f if math.isfinite(f) else default
 
 
 class SupabaseRepository(Repository):
@@ -62,10 +85,10 @@ class SupabaseRepository(Repository):
                 "kind": decision.kind.value,
                 "division": decision.division.value if decision.division else None,
                 "pitch_id": decision.pitch_id,
-                "size_cad": decision.size_cad,
-                "hurdle_rate": decision.hurdle_rate,
+                "size_cad": _finite(decision.size_cad),
+                "hurdle_rate": _finite(decision.hurdle_rate),
                 "rationale": decision.rationale,
-                "ranked": ranking,
+                "ranked": _json_safe(ranking),
                 "live": decision.live,
             }
         ).execute()
@@ -238,6 +261,40 @@ class SupabaseRepository(Repository):
             return res.data[0].get("payload")
         return None
 
+    # ---- fills — the execution record of truth --------------------------------
+    def save_fill(self, fill: dict) -> None:
+        self._t("fills").insert(_json_safe(dict(fill))).execute()
+
+    def recent_fills(self, limit: int = 100) -> list[dict]:
+        res = self._t("fills").select("*").order("created_at", desc=True).limit(limit).execute()
+        return res.data or []
+
+    # ---- runs — per-checkpoint health record -----------------------------------
+    def start_run(self, run_id: str, trigger: str, live: bool) -> None:
+        self._t("runs").insert(
+            {
+                "run_id": run_id,
+                "trigger": trigger,
+                "live": live,
+                "status": "running",
+                "started_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).execute()
+
+    def finish_run(self, run_id: str, **fields) -> None:
+        row = _json_safe(dict(fields))
+        row["finished_at"] = datetime.now(timezone.utc).isoformat()
+        self._t("runs").update(row).eq("run_id", run_id).execute()
+
+    def recent_runs(self, limit: int = 20) -> list[dict]:
+        res = self._t("runs").select("*").order("started_at", desc=True).limit(limit).execute()
+        return res.data or []
+
+    def set_poller_seen(self) -> None:
+        self._t("system_state").upsert(
+            {"id": 1, "poller_seen_at": datetime.now(timezone.utc).isoformat()}
+        ).execute()
+
     # ---- open positions ------------------------------------------------------
     def save_open_position(self, position: OpenPosition) -> None:
         self._t("open_positions").upsert(
@@ -246,17 +303,17 @@ class SupabaseRepository(Repository):
                 "division": position.division,
                 "venue": position.venue,
                 "symbol": position.symbol,
-                "size_cad": position.size_cad,
-                "predicted_return": position.predicted_return,
-                "predicted_confidence": position.predicted_confidence,
-                "cost_cad": position.cost_cad,
-                "stop_fraction": position.stop_fraction,
-                "band_low": position.band_low,
-                "band_high": position.band_high,
-                "horizon_days": position.horizon_days,
+                "size_cad": _finite(position.size_cad),
+                "predicted_return": _finite(position.predicted_return),
+                "predicted_confidence": _finite(position.predicted_confidence),
+                "cost_cad": _finite(position.cost_cad),
+                "stop_fraction": _finite(position.stop_fraction),
+                "band_low": _finite(position.band_low),
+                "band_high": _finite(position.band_high),
+                "horizon_days": _finite(position.horizon_days, 1.0),
                 "opened_at": position.opened_at.isoformat(),
                 "live": position.live,
-                "qty": position.qty,
+                "qty": _finite(position.qty),
             }
         ).execute()
 

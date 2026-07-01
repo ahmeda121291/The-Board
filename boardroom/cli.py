@@ -67,7 +67,7 @@ def _decide(args: argparse.Namespace) -> int:
     console.rule(f"[bold]Decision loop ({'LIVE' if live else 'dry-run'})")
     if live:
         org.repo.set_live_armed(True)  # durable: dashboard shows LIVE-armed across redeploys
-    result = org.run_once()
+    result = org.run_once(trigger="decide")
     d = result.decision
 
     # Only crypto pitches are risk-reviewed/funded; equities are advisory and
@@ -171,7 +171,7 @@ def _run(args: argparse.Namespace) -> int:
                 while datetime.now(timezone.utc) < nxt:
                     remaining = (nxt - datetime.now(timezone.utc)).total_seconds()
                     _time.sleep(max(1.0, min(60.0, remaining)))
-            result = org.run_once()
+            result = org.run_once(trigger="scheduled")
             d = result.decision
             head = d.kind.value.upper() + (f" {d.division.value} {d.size_cad:.2f} CAD" if d.division else "")
             console.print(f"[bold]checkpoint {datetime.now(timezone.utc):%H:%M UTC}[/bold] -> {head}")
@@ -296,6 +296,10 @@ def _poll(args: argparse.Namespace) -> int:
                 if live and not armed:
                     org.repo.set_live_armed(True)
                     armed = True
+                # Liveness heartbeat: the dashboard health strip shows whether
+                # the poller is actually running (a dead poller = "Run now"
+                # clicks queue forever, which is otherwise invisible).
+                org.repo.set_poller_seen()
                 req = org.repo.claim_next_run_request()
             except KeyboardInterrupt:
                 raise
@@ -324,7 +328,7 @@ def _poll(args: argparse.Namespace) -> int:
                             wide=True,
                         )
                     )
-                    result = run_org.run_once()
+                    result = run_org.run_once(trigger="wide" if mode == "wide" else "run_now")
                     d = result.decision
                     head = d.kind.value.upper() + (
                         f" {d.division.value} {d.size_cad:.2f} CAD" if d.division else ""
