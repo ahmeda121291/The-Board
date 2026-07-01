@@ -169,8 +169,15 @@ def test_run_once_persists_a_recommendation():
     from boardroom.factory import build_default_org
     from boardroom.persistence.repository import InMemoryRepository
 
+    from boardroom.config import Settings
+
     repo = InMemoryRepository()
-    org = build_default_org(data_mode="synthetic", repo=repo)
+    # Equities are sunset by default — the advisory recommendation only exists
+    # when ENABLE_EQUITIES is switched back on.
+    org = build_default_org(
+        data_mode="synthetic", repo=repo,
+        settings=Settings(_env_file=None, ENABLE_EQUITIES=True),
+    )
     org.run_once(bankroll_cad=200)
     rec = repo.latest_recommendation()
     assert rec is not None

@@ -129,7 +129,7 @@ export default async function Page() {
         <div>
           <h1 className="title-grad text-3xl font-bold tracking-tight">BOARDROOM</h1>
           <p className="mt-1 text-xs uppercase tracking-[0.25em] text-slate-500">
-            crypto auto-trades · stocks advised · once per checkpoint
+            autonomous crypto capital allocator
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2 text-[11px] text-slate-500">
@@ -197,18 +197,21 @@ export default async function Page() {
         <ReasoningLog decisions={d.decisions} runs={d.runs} />
       </Section>
 
-      {/* 4 — RECOMMENDATIONS: advisory only, you place these */}
-      <Section
-        title="4 · Recommendations — stocks (advisory)"
-        desc="The system never trades stocks. This is its recommended IBKR portfolio and the diff against your actual holdings — you place the orders."
-      >
-        {d.recommendation?.generated_at ? (
+      {/* 4 — RECOMMENDATIONS (legacy advisory stocks). Equities are SUNSET:
+          this section only renders while a reasonably fresh recommendation
+          exists (i.e. ENABLE_EQUITIES was on recently). Crypto-first. */}
+      {d.recommendation?.generated_at &&
+      Date.now() - new Date(d.recommendation.generated_at).getTime() < 3 * 86400 * 1000 ? (
+        <Section
+          title="4 · Recommendations — stocks (advisory)"
+          desc="The system never trades stocks. This is its recommended IBKR portfolio and the diff against your actual holdings — you place the orders."
+        >
           <div className="mb-2 text-xs text-slate-500">
             generated {ago(d.recommendation.generated_at)}
           </div>
-        ) : null}
-        <Portfolio rec={d.recommendation} />
-      </Section>
+          <Portfolio rec={d.recommendation} />
+        </Section>
+      ) : null}
 
       {/* ---- one click away ------------------------------------------------- */}
 

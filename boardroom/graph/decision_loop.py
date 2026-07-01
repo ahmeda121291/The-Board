@@ -32,6 +32,18 @@ from boardroom.persistence.repository import Repository, get_repository
 from boardroom.schemas import Decision, DecisionKind, Pitch, Venue
 
 
+#: Quote currencies stripped when mapping a pair symbol to its base asset
+#: (SOLUSD/SOLCAD → SOL). Order matters: check longer quotes first.
+_QUOTES = ("USDT", "USDC", "CAD", "USD")
+
+
+def _base_asset(symbol: str) -> str:
+    for q in _QUOTES:
+        if symbol.endswith(q) and len(symbol) > len(q):
+            return symbol[: -len(q)]
+    return symbol
+
+
 @dataclass
 class LoopResult:
     decision: Decision
@@ -635,30 +647,91 @@ class Orchestrator:
         # pitches never are. This is the venue split, enforced here.
         fundable = [p for p in pitches if p.venue == Venue.KRAKEN]
         survivors, challenges = self.risk_review(fundable, portfolio)
-        decision, ranked = self.decide(survivors, hurdle_rate, deployed_cad, portfolio)
 
-        session = self._build_session(decision, pitches, challenges, ranked, hurdle_rate, portfolio)
+        # Per-asset aggregate exposure cap: not a "never rebuy" rule — the CEO
+        # may keep adding to a winner until the asset holds ASSET_MAX_EXPOSURE_PCT
+        # of the book; past that, its pitches step aside and the next-best idea
+        # gets the capital. Prevents one trending coin eating every checkpoint.
+        asset_cap_cad = self.settings.asset_max_exposure_pct * max(0.0, portfolio)
+        exposure: dict[str, float] = {}
+        for pos in self.repo.open_positions():
+            a = _base_asset(pos.symbol)
+            exposure[a] = exposure.get(a, 0.0) + pos.size_cad
+        capped_ids: set[str] = set()
+        for p in list(survivors):
+            a = _base_asset(p.symbol)
+            if exposure.get(a, 0.0) >= asset_cap_cad > 0:
+                capped_ids.add(p.pitch_id)
+                survivors.remove(p)
+                self.repo.audit(
+                    "asset_cap_skip",
+                    {
+                        "pitch_id": p.pitch_id,
+                        "symbol": p.symbol,
+                        "asset": a,
+                        "exposure_cad": round(exposure[a], 2),
+                        "cap_cad": round(asset_cap_cad, 2),
+                    },
+                )
+
+        # Fund up to MAX_FUNDINGS_PER_CHECKPOINT ideas, best-first. Every pick
+        # must clear the bar and every cap independently; a funded asset is
+        # excluded from the rest of this checkpoint, so the second slot goes to
+        # a DIFFERENT coin — diversification instead of winner-take-all.
+        max_fund = max(1, int(self.settings.max_fundings_per_checkpoint))
+        remaining = list(survivors)
+        deployed = deployed_cad
+        decisions: list[Decision] = []
+        fills: list[Any] = []
+        decision, ranked = self.decide(remaining, hurdle_rate, deployed, portfolio)
+        session = self._build_session(
+            decision, pitches, challenges, ranked, hurdle_rate, portfolio, capped_ids=capped_ids
+        )
         # Persist the decision BEFORE execution: open_positions has a foreign key
         # to decisions, so the parent row must exist before the position insert.
-        # (Saving it only after execution is what broke every position save since
-        # 2026-06-30 — and crashed the 2026-07-01 run outright.) Then re-save
-        # after execution so decision.live reflects the actual fill, keeping the
-        # dashboard's LIVE badge truthful.
+        # Then re-save after execution so decision.live reflects the actual fill.
         self.repo.save_decision(decision, session)
-        fills = self.execute(decision, pitches)
+        fills += self.execute(decision, pitches)
         self.repo.save_decision(decision, session)
+        decisions.append(decision)
+
+        while decisions[-1].kind == DecisionKind.FUND and len(decisions) < max_fund:
+            last = decisions[-1]
+            deployed += last.size_cad
+            funded = next((p for p in pitches if p.pitch_id == last.pitch_id), None)
+            funded_asset = _base_asset(funded.symbol) if funded else None
+            remaining = [
+                p
+                for p in remaining
+                if p.pitch_id != last.pitch_id and _base_asset(p.symbol) != funded_asset
+            ]
+            if not remaining:
+                break
+            extra, extra_ranked = self.decide(remaining, hurdle_rate, deployed, portfolio)
+            if extra.kind != DecisionKind.FUND:
+                break  # nothing else clears the bar — don't log a noise HOLD row
+            extra_session = self._build_session(
+                extra, remaining, challenges, extra_ranked, hurdle_rate, portfolio,
+                capped_ids=capped_ids,
+            )
+            extra_session["additional_funding"] = len(decisions) + 1
+            self.repo.save_decision(extra, extra_session)
+            fills += self.execute(extra, pitches)
+            self.repo.save_decision(extra, extra_session)
+            decisions.append(extra)
 
         # Reconcile what the venue actually holds against what we track — the
         # net that catches an orphaned position no matter how it was created.
         recon = self.reconcile_positions()
 
-        # Advisory equities: publish the recommended stock portfolio + the diff
-        # against the real IBKR holdings. Never trades; best-effort so a failure
-        # here can't affect the (crypto) execution above.
-        try:
-            self.generate_recommendations(pitches, hurdle_rate)
-        except Exception as e:  # noqa: BLE001
-            self.repo.audit("recommendation_error", {"error": str(e)[:160]})
+        # Advisory equities (SUNSET by default — ENABLE_EQUITIES resurrects):
+        # publish the recommended stock portfolio + the IBKR diff. Never trades;
+        # best-effort so a failure can't affect the (crypto) execution above.
+        if self.settings.enable_equities:
+            try:
+                self.generate_recommendations(pitches, hurdle_rate)
+            except Exception as e:  # noqa: BLE001
+                self.repo.audit("recommendation_error", {"error": str(e)[:160]})
 
         # Snapshot what's actually held on each venue (crypto coins + stock
         # holdings + cash + performance) for the dashboard. Best-effort.
@@ -730,11 +803,7 @@ class Orchestrator:
         for pos in self.repo.open_positions():
             if pos.venue != "kraken":
                 continue
-            base = pos.symbol
-            for quote in ("CAD", "USDT", "USDC", "USD"):
-                if base.endswith(quote) and len(base) > len(quote):
-                    base = base[: -len(quote)]
-                    break
+            base = _base_asset(pos.symbol)
             tracked[base] = tracked.get(base, 0.0) + (pos.qty or 0.0)
 
         untracked = []
@@ -761,11 +830,15 @@ class Orchestrator:
             self.repo.audit("reconciliation_untracked", {"untracked": untracked})
         return recon
 
-    def _build_session(self, decision, pitches, challenges, ranked, hurdle_rate, portfolio) -> dict:
+    def _build_session(
+        self, decision, pitches, challenges, ranked, hurdle_rate, portfolio,
+        capped_ids: set[str] | None = None,
+    ) -> dict:
         """The full boardroom session — every division's status, what it pitched,
         the risk manager's verdict, and the CEO's ranking + reason. This is the
         narrative the dashboard renders."""
         ranked_by_id = {r.pitch.pitch_id: r for r in ranked}
+        capped_ids = capped_ids or set()
 
         pitch_rows = []
         for p in pitches:
@@ -776,6 +849,12 @@ class Orchestrator:
                 status, reason = "shadow", "advisory — feeds the recommended portfolio, not auto-traded"
             elif decision.pitch_id == p.pitch_id and decision.kind.value == "fund":
                 status, reason = "funded", "CEO funded — best risk-adjusted edge over the floor"
+            elif p.pitch_id in capped_ids:
+                status, reason = (
+                    "passed",
+                    "asset exposure cap reached — already holding the max share of "
+                    "this coin; capital goes to the next-best idea instead",
+                )
             elif ch is not None and not ch.approved:
                 status, reason = "vetoed", "; ".join(ch.hard_objections) or "risk manager veto"
             elif r is not None and r.rejected_reason:

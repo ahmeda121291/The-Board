@@ -30,11 +30,15 @@ DIRECTIONAL_UNIVERSE = (
     "GOOGL", "META", "LLY", "AVGO",      # incl. high-catalyst megacaps (LLY = the Trump-news case)
     "COST", "UNH", "V",
 )
-# Crypto pairs are CAD-quoted to match the CAD-funded account — a CAD account
-# can only BUY CAD pairs, so data, signals, and execution all use *CAD. (An
-# unknown CAD pair simply fails its data fetch and is skipped, never fatal.)
+# Crypto ANALYSIS runs on USD-quoted pairs — that's where Kraken's deep, liquid
+# OHLC history lives, so the models see real data for dozens of coins instead of
+# the handful with usable CAD candles. EXECUTION still happens in the account
+# currency: the broker translates at order time (``exec_pair_for``: XBTUSD →
+# XBTCAD). A coin whose CAD market doesn't exist fails the order cleanly
+# (execute_error audit, skipped, never fatal) — and with multi-funding per
+# checkpoint the next-best idea still gets the capital.
 EVENT_UNIVERSE = (
-    "XBTCAD", "ETHCAD", "SOLCAD", "XRPCAD", "ADACAD", "LINKCAD", "DOTCAD",
+    "XBTUSD", "ETHUSD", "SOLUSD", "XRPUSD", "ADAUSD", "LINKUSD", "DOTUSD",
 )
 
 # "Wide scan" — the broad equity universe used for the daily recommendation
@@ -54,13 +58,15 @@ DIRECTIONAL_UNIVERSE_WIDE = DIRECTIONAL_UNIVERSE + (
     "SNDK", "PLTR", "SMCI", "ARM", "COIN", "MSTR", "CRWD", "DDOG", "SNOW",
     "NOW", "ANET", "MRVL", "DELL", "WDC", "MARA", "RIOT", "HOOD", "RBLX",
 )
-# Wider crypto — additional CAD-quoted majors/large-caps with Kraken CAD markets.
-# Anything without a real CAD pair just abstains at data-fetch, so the list is
-# safe to keep generous.
+# Wider crypto — large-caps and liquid mid-caps, analyzed on their deep USD
+# books. Kept generous on purpose: a pair with no data abstains at fetch, and a
+# coin with no CAD execution market errors cleanly at order time and is skipped.
 EVENT_UNIVERSE_WIDE = EVENT_UNIVERSE + (
-    "LTCCAD", "AVAXCAD", "DOGECAD", "ATOMCAD", "ALGOCAD", "MATICCAD",
-    "BCHCAD", "XLMCAD", "ETCCAD", "FILCAD", "UNICAD", "AAVECAD",
-    "GRTCAD", "SANDCAD", "MANACAD", "AXSCAD", "EOSCAD", "KAVACAD",
+    "LTCUSD", "AVAXUSD", "DOGEUSD", "ATOMUSD", "ALGOUSD", "MATICUSD",
+    "BCHUSD", "XLMUSD", "ETCUSD", "FILUSD", "UNIUSD", "AAVEUSD",
+    "GRTUSD", "SANDUSD", "MANAUSD", "AXSUSD", "EOSUSD", "KAVAUSD",
+    "NEARUSD", "APTUSD", "ARBUSD", "OPUSD", "INJUSD", "SUIUSD",
+    "TIAUSD", "SEIUSD", "TRXUSD", "XTZUSD", "PEPEUSD", "RENDERUSD",
 )
 
 
@@ -107,7 +113,9 @@ def build_default_org(
     from boardroom.config import get_settings
     from boardroom.models.yield_model import YieldModel
 
-    settings = get_settings()
+    # Honor an injected Settings (tests, overrides); fall back to the env-backed
+    # singleton. This is what makes ENABLE_EQUITIES testable per-org.
+    settings = orch_kwargs.get("settings") or get_settings()
 
     # The Directional leg executes on IBKR (Client Portal Gateway). The division
     # is tagged with it so its pitches route to the matching broker.
@@ -119,19 +127,8 @@ def build_default_org(
     # Seed the floor from the configured carry (your real earned APR); the live
     # Kraken Earn provider is attached below when a real broker is present.
     yield_div = YieldDivision(model=YieldModel(carry_apr=settings.floor_carry_apr))
-    directional = DirectionalDivision(
-        fetchers=directional_fetchers, venue=dv, universe_symbols=dir_syms
-    )
     event = EventDivision(
         fetchers=event_fetchers, enabled=enable_event, universe_symbols=evt_syms
-    )
-    # Momentum (catalyst-continuation) scans equities AND crypto and routes each
-    # pitch to its venue. Advisory: it logs breakouts but never trades real money
-    # until validated. This is the structural answer to missing catalyst moves.
-    momentum = MomentumDivision(
-        fetchers=list(directional_fetchers) + list(event_fetchers),
-        equity_venue=dv,
-        universe_symbols=dir_syms + evt_syms,
     )
     # Crypto Trend — the always-on crypto workhorse. Scans the same Kraken pairs
     # as Event but with the trend/mean-reversion model, so it proposes a long
@@ -143,7 +140,26 @@ def build_default_org(
     )
     effort = EffortDivision()  # disabled
 
-    divisions = [directional, event, momentum, crypto_trend, effort]
+    if settings.enable_equities:
+        # Legacy advisory stock leg (SUNSET by default since 2026-07; flip
+        # ENABLE_EQUITIES=true to resurrect). Scans equities and publishes the
+        # recommended-portfolio diff; never auto-trades.
+        directional = DirectionalDivision(
+            fetchers=directional_fetchers, venue=dv, universe_symbols=dir_syms
+        )
+        momentum = MomentumDivision(
+            fetchers=list(directional_fetchers) + list(event_fetchers),
+            equity_venue=dv,
+            universe_symbols=dir_syms + evt_syms,
+        )
+        divisions = [directional, event, momentum, crypto_trend, effort]
+    else:
+        # Crypto-first: no equity scans at all (no Yahoo/Stooq fetches, no
+        # gateway dependency). Momentum hunts breakouts on crypto only.
+        momentum = MomentumDivision(
+            fetchers=list(event_fetchers), equity_venue=dv, universe_symbols=evt_syms
+        )
+        divisions = [event, momentum, crypto_trend, effort]
 
     # Real adapters when requested + credentialed; stubs otherwise. Live
     # execution still requires the LIVE_TRADING master switch regardless.
