@@ -231,6 +231,15 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-07-01** — **Two-key live gate enforced in the execution layer.** Both the
+  buy path (`Orchestrator.execute`) and the live sell path (`_close_position_live`)
+  previously fired on `LIVE_TRADING` alone — a `boardroom run`/`poll` invoked
+  *without* `--confirm-live` (but with `LIVE_TRADING=true` in `.env`) would have
+  placed real orders while the console printed "dry-run". The per-run confirm flag
+  is now threaded into the orchestrator (`Orchestrator.confirm_live` →
+  `effective_live`); either key alone is a dry-run, exactly as documented.
+  `boardroom decide --confirm-live` also now wires real brokers (it silently used
+  stubs before). 5 regression tests.
 - **2026-06-30 (g)** — **Real auto-sell (it can now exit, not just buy).** First live BUY
   filled (SOLCAD $25) — but the resolution loop only booked paper P&L and deleted the
   tracking row; it never sold, so coins accumulated and "realized" P&L was fictional. Now a

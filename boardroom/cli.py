@@ -60,7 +60,9 @@ def _decide(args: argparse.Namespace) -> int:
     live = bool(args.confirm_live and s.live_trading)
 
     org = build_default_org(
-        data_mode="synthetic" if args.synthetic else "live"
+        data_mode="synthetic" if args.synthetic else "live",
+        prefer_live_brokers=not args.synthetic,
+        confirm_live=live,
     )
     console.rule(f"[bold]Decision loop ({'LIVE' if live else 'dry-run'})")
     if live:
@@ -150,6 +152,7 @@ def _run(args: argparse.Namespace) -> int:
     org = build_default_org(
         data_mode="synthetic" if args.synthetic else "live",
         prefer_live_brokers=not args.synthetic,
+        confirm_live=live,
     )
     console.rule(f"[bold]Boardroom scheduler ({'LIVE' if live else 'dry-run'})")
     console.print(f"Daily checkpoints at [bold]{s.checkpoint_times} UTC[/bold]. Ctrl+C to stop.\n")
@@ -274,6 +277,7 @@ def _poll(args: argparse.Namespace) -> int:
     org = build_default_org(
         data_mode="synthetic" if args.synthetic else "live",
         prefer_live_brokers=not args.synthetic,
+        confirm_live=live,
     )
     console.rule(f"[bold]Boardroom poller ({'LIVE' if live else 'dry-run'})")
     console.print(f"Watching for 'Run now' requests every {args.interval:.0f}s. Ctrl+C to stop.\n")
@@ -316,6 +320,7 @@ def _poll(args: argparse.Namespace) -> int:
                         else build_default_org(
                             data_mode="synthetic" if args.synthetic else "live",
                             prefer_live_brokers=not args.synthetic,
+                            confirm_live=live,
                             wide=True,
                         )
                     )

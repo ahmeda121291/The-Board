@@ -53,6 +53,15 @@ class Orchestrator:
     brokers: dict[Venue, Broker] = field(default_factory=dict)
     risk_manager: RiskManager | None = None
     engine: CEODecisionEngine | None = None
+    #: Second key of the two-key live gate. LIVE_TRADING (env) arms the system;
+    #: this per-run flag — set only when the CLI was invoked with --confirm-live —
+    #: fires it. A real order (buy OR sell) requires BOTH; either alone is a
+    #: dry-run, exactly as the docs have always promised.
+    confirm_live: bool = False
+
+    @property
+    def effective_live(self) -> bool:
+        return bool(self.settings.live_trading and self.confirm_live)
 
     def __post_init__(self) -> None:
         caps = self.settings.caps
@@ -208,7 +217,7 @@ class Orchestrator:
         broker = self.brokers.get(pitch.venue)
         if broker is None:
             return fills
-        live = self.settings.live_trading  # the hard gate
+        live = self.effective_live  # two-key gate: LIVE_TRADING AND --confirm-live
 
         # Equities only fill during the regular session. If we'd go live on an
         # equity venue while the market is closed, hold the leg rather than queue
@@ -452,7 +461,7 @@ class Orchestrator:
             client_order_id=str(uuid.uuid4()),
             base_qty=pos.qty if pos.qty and pos.qty > 0 else None,
         )
-        fill = broker.place_order(order, live=self.settings.live_trading)
+        fill = broker.place_order(order, live=self.effective_live)
         if not fill.is_live:
             return False  # dry-run can't close a real live position — keep it open
         self.repo.audit(
