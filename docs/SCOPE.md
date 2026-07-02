@@ -149,6 +149,27 @@ into the thousands. **The daily-loss (6%) and max-drawdown (15%) breakers are ne
 gain is swept into an **untouchable reserve** — locking in progress so the system
 plays with house money over time.
 
+**Growth ladder (milestones — signals only).** Every checkpoint, total equity
+(investable + reserve, so the ratchet can never demote the system) is mapped
+through a pure, deterministic ladder (`adaptive/growth.py`) to a named tier.
+The $500/$5,000 rungs deliberately match the aggression schedule's ramp, so the
+ladder *narrates* the same progression the sizing already rides — it changes
+**no trading behavior**. What it adds is the `requires_human` unlock layer:
+
+| Tier | Total equity ≥ | Eligible to build/enable (human call) |
+| --- | --- | --- |
+| 0 · seed | $0 | — |
+| 1 · sprout | $500 | — |
+| 2 · sapling | $1,000 | — |
+| 3 · grove | $2,500 | intraday **tick-level** exits (today exits evaluate on daily closes at checkpoints) |
+| 4 · canopy | $5,000 | + intraday **surge entries** (today entries happen only at checkpoints) |
+
+Each checkpoint audits a `growth_tier` event and the session carries the tier
+(current rung, next unlock and the equity it needs), so the audit trail and
+dashboard show when the account has *earned* a capability. Nothing auto-enables:
+crossing a threshold makes the feature worth its fee drag; turning it on stays a
+human decision requiring code/scheduler changes.
+
 ---
 
 ## 5. When it runs — and the market-hours rule
@@ -268,6 +289,13 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-07-02** — **Growth ladder (signals only).** Every checkpoint maps total
+  equity (investable + reserve) through a deterministic tier ladder
+  (`adaptive/growth.py`); the tier is audited (`growth_tier` event) and carried
+  in the session with the next unlock and the equity it needs. Rungs align with
+  the aggression schedule ($500/$5,000); higher rungs flag intraday tick-level
+  exits ($2.5k) and intraday surge entries ($5k) as eligible — `requires_human`
+  signals, never auto-enabled. No trading behavior changed. 267 tests.
 - **2026-07-01 (d)** — **Crypto-first.** Equities SUNSET by default
   (`ENABLE_EQUITIES=false`): no stock scans, no recommendations, no IBKR
   dependency — code dormant, not deleted. Crypto analysis widened to ~37 coins

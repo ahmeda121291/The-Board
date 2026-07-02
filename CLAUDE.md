@@ -76,6 +76,12 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   `AGGRESSIVE_BELOW_CAD` / `CONSERVATIVE_ABOVE_CAD`. The **daily-loss (6%) and drawdown
   (15%) circuit breakers are NEVER scaled** — they're the "don't lose it all in one day"
   backstop regardless of aggression.
+- **Growth ladder** (`adaptive/growth.py`): every checkpoint maps total equity
+  (investable + reserve) to a named tier — **signals only**, no behavior change.
+  Rungs align with the aggression ramp ($500/$5k); grove ($2.5k) flags intraday
+  tick-level exits and canopy ($5k) flags intraday surge entries as eligible —
+  `requires_human`, surfaced via the `growth_tier` audit event + session field,
+  never auto-enabled.
 - **Minimum-order floor** (`MIN_ORDER_CAD`, default 25): a small-conviction crypto order is
   bumped up to the exchange minimum so it actually fills — clamped to the per-trade cap, so
   it never breaches the risk envelope. Crypto trades execute in **CAD pairs** (account is

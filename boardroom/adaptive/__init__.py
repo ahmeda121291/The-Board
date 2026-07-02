@@ -7,6 +7,8 @@ turn resolved outcomes into slowly-updated trust:
 - ``leash`` — earned, bounded per-division risk multiplier.
 - ``retirement`` — the kill switch for divisions that don't earn their keep.
 - ``refit`` — periodic model re-fit, fenced by anti-overfit guardrails.
+- ``growth`` — equity-milestone ladder; pure signals (requires_human unlock
+  flags surfaced via audit/session), never a behavior change.
 
 The whole design point is to adapt *without* adapting into garbage: tiny samples
 aren't trusted, moves are bounded, and re-fits must survive walk-forward.
@@ -20,6 +22,7 @@ from boardroom.adaptive.calibration import (
     seed_prior,
     trust_multiplier,
 )
+from boardroom.adaptive.growth import TIERS, GrowthTier, tier_for, tier_payload
 from boardroom.adaptive.leash import update_leash
 from boardroom.adaptive.refit import (
     RefitResult,
@@ -31,6 +34,10 @@ from boardroom.adaptive.refit import (
 from boardroom.adaptive.retirement import should_retire
 
 __all__ = [
+    "TIERS",
+    "GrowthTier",
+    "tier_for",
+    "tier_payload",
     "CalibrationPosterior",
     "seed_prior",
     "posterior_from_outcomes",

@@ -46,6 +46,10 @@ def _doctor() -> int:
     console.print(f"  daily loss limit   : {s.daily_loss_limit_pct:.0%}  = {s.daily_loss_limit_pct * pv:.2f} CAD")
     console.print(f"  max drawdown       : {s.max_drawdown_pct:.0%}")
     console.print(f"  fee drag limit     : {s.fee_drag_limit_pct:.0%}")
+    from boardroom.adaptive.growth import tier_for
+
+    t = tier_for(pv)
+    console.print(f"\n[bold]Growth tier[/bold]          : {t.name} (tier {t.index}) — {t.milestone}")
     console.print("\n[dim]Caps scale with the portfolio (percent-based). Venue keys: trade-only, withdrawals DISABLED.[/dim]")
     return 0
 
