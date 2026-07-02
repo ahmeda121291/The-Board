@@ -144,6 +144,20 @@ class Orchestrator:
                 self.repo.audit("ratchet", {"reserve_cad": new.reserve_cad, "equity_cad": round(equity, 2)})
         return investable_cad(equity, new.reserve_cad)
 
+    def growth_tier(self, investable_cad: float) -> dict:
+        """Measure TOTAL equity (investable + protected reserve, so the ratchet
+        never demotes the system) against the deterministic growth ladder.
+        Signals only — no trading behavior changes: the payload is audited every
+        checkpoint and carried in the session so the trail/dashboard show which
+        future capabilities (requires_human) the equity now justifies."""
+        from boardroom.adaptive.growth import tier_for, tier_payload
+
+        reserve = self.repo.get_system_state().get("reserve_cad", 0.0) or 0.0
+        equity = max(0.0, investable_cad) + max(0.0, reserve)
+        payload = tier_payload(tier_for(equity), equity)
+        self.repo.audit("growth_tier", payload)
+        return payload
+
     def load_adaptive_state(self) -> None:
         """Hydrate the CEO engine with live calibration posteriors and leashes."""
         from boardroom.adaptive.calibration import CalibrationPosterior
@@ -610,6 +624,7 @@ class Orchestrator:
             if bankroll_cad is not None
             else self.settle_and_ratchet()  # live equity minus the protected reserve
         )
+        growth = self.growth_tier(portfolio)
         # Resolve matured positions FIRST so today's decision uses the freshest
         # calibration/leashes the just-resolved outcomes produced.
         self.resolve_positions()
@@ -634,7 +649,7 @@ class Orchestrator:
                 ),
             )
             self.repo.audit("circuit_breaker", {"tripped": breakers})
-            session = self._build_session(decision, [], {}, [], hurdle_rate, portfolio)
+            session = self._build_session(decision, [], {}, [], hurdle_rate, portfolio, growth=growth)
             session["circuit_breakers"] = breakers
             self.repo.save_decision(decision, session)
             self._finish_run_ok(run_id, decision, breakers, recon=None)
@@ -685,7 +700,8 @@ class Orchestrator:
         fills: list[Any] = []
         decision, ranked = self.decide(remaining, hurdle_rate, deployed, portfolio)
         session = self._build_session(
-            decision, pitches, challenges, ranked, hurdle_rate, portfolio, capped_ids=capped_ids
+            decision, pitches, challenges, ranked, hurdle_rate, portfolio,
+            capped_ids=capped_ids, growth=growth,
         )
         # Persist the decision BEFORE execution: open_positions has a foreign key
         # to decisions, so the parent row must exist before the position insert.
@@ -832,7 +848,7 @@ class Orchestrator:
 
     def _build_session(
         self, decision, pitches, challenges, ranked, hurdle_rate, portfolio,
-        capped_ids: set[str] | None = None,
+        capped_ids: set[str] | None = None, growth: dict | None = None,
     ) -> dict:
         """The full boardroom session — every division's status, what it pitched,
         the risk manager's verdict, and the CEO's ranking + reason. This is the
@@ -903,6 +919,7 @@ class Orchestrator:
         return {
             "hurdle_rate": hurdle_rate,
             "portfolio_value_cad": portfolio,
+            "growth_tier": growth,
             "pitches": pitch_rows,
             "divisions": division_rows,
             "universe": universe,
@@ -922,6 +939,7 @@ def build_decision_graph(orch: Orchestrator):
         return state.get("portfolio_value_cad", state.get("bankroll_cad", 200.0))
 
     def n_gather(state: dict) -> dict:
+        state["growth_tier"] = orch.growth_tier(_pv(state))
         orch.resolve_positions()
         orch.load_adaptive_state()
         orch.load_model_params()
