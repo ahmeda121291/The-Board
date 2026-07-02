@@ -107,81 +107,64 @@ function MoverChips({ movers, tone }: { movers: PortfolioMover[]; tone: "good" |
 }
 
 export function PortfolioOverview({ snap }: { snap: PortfolioSnapshot | null }) {
-  if (!snap || snap.total_value_cad <= 0) {
+  // Crypto-only: equities are sunset, so only the Kraken book renders. Any
+  // stocks fields still present in older snapshots are simply ignored.
+  const crypto = snap?.crypto ?? null;
+  if (!snap || !crypto || (crypto.total_value_cad ?? 0) <= 0) {
     return (
       <Empty>
         No live portfolio synced yet. Run <code className="text-sky-300">boardroom balances</code> on your
-        PC (or wait for the next checkpoint) to pull your real Kraken coins + cash and IBKR holdings.
+        PC (or wait for the next checkpoint) to pull your real Kraken coins + cash.
       </Empty>
     );
   }
 
-  const cw = Math.round(snap.crypto_weight * 100);
-  const sw = Math.round(snap.stocks_weight * 100);
+  const gainers = snap.top_gainers.filter((m) => m.venue === "kraken");
+  const losers = snap.top_losers.filter((m) => m.venue === "kraken");
 
   return (
     <div className="space-y-4">
-      {/* Merged summary */}
+      {/* Summary */}
       <div className="glass hud p-5">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <div className="label">Total equity · both venues</div>
-            <div className="num mt-1 text-4xl font-bold text-white glow-cyan">{cad(snap.total_value_cad)}</div>
+            <div className="label">Total equity · Kraken</div>
+            <div className="num mt-1 text-4xl font-bold text-white glow-cyan">
+              {cad(crypto.total_value_cad ?? 0)}
+            </div>
           </div>
           <div className="text-right text-xs text-slate-400">
-            <div className="num">
-              <span className="text-sky-300">crypto {cad(snap.crypto.total_value_cad ?? 0)}</span>
-              <span className="mx-2 text-slate-600">·</span>
-              <span className="text-violet-300">stocks {cad(snap.stocks.total_value_cad ?? 0)}</span>
+            <div className="num text-sky-300">
+              cash {crypto.cash_cad === null ? "—" : cad(crypto.cash_cad)}
             </div>
             <div className="mt-1">{snap.generated_at ? `synced ${ago(snap.generated_at)}` : ""}</div>
           </div>
-        </div>
-        {/* split bar */}
-        <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-white/5">
-          <div className="bg-sky-400/70" style={{ width: `${cw}%` }} title={`crypto ${cw}%`} />
-          <div className="bg-violet-400/70" style={{ width: `${sw}%` }} title={`stocks ${sw}%`} />
-        </div>
-        <div className="mt-1 flex justify-between text-[10px] uppercase tracking-widest text-slate-500">
-          <span>crypto {cw}%</span>
-          <span>stocks {sw}%</span>
         </div>
         {/* movers */}
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div>
             <div className="label mb-1.5">Gaining today</div>
-            <MoverChips movers={snap.top_gainers} tone="good" />
+            <MoverChips movers={gainers} tone="good" />
           </div>
           <div>
             <div className="label mb-1.5">Losing today</div>
-            <MoverChips movers={snap.top_losers} tone="bad" />
+            <MoverChips movers={losers} tone="bad" />
           </div>
         </div>
       </div>
 
-      {/* Per-venue books */}
-      <div className="grid gap-3 lg:grid-cols-2">
-        <VenueCard
-          title="Crypto portfolio (Kraken)"
-          tag="auto-traded"
-          tagTone="good"
-          book={snap.crypto}
-          showPnl={false}
-          emptyHint="No coins held — all in cash / the staking floor."
-        />
-        <VenueCard
-          title="Stock portfolio (IBKR)"
-          tag="advisory"
-          tagTone="violet"
-          book={snap.stocks}
-          showPnl={true}
-          emptyHint="No stock holdings synced (authenticate the IBKR gateway to see them)."
-        />
-      </div>
+      {/* The Kraken book */}
+      <VenueCard
+        title="Crypto portfolio (Kraken)"
+        tag="auto-traded"
+        tagTone="good"
+        book={crypto}
+        showPnl={false}
+        emptyHint="No coins held — all in cash / the staking floor."
+      />
       <p className="pl-1 text-xs text-slate-500">
-        “Today” is each holding’s intraday price change. Stock unrealized P&amp;L is vs your cost basis
-        (from IBKR). Crypto P&amp;L vs cost isn’t shown — Kraken doesn’t expose a simple cost basis — so
-        crypto shows value + today’s move.
+        “Today” is each coin’s intraday price change. P&amp;L vs cost isn’t shown — Kraken doesn’t
+        expose a simple cost basis — so each coin shows value + today’s move.
       </p>
     </div>
   );
