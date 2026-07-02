@@ -42,7 +42,8 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   deployable cap), reads the real IBKR holdings (`IBKRBroker.get_positions()`), and diffs
   them → buy/sell/trim/hold actions. `agents/advisor.py` writes the plain-English
   "buy COST / sell SNDK" note. Code computes every number; the LLM only narrates. Persisted
-  to `recommendations` (migration 0009); shown on the dashboard each checkpoint.
+  to `recommendations` (migration 0009). Dashboard UI for it was REMOVED with the
+  crypto-only dashboard (2026-07-02) — resurrect from git history alongside the flag.
 - **Crypto Trend** (`divisions/crypto_trend.py`): the **always-on crypto workhorse** —
   reuses the trend/mean-reversion `DirectionalModel` on the Kraken universe and proposes a
   long whenever there's positive edge (not just on a rare trigger), so the system regularly
@@ -143,16 +144,17 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   agents, persistence, market.py, **recommend.py**, **portfolio.py**). **Tests**:
   `tests/` (251 passing; `python -m pytest`).
 - **Portfolio view** (`boardroom/portfolio.py`): each checkpoint (and `boardroom
-  balances`) snapshots real holdings on BOTH venues — `KrakenBroker.get_positions()`
-  (coins priced in CAD + intraday change) and `IBKRBroker.get_positions()` (holdings +
-  unrealized P&L) — into crypto/stock/merged books with weights + top movers. Persisted
-  to `portfolio_snapshots` (migration 0010); dashboard "Your portfolio" section.
+  balances`) snapshots real holdings — `KrakenBroker.get_positions()` (coins priced
+  in CAD + intraday change; IBKR book still captured in the payload but no longer
+  rendered) — persisted to `portfolio_snapshots` (migration 0010); dashboard
+  "Your portfolio" section shows the Kraken book only.
 - **Dashboard**: `dashboard/` (Next.js 14 on Vercel, reads Supabase read-only).
-  Layout: **health strip** (mode, equity, countdown, last-run status incl.
-  crashes, breaker status, scheduler/poller liveness) + four sections:
-  **1 Executed** (fills, paper behind a toggle, orphan alert) · **2 Positions**
-  (cost basis, value, unrealized, exit plan) · **3 Reasoning log** (per-checkpoint
-  cards, crashed runs inline) · **4 Recommendations** (advisory stocks).
+  **Crypto-only (2026-07-02)** — no stocks/IBKR UI; health-strip equity counts
+  Kraken cash only. Layout: **health strip** (mode, equity, countdown, last-run
+  status incl. crashes, breaker status, scheduler/poller liveness) + three
+  sections: **1 Executed** (fills, paper behind a toggle, orphan alert) ·
+  **2 Positions** (cost basis, value, unrealized, exit plan) · **3 Reasoning log**
+  (per-checkpoint cards, crashed runs inline).
   "Ask the Boardroom" chat = read-only, needs `ANTHROPIC_API_KEY`.
 - **Docs loop**: `/docs` renders `docs/SCOPE.md` + `OPERATIONS.md` + `RUNBOOK.md`
   from the repo — `dashboard/scripts/sync-docs.mjs` copies them into

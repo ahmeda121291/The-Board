@@ -226,7 +226,9 @@ dashboard's read-only safety property. The daily scheduler stays on alongside th
 ## 8. The dashboard
 
 A Vercel-hosted dashboard reads the logged state from Supabase (read-only),
-password-gated, organized as a **health strip + four glanceable sections**:
+password-gated, organized as a **health strip + three glanceable sections**
+(**crypto-only since 2026-07** — the stocks/IBKR UI was removed with the
+equities sunset; resurrect it from git history if the stock leg returns):
 
 1. **Executed** — confirmed fills only (`fills` table, written the moment the
    broker returns: side, qty, price, notional, fee, live/paper, exit reason).
@@ -238,8 +240,6 @@ password-gated, organized as a **health strip + four glanceable sections**:
 3. **Reasoning log** — one expandable card per checkpoint: every idea with the
    reason it was funded / vetoed / passed over, the CEO's rationale, and the
    CFO's standing view. **Crashed runs appear inline in red** (`runs` table).
-4. **Recommendations** — the advisory stock portfolio and the diff against the
-   real IBKR holdings, clearly labeled as never auto-traded.
 
 The health strip on top shows mode (LIVE/armed/dry-run), live equity, the
 next-checkpoint countdown, last-run status (including crashes), breaker status
@@ -250,20 +250,12 @@ one click below. `/docs` renders `docs/SCOPE.md`, `docs/OPERATIONS.md`, and
 `RUNBOOK.md` **directly from the repo at build time** — every merge to main
 redeploys and re-syncs them, so the dashboard docs can never drift.
 
-It also shows two holdings views:
-
-- **Your portfolio** — what's actually held across both venues, from a portfolio
-  snapshot taken each checkpoint (`boardroom/portfolio.py`, persisted via migration
-  0010): crypto coins + cash on Kraken (with each coin's intraday change), stock
-  holdings + cash + unrealized P&L on IBKR, the crypto/stock split, and the day's top
-  gainers/losers. `KrakenBroker.get_positions()` / `IBKRBroker.get_positions()` read
-  the real books; every derived number is code-computed (unpriced holdings show as
-  such rather than guessed).
-- **Stocks — recommended portfolio** — the plain-English advisory note, the actionable
-  buy/sell/trim list, and **"Current portfolio in IBKR" vs "Recommended portfolio"**
-  side by side.
-
-All read-only — the user places any stock orders in IBKR themselves.
+It also shows **Your portfolio** — the Kraken book, from a portfolio snapshot
+taken each checkpoint (`boardroom/portfolio.py`, persisted via migration 0010):
+coins + cash with each coin's intraday change and the day's top gainers/losers.
+`KrakenBroker.get_positions()` reads the real book; every derived number is
+code-computed (unpriced holdings show as such rather than guessed). The health
+strip's equity figure likewise counts Kraken only. All read-only.
 
 ---
 
@@ -289,6 +281,11 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-07-02 (b)** — **Dashboard goes crypto-only.** The stocks/IBKR UI is
+  removed to match the equities sunset: no Recommendations section, no IBKR
+  book in "Your portfolio", and the health-strip equity counts Kraken cash
+  only (was Kraken + IBKR). The backend advisory code stays dormant behind
+  `ENABLE_EQUITIES`; the UI is resurrectable from git history.
 - **2026-07-02** — **Growth ladder (signals only).** Every checkpoint maps total
   equity (investable + reserve) through a deterministic tier ladder
   (`adaptive/growth.py`); the tier is audited (`growth_tier` event) and carried

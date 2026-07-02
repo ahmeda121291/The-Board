@@ -2,7 +2,6 @@ import Link from "next/link";
 import { Empty, Pill, Section, Stat, Table } from "@/components/ui";
 import { Refresher } from "@/components/Refresher";
 import { SessionHistory } from "@/components/SessionHistory";
-import { Portfolio } from "@/components/Portfolio";
 import { PortfolioOverview } from "@/components/PortfolioOverview";
 import { EquityChart } from "@/components/EquityChart";
 import { AskBoardroom } from "@/components/AskBoardroom";
@@ -91,13 +90,11 @@ export default async function Page() {
   const roll = rollupOutcomes(d.outcomes);
   const perf = d.performance?.payload ?? null;
 
-  // Equity: real synced venue cash when available, else baseline + realized P&L.
+  // Equity: real synced Kraken cash when available, else baseline + realized P&L.
+  // Crypto-only — equities are sunset, so IBKR cash no longer counts here.
   const krakenSynced = d.kraken_cash_cad !== null;
-  const ibkrSynced = d.ibkr_cash_cad !== null;
-  const balancesSynced = d.balances_at !== null && (krakenSynced || ibkrSynced);
-  const syncedEquity =
-    (krakenSynced ? (d.kraken_cash_cad as number) : 0) + (ibkrSynced ? (d.ibkr_cash_cad as number) : 0);
-  const equity = balancesSynced ? syncedEquity : dep.total + roll.pnl;
+  const balancesSynced = d.balances_at !== null && krakenSynced;
+  const equity = balancesSynced ? (d.kraken_cash_cad as number) : dep.total + roll.pnl;
 
   const latest = d.decisions[0] ?? null;
   const checkpointTimes = process.env.CHECKPOINT_TIMES || process.env.CHECKPOINT_UTC || "13:30,19:00";
@@ -196,22 +193,6 @@ export default async function Page() {
         <StrategistCard review={d.strategist} />
         <ReasoningLog decisions={d.decisions} runs={d.runs} />
       </Section>
-
-      {/* 4 — RECOMMENDATIONS (legacy advisory stocks). Equities are SUNSET:
-          this section only renders while a reasonably fresh recommendation
-          exists (i.e. ENABLE_EQUITIES was on recently). Crypto-first. */}
-      {d.recommendation?.generated_at &&
-      Date.now() - new Date(d.recommendation.generated_at).getTime() < 3 * 86400 * 1000 ? (
-        <Section
-          title="4 · Recommendations — stocks (advisory)"
-          desc="The system never trades stocks. This is its recommended IBKR portfolio and the diff against your actual holdings — you place the orders."
-        >
-          <div className="mb-2 text-xs text-slate-500">
-            generated {ago(d.recommendation.generated_at)}
-          </div>
-          <Portfolio rec={d.recommendation} />
-        </Section>
-      ) : null}
 
       {/* ---- one click away ------------------------------------------------- */}
 

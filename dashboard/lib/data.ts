@@ -104,46 +104,8 @@ export type StrategyReview = {
   standing: any;
 };
 
-// ---- equities recommendation (advisory; stocks are never auto-traded) -------
-export type RecHolding = {
-  symbol: string;
-  rank: number;
-  score: number;
-  expected_return: number;
-  confidence: number;
-  price: number;
-  target_weight: number;
-  target_cad: number;
-  horizon_days: number;
-  division: string;
-  rationale: string;
-};
-export type RecCurrentHolding = {
-  symbol: string;
-  qty: number;
-  avg_cost: number;
-  market_value_cad: number;
-};
-export type RecAction = {
-  symbol: string;
-  action: "buy" | "add" | "trim" | "sell" | "hold";
-  current_cad: number;
-  target_cad: number;
-  delta_cad: number;
-  reason: string;
-};
-export type RecommendationPayload = {
-  generated_at: string;
-  stock_equity_cad: number;
-  cash_weight: number;
-  holdings: RecHolding[];
-  current: RecCurrentHolding[];
-  actions: RecAction[];
-  narrative: string;
-  universe_size: number;
-};
-
-// ---- portfolio snapshot (what's actually held, both venues) -----------------
+// ---- portfolio snapshot (what's actually held; crypto-only since 2026-07,
+// stocks fields remain in older rows and are ignored by the UI) ---------------
 export type PortfolioHolding = {
   symbol: string;
   venue: string;
@@ -257,9 +219,7 @@ export type Dashboard = {
   ibkr_cash_cad: number | null;
   equity_cad: number | null;
   balances_at: string | null;
-  // Latest advisory equities recommendation (target book vs actual holdings).
-  recommendation: RecommendationPayload | null;
-  // Latest portfolio snapshot (crypto + stocks + merged, with performance).
+  // Latest portfolio snapshot (the Kraken book; crypto-only).
   portfolio: PortfolioSnapshot | null;
   // Confirmed executions, run health, managed positions, poller liveness.
   fills: FillRow[];
@@ -288,7 +248,6 @@ export async function loadDashboard(): Promise<Dashboard> {
     ibkr_cash_cad: null,
     equity_cad: null,
     balances_at: null,
-    recommendation: null,
     portfolio: null,
     fills: [],
     runs: [],
@@ -301,7 +260,7 @@ export async function loadDashboard(): Promise<Dashboard> {
   if (!sb) return { ...empty, configured: false };
 
   try {
-    const [divisions, decisions, pitches, outcomes, perf, weekly, audit, strategist, sys, rec, pf, fills, runs, openPos, pendingReqs] =
+    const [divisions, decisions, pitches, outcomes, perf, weekly, audit, strategist, sys, pf, fills, runs, openPos, pendingReqs] =
       await Promise.all([
         sb.from("division_state").select("*").order("division"),
         sb.from("decisions").select("*").order("created_at", { ascending: false }).limit(50),
@@ -312,7 +271,6 @@ export async function loadDashboard(): Promise<Dashboard> {
         sb.from("audit_log").select("*").order("created_at", { ascending: false }).limit(50),
         sb.from("strategist_reviews").select("*").order("created_at", { ascending: false }).limit(1),
         sb.from("system_state").select("*").eq("id", 1).limit(1),
-        sb.from("recommendations").select("*").order("created_at", { ascending: false }).limit(1),
         sb.from("portfolio_snapshots").select("*").order("created_at", { ascending: false }).limit(1),
         sb.from("fills").select("*").order("created_at", { ascending: false }).limit(60),
         sb.from("runs").select("*").order("started_at", { ascending: false }).limit(15),
@@ -342,7 +300,6 @@ export async function loadDashboard(): Promise<Dashboard> {
       ibkr_cash_cad: sysRow?.ibkr_cash_cad ?? null,
       equity_cad: sysRow?.equity_cad ?? null,
       balances_at: sysRow?.balances_at ?? null,
-      recommendation: ((rec.data as any[]) ?? [])[0]?.payload ?? null,
       portfolio: ((pf.data as any[]) ?? [])[0]?.payload ?? null,
       fills: (fills.data as FillRow[]) ?? [],
       runs: ((runs.data as any[]) ?? []).map((r) => ({
