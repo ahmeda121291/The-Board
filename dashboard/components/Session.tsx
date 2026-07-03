@@ -38,8 +38,27 @@ function plainVeto(objections: string[]): string {
   return objections[0] || "the risk manager blocked it.";
 }
 
-function headline(p: SessionPitch, target: number | null): { icon: string; text: string } {
+// Turn a raw execution error into one plain sentence.
+function plainExecError(err: string | null): string {
+  if (!err) return "the exchange did not confirm a fill — no money moved.";
+  if (err.toLowerCase().includes("no market") || err.toLowerCase().includes("unknown asset pair"))
+    return "Kraken has no CAD market for this coin, so the order can’t exist — no money moved.";
+  return `the order failed — no money moved. (${err})`;
+}
+
+function headline(
+  p: SessionPitch,
+  target: number | null,
+  notFilled: boolean,
+  execError: string | null,
+): { icon: string; text: string } {
   if (p.status === "funded") {
+    if (notFilled) {
+      return {
+        icon: "⚠️",
+        text: `Tried to buy ${cad(p.capital_required)} of ${p.symbol}, but ${plainExecError(execError)}`,
+      };
+    }
     const t = target !== null ? ` We think it’s worth about ${price(target)} — ${pct(p.expected_return)} higher.` : "";
     return { icon: "✅", text: `Bought ${cad(p.capital_required)} of ${p.symbol}.${t}` };
   }
@@ -61,13 +80,21 @@ function Metric({ label, value, tone }: { label: string; value: React.ReactNode;
   );
 }
 
-function PitchCard({ p }: { p: SessionPitch }) {
+function PitchCard({
+  p,
+  notFilled = false,
+  execError = null,
+}: {
+  p: SessionPitch;
+  notFilled?: boolean;
+  execError?: string | null;
+}) {
   const px = typeof p.features?.price === "number" ? p.features.price : null;
   const hasPlan = px !== null && px > 0;
   const target = hasPlan ? px * (1 + p.expected_return) : null;
   const units = hasPlan ? p.capital_required / px : null;
-  const funded = p.status === "funded";
-  const h = headline(p, target);
+  const funded = p.status === "funded" && !notFilled;
+  const h = headline(p, target, notFilled, execError);
 
   return (
     <div className="glass hud p-4">
@@ -84,7 +111,11 @@ function PitchCard({ p }: { p: SessionPitch }) {
             <span>{p.venue}</span>
           </div>
         </div>
-        <Pill tone={statusTone(p.status)}>{p.status.toUpperCase()}</Pill>
+        {p.status === "funded" && notFilled ? (
+          <Pill tone="bad">NOT FILLED</Pill>
+        ) : (
+          <Pill tone={statusTone(p.status)}>{p.status.toUpperCase()}</Pill>
+        )}
       </div>
 
       {/* the trade plan, only when we actually bought */}
@@ -154,7 +185,18 @@ function FilterChip({
   );
 }
 
-export function SessionView({ session }: { session: Session | null }) {
+export function SessionView({
+  session,
+  filled = null,
+  execError = null,
+  fundedPitchId = null,
+}: {
+  session: Session | null;
+  // For FUND decisions: did the exchange confirm a fill? null = unknown/not a fund.
+  filled?: boolean | null;
+  execError?: string | null;
+  fundedPitchId?: string | null;
+}) {
   const [filter, setFilter] = React.useState<"all" | Bucket>("all");
 
   if (!session || (!session.pitches?.length && !session.divisions?.length)) {
@@ -202,6 +244,7 @@ export function SessionView({ session }: { session: Session | null }) {
             <summary className="cursor-pointer hover:text-slate-300">What do these mean?</summary>
             <ul className="mt-2 space-y-1">
               <li><b className="text-emerald-300">Bought</b> — the CEO put real money into this idea.</li>
+              <li><b className="text-rose-300">Not filled</b> — the CEO funded it but the exchange rejected the order (e.g. no CAD market); no money moved.</li>
               <li><b className="text-rose-300">Skipped</b> — the risk manager blocked it (usually the gain didn’t beat the cost, or it broke a risk limit).</li>
               <li><b className="text-amber-300">Considered</b> — a fair idea, but parking the cash in the safe “floor” (interest/yield) was the better bet today.</li>
               <li><b className="text-slate-300">Watching</b> — a new strategy still being validated; it’s logged but never funded with real money yet.</li>
@@ -210,9 +253,18 @@ export function SessionView({ session }: { session: Session | null }) {
 
           {shown.length ? (
             <div className="space-y-3">
-              {shown.map((p) => (
-                <PitchCard key={p.pitch_id} p={p} />
-              ))}
+              {shown.map((p) => {
+                const isTheFundedPitch =
+                  p.status === "funded" && (!fundedPitchId || p.pitch_id === fundedPitchId);
+                return (
+                  <PitchCard
+                    key={p.pitch_id}
+                    p={p}
+                    notFilled={isTheFundedPitch && filled === false}
+                    execError={isTheFundedPitch ? execError : null}
+                  />
+                );
+              })}
             </div>
           ) : (
             <div className="glass p-4 text-sm text-slate-400">Nothing in this category this checkpoint.</div>

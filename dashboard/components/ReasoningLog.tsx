@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Pill } from "@/components/ui";
 import { SessionView } from "@/components/Session";
-import type { Decision, RunRow, Session } from "@/lib/data";
+import type { AuditRow, Decision, FillRow, RunRow, Session } from "@/lib/data";
 import { ago, cad, divLabel, when } from "@/lib/format";
 
 // Section 3 — WHAT IT CONSIDERED. One card per checkpoint: what was scanned,
@@ -29,9 +29,30 @@ type Item =
   | { type: "decision"; at: string; decision: Decision; run: RunRow | null }
   | { type: "crash"; at: string; run: RunRow };
 
-export function ReasoningLog({ decisions, runs }: { decisions: Decision[]; runs: RunRow[] }) {
+export function ReasoningLog({
+  decisions,
+  runs,
+  fills = [],
+  audit = [],
+}: {
+  decisions: Decision[];
+  runs: RunRow[];
+  fills?: FillRow[];
+  audit?: AuditRow[];
+}) {
   const runByDecision = new Map<string, RunRow>();
   for (const r of runs) if (r.decision_id) runByDecision.set(r.decision_id, r);
+
+  // A FUNDED decision is only a *bought* trade if the exchange confirmed a
+  // fill (live or paper). No fill = the order never happened — say so.
+  const filledDecisions = new Set(fills.map((f) => f.decision_id).filter(Boolean));
+  const execErrorByDecision = new Map<string, string>();
+  for (const a of audit) {
+    const p = (a.payload ?? {}) as Record<string, any>;
+    if (a.event === "execute_error" && p.decision_id && !execErrorByDecision.has(p.decision_id)) {
+      execErrorByDecision.set(p.decision_id, String(p.error ?? "order failed"));
+    }
+  }
 
   const items: Item[] = [
     ...decisions.map((d) => ({
@@ -88,6 +109,12 @@ export function ReasoningLog({ decisions, runs }: { decisions: Decision[]; runs:
             : null;
         const nPitches = session?.pitches?.length ?? 0;
         const trigger = item.run ? TRIGGER_LABEL[item.run.trigger] ?? item.run.trigger : null;
+        // Only meaningful for FUND decisions: did the exchange actually fill it?
+        const filled = d.kind === "fund" ? filledDecisions.has(d.decision_id) : null;
+        const execError =
+          d.kind === "fund" && filled === false
+            ? execErrorByDecision.get(d.decision_id) ?? null
+            : null;
 
         return (
           <details key={d.decision_id} className="group glass hud" open={i === 0}>
@@ -97,6 +124,7 @@ export function ReasoningLog({ decisions, runs }: { decisions: Decision[]; runs:
                 <span className="text-sm capitalize text-slate-200">{divLabel(d.division)}</span>
               ) : null}
               {d.size_cad > 0 ? <span className="num text-sm text-white">{cad(d.size_cad)}</span> : null}
+              {filled === false ? <Pill tone="bad">⚠ NOT FILLED</Pill> : null}
               <Pill tone={d.live ? "bad" : "default"}>{d.live ? "LIVE" : "dry-run"}</Pill>
               <span className="text-xs text-slate-500">
                 {trigger ? `${trigger} · ` : ""}
@@ -115,7 +143,12 @@ export function ReasoningLog({ decisions, runs }: { decisions: Decision[]; runs:
                 {d.rationale || "(no rationale recorded)"}
               </p>
               <div className="mt-3">
-                <SessionView session={session} />
+                <SessionView
+                  session={session}
+                  filled={filled}
+                  execError={execError}
+                  fundedPitchId={d.pitch_id}
+                />
               </div>
             </div>
           </details>

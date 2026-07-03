@@ -45,6 +45,49 @@ def volume_from_notional(notional_cad: float, price: float) -> float:
     return round(notional_cad / price, 8)
 
 
+#: Cached CAD-quoted pair names — CAD listings change rarely, one fetch per
+#: process is plenty. Only successful lookups are cached, so a transient
+#: failure retries on the next checkpoint.
+_cad_pairs_cache: frozenset[str] | None = None
+
+
+def tradable_cad_pairs(timeout: float = 15.0) -> frozenset[str] | None:
+    """Every CAD-quoted pair name Kraken actually lists (public AssetPairs).
+
+    Includes both the ``altname`` (e.g. ``SOLCAD``) and the compact ``wsname``
+    (``SOL/CAD`` → ``SOLCAD``) so a membership test against ``exec_pair_for``
+    output is reliable. Returns ``None`` on any failure — callers must then
+    fall back to letting execution error cleanly, never to a static guess.
+    """
+    global _cad_pairs_cache
+    if _cad_pairs_cache is not None:
+        return _cad_pairs_cache
+    try:
+        import httpx  # lazy: keep package importable offline
+
+        resp = httpx.get(f"{_API}/0/public/AssetPairs", timeout=timeout)
+        resp.raise_for_status()
+        payload = resp.json()
+        if payload.get("error"):
+            return None
+        pairs: set[str] = set()
+        for info in payload["result"].values():
+            ws = str(info.get("wsname") or "").upper()
+            alt = str(info.get("altname") or "").upper()
+            if ws.endswith("/CAD"):
+                pairs.add(ws.replace("/", ""))
+                if alt:
+                    pairs.add(alt)
+            elif alt.endswith("CAD"):
+                pairs.add(alt)
+        if not pairs:
+            return None
+        _cad_pairs_cache = frozenset(pairs)
+        return _cad_pairs_cache
+    except Exception:
+        return None
+
+
 def exec_pair_for(symbol: str, quote: str = "CAD") -> str:
     """Translate a data-universe pair to the account's quote currency for orders.
 

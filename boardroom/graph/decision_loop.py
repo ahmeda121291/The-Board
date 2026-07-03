@@ -71,6 +71,10 @@ class Orchestrator:
     #: fires it. A real order (buy OR sell) requires BOTH; either alone is a
     #: dry-run, exactly as the docs have always promised.
     confirm_live: bool = False
+    #: Returns the CAD-quoted pair names Kraken actually lists (or None on
+    #: failure). Wired to ``brokers.kraken.tradable_cad_pairs`` in live data
+    #: mode; left None in synthetic/test mode so nothing touches the network.
+    cad_pair_lookup: Any = None
 
     @property
     def effective_live(self) -> bool:
@@ -661,6 +665,28 @@ class Orchestrator:
         # crypto Momentum breakout can be funded while the same division's stock
         # pitches never are. This is the venue split, enforced here.
         fundable = [p for p in pitches if p.venue == Venue.KRAKEN]
+
+        # Executability gate: analysis runs on USD pairs but orders settle in
+        # CAD, and Kraken doesn't list a CAD market for every coin. A coin that
+        # can never fill must not eat a funding slot (UNIUSD burned three before
+        # this gate). Checked against Kraken's live pair list; if the lookup is
+        # unavailable or fails, fall back to letting execution error cleanly.
+        no_cad_ids: set[str] = set()
+        cad_pairs = self.cad_pair_lookup() if self.cad_pair_lookup else None
+        if cad_pairs:
+            from boardroom.brokers.kraken import exec_pair_for
+
+            quote = self.settings.account_base_currency or "CAD"
+            for p in list(fundable):
+                pair = exec_pair_for(p.symbol, quote)
+                if pair not in cad_pairs:
+                    no_cad_ids.add(p.pitch_id)
+                    fundable.remove(p)
+                    self.repo.audit(
+                        "no_cad_market_skip",
+                        {"pitch_id": p.pitch_id, "symbol": p.symbol, "exec_pair": pair},
+                    )
+
         survivors, challenges = self.risk_review(fundable, portfolio)
 
         # Per-asset aggregate exposure cap: not a "never rebuy" rule — the CEO
@@ -701,7 +727,7 @@ class Orchestrator:
         decision, ranked = self.decide(remaining, hurdle_rate, deployed, portfolio)
         session = self._build_session(
             decision, pitches, challenges, ranked, hurdle_rate, portfolio,
-            capped_ids=capped_ids, growth=growth,
+            capped_ids=capped_ids, growth=growth, no_cad_ids=no_cad_ids,
         )
         # Persist the decision BEFORE execution: open_positions has a foreign key
         # to decisions, so the parent row must exist before the position insert.
@@ -728,7 +754,7 @@ class Orchestrator:
                 break  # nothing else clears the bar — don't log a noise HOLD row
             extra_session = self._build_session(
                 extra, remaining, challenges, extra_ranked, hurdle_rate, portfolio,
-                capped_ids=capped_ids,
+                capped_ids=capped_ids, no_cad_ids=no_cad_ids,
             )
             extra_session["additional_funding"] = len(decisions) + 1
             self.repo.save_decision(extra, extra_session)
@@ -849,12 +875,14 @@ class Orchestrator:
     def _build_session(
         self, decision, pitches, challenges, ranked, hurdle_rate, portfolio,
         capped_ids: set[str] | None = None, growth: dict | None = None,
+        no_cad_ids: set[str] | None = None,
     ) -> dict:
         """The full boardroom session — every division's status, what it pitched,
         the risk manager's verdict, and the CEO's ranking + reason. This is the
         narrative the dashboard renders."""
         ranked_by_id = {r.pitch.pitch_id: r for r in ranked}
         capped_ids = capped_ids or set()
+        no_cad_ids = no_cad_ids or set()
 
         pitch_rows = []
         for p in pitches:
@@ -870,6 +898,12 @@ class Orchestrator:
                     "passed",
                     "asset exposure cap reached — already holding the max share of "
                     "this coin; capital goes to the next-best idea instead",
+                )
+            elif p.pitch_id in no_cad_ids:
+                status, reason = (
+                    "passed",
+                    "no CAD market on Kraken — the order could never fill, so the "
+                    "capital went to the next-best coin instead",
                 )
             elif ch is not None and not ch.approved:
                 status, reason = "vetoed", "; ".join(ch.hard_objections) or "risk manager veto"

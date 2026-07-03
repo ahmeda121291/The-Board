@@ -105,6 +105,13 @@ def build_default_org(
 ) -> Orchestrator:
     if data_mode == "live":
         directional_fetchers, event_fetchers, dir_syms, evt_syms = _live_fetchers(wide=wide)
+        # Executability gate data: Kraken's real CAD-quoted pair list, so a coin
+        # with no CAD market never eats a funding slot. Live mode only — the
+        # lookup touches the network (synthetic/test runs must stay offline).
+        if "cad_pair_lookup" not in orch_kwargs:
+            from boardroom.brokers.kraken import tradable_cad_pairs
+
+            orch_kwargs["cad_pair_lookup"] = tradable_cad_pairs
     else:
         directional_fetchers, event_fetchers = _synthetic_fetchers()
         dir_syms, evt_syms = ["SPY", "QQQ"], ["XBTUSD", "ETHUSD"]

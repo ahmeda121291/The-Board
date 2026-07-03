@@ -21,6 +21,11 @@ function describe(a: AuditRow): { text: string; tone: "info" | "warn" | "bad" } 
         text: `Order FAILED for ${p.symbol ?? "?"} (${cad(p.size_cad)}): ${p.error ?? "unknown error"}`,
         tone: "bad",
       };
+    case "no_cad_market_skip":
+      return {
+        text: `Skipped ${p.symbol ?? "?"} before funding — Kraken has no CAD market (${p.exec_pair ?? "?"}), capital went to the next-best coin`,
+        tone: "info",
+      };
     case "exit_executed":
       return {
         text: `Sold ${p.symbol ?? "?"} — realized ${((p.realized_return ?? 0) * 100).toFixed(2)}%, P&L ${cad(p.pnl_cad)}`,

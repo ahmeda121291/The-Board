@@ -24,8 +24,10 @@ IBKR-diff feature), but by default:
 
 - **Crypto (Kraken) — fully autonomous.** The divisions auto-trade live within
   the caps (default HOLD). Analysis runs on deep **USD-pair data** (~37 coins);
-  execution translates to the account's **CAD pairs** at order time — a coin
-  with no CAD market fails the order cleanly and the next idea gets the capital.
+  execution translates to the account's **CAD pairs** at order time — and a coin
+  with no CAD market is **excluded before funding** (checked against Kraken's
+  live pair list) so it never wastes a slot; if that lookup fails, the order
+  still errors cleanly and the next idea gets the capital.
 - Up to **`MAX_FUNDINGS_PER_CHECKPOINT` (default 2) different coins** can be
   funded per checkpoint, and a **per-asset aggregate cap**
   (`ASSET_MAX_EXPOSURE_PCT`, default 20% of the book) stops any single trending
@@ -67,9 +69,14 @@ are never LLM guesses.
 — that's where the deep, liquid OHLC history lives — across ~37 coins (BTC, ETH,
 SOL, XRP, ADA, LINK, DOT core; wide adds LTC, AVAX, DOGE, ATOM, NEAR, APT, ARB,
 OP, INJ, SUI, TIA, PEPE, and more). **Execution translates to CAD pairs** at
-order time (`exec_pair_for`); a coin with no CAD market fails the order cleanly
-(audited, skipped) and the next-best idea takes the slot. Every symbol runs the
-same grounded model + risk/cost gates.
+order time (`exec_pair_for`). A coin with no CAD market is filtered out
+**before the CEO ranks it** — the executability gate checks Kraken's real
+CAD pair list (public AssetPairs, cached per process), audits a
+`no_cad_market_skip`, and shows "no CAD market" as the pitch's reason in the
+session — so an unfillable coin (UNIUSD did this three times) never eats one
+of the day's funding slots. If the pair-list lookup fails, the gate fails open
+and execution still errors cleanly. Every symbol runs the same grounded model
++ risk/cost gates.
 
 **Diversification is structural, not a ban.** Two rules replace winner-take-all:
 (1) up to `MAX_FUNDINGS_PER_CHECKPOINT` (default 2) ideas fund per checkpoint,
@@ -281,6 +288,15 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-07-03** — **Executability gate + truthful funded cards.** (1) Coins
+  with no CAD market on Kraken are excluded **before funding** — verified
+  against Kraken's live AssetPairs list (`tradable_cad_pairs`, cached per
+  process, fails open to a clean execution error) — so an unfillable coin
+  never eats a funding slot (UNIUSD burned three). Skips are audited
+  (`no_cad_market_skip`) and explained in the session. (2) The dashboard's
+  reasoning cards now cross-check funded decisions against the `fills` table:
+  a FUNDED decision with no confirmed fill shows **"⚠ NOT FILLED — no money
+  moved"** with the execution error, instead of "✅ Bought". 271 tests.
 - **2026-07-02 (b)** — **Dashboard goes crypto-only.** The stocks/IBKR UI is
   removed to match the equities sunset: no Recommendations section, no IBKR
   book in "Your portfolio", and the health-strip equity counts Kraken cash

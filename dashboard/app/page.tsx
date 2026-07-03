@@ -191,7 +191,7 @@ export default async function Page() {
         desc="Every checkpoint: what was scanned, every idea with the reason it was funded, vetoed, or passed over, and the CEO's verdict. Crashed runs show in red."
       >
         <StrategistCard review={d.strategist} />
-        <ReasoningLog decisions={d.decisions} runs={d.runs} />
+        <ReasoningLog decisions={d.decisions} runs={d.runs} fills={d.fills} audit={d.audit} />
       </Section>
 
       {/* ---- one click away ------------------------------------------------- */}
