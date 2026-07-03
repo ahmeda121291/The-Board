@@ -11,10 +11,13 @@
 goes. Live (real money) as of 2026-06. **Crypto-first since 2026-07:**
 
 - **Crypto (Kraken) = fully autonomous, auto-trades live, buy AND sell.** Analysis on
-  deep USD-pair data (~37 coins); execution auto-translates to CAD pairs
-  (`exec_pair_for`; a coin with no CAD market is excluded BEFORE funding via the
-  executability gate — `tradable_cad_pairs`, live Kraken pair list, fails open to
-  a clean execution error). Up to
+  deep USD-pair data (~37 coins); execution settles in `ACCOUNT_BASE_CURRENCY`
+  (`exec_pair_for`; a coin with no market in that quote is excluded BEFORE funding
+  via the executability gate — `tradable_pairs_for`, live Kraken pair list, fails
+  open to a clean execution error). **CAD-funded = only ~5 coins buyable (BTC, ETH,
+  SOL, XRP, PEPE); USD-funded = whole universe.** Risk unit is ALWAYS CAD: USD
+  sizing converts via live USDCAD rate at the broker boundary (`quote_to_cad_rate`,
+  no rate = no trade), cash/holdings valued back to CAD. Up to
   `MAX_FUNDINGS_PER_CHECKPOINT` (2) DIFFERENT assets fund per checkpoint, and the
   per-asset aggregate cap (`ASSET_MAX_EXPOSURE_PCT`, 20%) diverts capital to the
   next-best coin once a winner holds its max share — re-buying below the cap stays
