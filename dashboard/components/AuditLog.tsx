@@ -21,9 +21,10 @@ function describe(a: AuditRow): { text: string; tone: "info" | "warn" | "bad" } 
         text: `Order FAILED for ${p.symbol ?? "?"} (${cad(p.size_cad)}): ${p.error ?? "unknown error"}`,
         tone: "bad",
       };
-    case "no_cad_market_skip":
+    case "no_cad_market_skip": // legacy rows (CAD-funded era)
+    case "no_exec_market_skip":
       return {
-        text: `Skipped ${p.symbol ?? "?"} before funding — Kraken has no CAD market (${p.exec_pair ?? "?"}), capital went to the next-best coin`,
+        text: `Skipped ${p.symbol ?? "?"} before funding — Kraken has no ${p.quote ?? "CAD"} market (${p.exec_pair ?? "?"}), capital went to the next-best coin`,
         tone: "info",
       };
     case "exit_executed":

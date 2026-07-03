@@ -45,23 +45,23 @@ def volume_from_notional(notional_cad: float, price: float) -> float:
     return round(notional_cad / price, 8)
 
 
-#: Cached CAD-quoted pair names — CAD listings change rarely, one fetch per
+#: Cached pair names per quote currency — listings change rarely, one fetch per
 #: process is plenty. Only successful lookups are cached, so a transient
 #: failure retries on the next checkpoint.
-_cad_pairs_cache: frozenset[str] | None = None
+_pairs_cache: dict[str, frozenset[str]] = {}
 
 
-def tradable_cad_pairs(timeout: float = 15.0) -> frozenset[str] | None:
-    """Every CAD-quoted pair name Kraken actually lists (public AssetPairs).
+def tradable_pairs_for(quote: str = "CAD", timeout: float = 15.0) -> frozenset[str] | None:
+    """Every pair name Kraken actually lists in ``quote`` (public AssetPairs).
 
     Includes both the ``altname`` (e.g. ``SOLCAD``) and the compact ``wsname``
     (``SOL/CAD`` → ``SOLCAD``) so a membership test against ``exec_pair_for``
     output is reliable. Returns ``None`` on any failure — callers must then
     fall back to letting execution error cleanly, never to a static guess.
     """
-    global _cad_pairs_cache
-    if _cad_pairs_cache is not None:
-        return _cad_pairs_cache
+    q = (quote or "CAD").upper()
+    if q in _pairs_cache:
+        return _pairs_cache[q]
     try:
         import httpx  # lazy: keep package importable offline
 
@@ -74,16 +74,47 @@ def tradable_cad_pairs(timeout: float = 15.0) -> frozenset[str] | None:
         for info in payload["result"].values():
             ws = str(info.get("wsname") or "").upper()
             alt = str(info.get("altname") or "").upper()
-            if ws.endswith("/CAD"):
+            if ws.endswith(f"/{q}"):
                 pairs.add(ws.replace("/", ""))
                 if alt:
                     pairs.add(alt)
-            elif alt.endswith("CAD"):
+            elif alt.endswith(q):
                 pairs.add(alt)
         if not pairs:
             return None
-        _cad_pairs_cache = frozenset(pairs)
-        return _cad_pairs_cache
+        _pairs_cache[q] = frozenset(pairs)
+        return _pairs_cache[q]
+    except Exception:
+        return None
+
+
+def tradable_cad_pairs(timeout: float = 15.0) -> frozenset[str] | None:
+    """Back-compat alias: the CAD-quoted pair list."""
+    return tradable_pairs_for("CAD", timeout=timeout)
+
+
+def quote_to_cad_rate(quote: str, timeout: float = 15.0) -> float | None:
+    """CAD per 1 unit of ``quote`` (USDCAD ≈ 1.37). 1.0 for CAD; None on failure.
+
+    The system's risk unit is CAD everywhere (caps, equity, P&L); when the
+    account is funded in another currency this rate converts at the broker
+    boundary. Never guessed — a failed lookup returns None and the caller must
+    refuse to size an order rather than trade at a stale/wrong rate.
+    """
+    q = (quote or "CAD").upper()
+    if q == "CAD":
+        return 1.0
+    try:
+        import httpx
+
+        resp = httpx.get(f"{_API}/0/public/Ticker", params={"pair": f"{q}CAD"}, timeout=timeout)
+        resp.raise_for_status()
+        payload = resp.json()
+        result = payload.get("result") or {}
+        if payload.get("error") or not result:
+            return None
+        rate = float(result[next(iter(result))]["c"][0])
+        return rate if rate > 0 else None
     except Exception:
         return None
 
@@ -176,11 +207,13 @@ class KrakenBroker(Broker):
         """Read crypto holdings from the Balance endpoint and value each in CAD.
 
         Returns ``{symbol, qty, market_value_cad, day_change_pct}`` per coin held
-        (fiat CAD cash is excluded — that's reported by ``get_cash_cad``). Each
-        coin is priced via the public ``{ASSET}CAD`` ticker; a coin with no CAD
-        market (or any per-coin error) is skipped rather than guessed, so the
-        numbers shown are always real. Best-effort: returns what it can, never
-        raises into the loop.
+        (fiat cash is excluded — that's reported by ``get_cash_cad``). Each coin
+        is priced via the account-quote market (``{ASSET}USD`` when USD-funded,
+        ``{ASSET}CAD`` when CAD-funded) and converted to CAD at the live FX
+        rate; a CAD-market fallback covers coins missing the quote market. A
+        coin that can't be priced (or the FX rate being unavailable) is listed
+        unpriced rather than guessed, so the numbers shown are always real.
+        Best-effort: returns what it can, never raises into the loop.
         """
         if not self._has_creds:
             return []
@@ -188,6 +221,8 @@ class KrakenBroker(Broker):
             balances = self._private("Balance")
         except Exception:
             return []
+        quote = self._quote_currency
+        rate = quote_to_cad_rate(quote)  # 1.0 in CAD mode; None on FX failure
         out: list[dict] = []
         for asset, amount_str in (balances or {}).items():
             try:
@@ -199,10 +234,19 @@ class KrakenBroker(Broker):
             if asset.upper().startswith("Z") or asset == self._cad_asset:
                 continue  # fiat (ZCAD/ZUSD/ZEUR…) is cash, not a coin holding
             base = _normalize_kraken_asset(asset)
+            last = opn = None
+            to_cad = rate
             try:
-                last, opn = self._ticker_full(f"{base}CAD")
+                last, opn = self._ticker_full(f"{base}{quote}")
             except Exception:
-                # No CAD market or a transient error — list the coin without a
+                if quote != "CAD":
+                    try:
+                        last, opn = self._ticker_full(f"{base}CAD")
+                        to_cad = 1.0
+                    except Exception:
+                        pass
+            if last is None or to_cad is None:
+                # No priceable market (or no FX rate) — list the coin without a
                 # fabricated value rather than dropping it silently.
                 out.append(
                     {"symbol": base, "qty": round(qty, 8), "market_value_cad": None,
@@ -214,7 +258,7 @@ class KrakenBroker(Broker):
                 {
                     "symbol": base,
                     "qty": round(qty, 8),
-                    "market_value_cad": round(qty * last, 2),
+                    "market_value_cad": round(qty * last * to_cad, 2),
                     "day_change_pct": round(day_change, 4) if day_change is not None else None,
                 }
             )
@@ -231,10 +275,20 @@ class KrakenBroker(Broker):
             return False
 
     def get_cash_cad(self) -> float:
+        """Fiat cash valued in CAD — ZCAD at face value plus ZUSD converted at
+        the live USDCAD rate. Handles both funding modes (and the transition:
+        a half-converted account is simply the sum). If the FX rate is
+        unavailable, USD is counted at 1:1 — an UNDERstatement, so the caps
+        that resolve against equity err small, never large."""
         if not self._has_creds:
             return 0.0
         bal = self._private("Balance")
-        return float(bal.get(self._cad_asset, 0.0))
+        cash = float(bal.get(self._cad_asset, 0.0))
+        usd = float(bal.get("ZUSD", 0.0))
+        if usd > 1e-9:
+            rate = quote_to_cad_rate("USD")
+            cash += usd * (rate if rate else 1.0)
+        return cash
 
     # ---- floor APR provider --------------------------------------------------
     def staking_apr(self, assets: tuple[str, ...] = ("USD", "USDC", "USDT", "DAI")) -> float:
@@ -275,18 +329,29 @@ class KrakenBroker(Broker):
             return self._simulate(order)
 
         # Execute in the ACCOUNT's quote currency. The data/signal universe is
-        # USD-quoted (deeper history), but a CAD-funded account can only buy CAD
-        # pairs — buying a USD pair fails with "Insufficient funds". Translate the
-        # quote to CAD for the live order and price it in CAD so the CAD notional
-        # is correct. Coins with no CAD market raise here and are skipped upstream.
+        # USD-quoted (deeper history), but the order must settle in whatever
+        # fiat the account actually holds — a CAD-funded account buys CAD
+        # pairs, a USD-funded account buys USD pairs. Coins with no market in
+        # that quote raise here and are skipped upstream (executability gate).
         exec_pair = exec_pair_for(order.symbol, self._quote_currency)
         price = self._ticker_price(exec_pair)
-        # Closing a position sells the exact held quantity; opening sizes from the
-        # CAD notional.
+        # The system's risk unit is CAD: sizing, caps, and P&L are CAD numbers.
+        # When the exec quote isn't CAD, convert the CAD notional at the live
+        # FX rate BEFORE sizing the volume — otherwise a $25 CAD intent becomes
+        # a $25 USD (~$34 CAD) order and quietly breaches the caps. No rate,
+        # no trade: a clean error beats a mis-sized live order.
+        rate = quote_to_cad_rate(self._quote_currency)
+        if rate is None or rate <= 0:
+            raise RuntimeError(
+                f"Kraken: no CAD FX rate for {self._quote_currency} — refusing to size order"
+            )
+        notional_quote = order.notional_cad / rate
+        # Closing a position sells the exact held quantity; opening sizes from
+        # the (quote-converted) notional.
         volume = (
             round(order.base_qty, 8)
             if order.base_qty is not None
-            else volume_from_notional(order.notional_cad, price)
+            else volume_from_notional(notional_quote, price)
         )
         payload = {
             "pair": exec_pair,

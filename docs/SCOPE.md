@@ -24,10 +24,19 @@ IBKR-diff feature), but by default:
 
 - **Crypto (Kraken) — fully autonomous.** The divisions auto-trade live within
   the caps (default HOLD). Analysis runs on deep **USD-pair data** (~37 coins);
-  execution translates to the account's **CAD pairs** at order time — and a coin
-  with no CAD market is **excluded before funding** (checked against Kraken's
-  live pair list) so it never wastes a slot; if that lookup fails, the order
-  still errors cleanly and the next idea gets the capital.
+  execution settles in the **account's funding currency**
+  (`ACCOUNT_BASE_CURRENCY`) — and a coin with no market in that quote is
+  **excluded before funding** (checked against Kraken's live pair list) so it
+  never wastes a slot; if that lookup fails, the order still errors cleanly
+  and the next idea gets the capital.
+- **Funding currency & FX (2026-07-03).** CAD-funded, only ~5 of the 37 coins
+  have a Kraken CAD market (BTC, ETH, SOL, XRP, PEPE); **USD-funded, the whole
+  universe is buyable.** To switch: convert CAD→USD inside Kraken, set
+  `ACCOUNT_BASE_CURRENCY=USD`. The system's **risk unit stays CAD** — caps,
+  equity, P&L — with conversion at the broker boundary: order sizing divides
+  the CAD notional by the live USDCAD rate (**no rate = no trade**, never
+  1:1), cash reads value ZCAD + ZUSD in CAD, and holdings are priced on the
+  quote market then converted. Sizing at 1:1 would silently over-buy ~37%.
 - Up to **`MAX_FUNDINGS_PER_CHECKPOINT` (default 2) different coins** can be
   funded per checkpoint, and a **per-asset aggregate cap**
   (`ASSET_MAX_EXPOSURE_PCT`, default 20% of the book) stops any single trending
@@ -68,14 +77,14 @@ are never LLM guesses.
 **Scanned universe (crypto-first).** Analysis runs on **USD-quoted Kraken pairs**
 — that's where the deep, liquid OHLC history lives — across ~37 coins (BTC, ETH,
 SOL, XRP, ADA, LINK, DOT core; wide adds LTC, AVAX, DOGE, ATOM, NEAR, APT, ARB,
-OP, INJ, SUI, TIA, PEPE, and more). **Execution translates to CAD pairs** at
-order time (`exec_pair_for`). A coin with no CAD market is filtered out
-**before the CEO ranks it** — the executability gate checks Kraken's real
-CAD pair list (public AssetPairs, cached per process), audits a
-`no_cad_market_skip`, and shows "no CAD market" as the pitch's reason in the
-session — so an unfillable coin (UNIUSD did this three times) never eats one
-of the day's funding slots. If the pair-list lookup fails, the gate fails open
-and execution still errors cleanly. Every symbol runs the same grounded model
+OP, INJ, SUI, TIA, PEPE, and more). **Execution settles in the account's funding currency** (`exec_pair_for`,
+`ACCOUNT_BASE_CURRENCY`). A coin with no market in that quote is filtered out
+**before the CEO ranks it** — the executability gate checks Kraken's real pair
+list for the quote (public AssetPairs, cached per process), audits a
+`no_exec_market_skip`, and shows the reason in the session — so an unfillable
+coin (UNIUSD did this three times from the CAD account) never eats one of the
+day's funding slots. If the pair-list lookup fails, the gate fails open and
+execution still errors cleanly. Every symbol runs the same grounded model
 + risk/cost gates.
 
 **Diversification is structural, not a ban.** Two rules replace winner-take-all:
@@ -288,6 +297,14 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-07-03 (b)** — **USD-funded mode.** Live check showed only 5/37 coins
+  have a Kraken CAD market (BTC, ETH, SOL, XRP, PEPE) — the rest could never
+  fill from a CAD account. `ACCOUNT_BASE_CURRENCY=USD` now executes on USD
+  pairs (whole universe buyable) with an explicit FX layer at the broker
+  boundary: CAD notional ÷ live USDCAD rate for sizing (no rate = no trade),
+  ZUSD cash valued into CAD, holdings priced on the quote market → CAD. Gate
+  generalized (`tradable_pairs_for(quote)`, `no_exec_market_skip` audit).
+  Requires the operator to convert CAD→USD in Kraken first. 276 tests.
 - **2026-07-03** — **Executability gate + truthful funded cards.** (1) Coins
   with no CAD market on Kraken are excluded **before funding** — verified
   against Kraken's live AssetPairs list (`tradable_cad_pairs`, cached per

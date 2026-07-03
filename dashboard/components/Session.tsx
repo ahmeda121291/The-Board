@@ -42,7 +42,7 @@ function plainVeto(objections: string[]): string {
 function plainExecError(err: string | null): string {
   if (!err) return "the exchange did not confirm a fill — no money moved.";
   if (err.toLowerCase().includes("no market") || err.toLowerCase().includes("unknown asset pair"))
-    return "Kraken has no CAD market for this coin, so the order can’t exist — no money moved.";
+    return "Kraken doesn’t list a market this account can trade for this coin, so the order can’t exist — no money moved.";
   return `the order failed — no money moved. (${err})`;
 }
 
