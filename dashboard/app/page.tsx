@@ -246,10 +246,11 @@ export default async function Page() {
                 ))}
               </div>
             ) : null}
-            <Table head={["When", "Team", "Predicted", "Actual", "P&L", "Process / luck"]}>
+            <Table head={["When", "Coin", "Team", "Predicted", "Actual", "P&L", "Process / luck"]}>
               {d.outcomes.slice(0, 25).map((o) => (
                 <tr key={o.id} className="hover:bg-white/[0.02]">
                   <td className="px-4 py-3 text-slate-400">{ago(o.resolved_at)}</td>
+                  <td className="num px-4 py-3 text-slate-200">{o.symbol || "—"}</td>
                   <td className="px-4 py-3 capitalize">{divLabel(o.division)}</td>
                   <td className="num px-4 py-3">{pct(o.predicted_return)}</td>
                   <td className={`num px-4 py-3 ${o.realized_return >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
@@ -258,7 +259,13 @@ export default async function Page() {
                   <td className={`num px-4 py-3 ${o.pnl_cad >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                     {cad(o.pnl_cad)}
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-500">{o.process_luck ?? "—"}</td>
+                  <td
+                    className="px-4 py-3 text-xs text-slate-500"
+                    title={o.postmortem ?? undefined}
+                  >
+                    {o.process_luck ?? "—"}
+                    {o.postmortem ? <span className="ml-1 text-slate-600">ⓘ</span> : null}
+                  </td>
                 </tr>
               ))}
             </Table>

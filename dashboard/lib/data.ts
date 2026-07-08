@@ -79,6 +79,7 @@ export type Outcome = {
   id: number;
   decision_id: string;
   division: string;
+  symbol: string | null; // traded pair (null on legacy rows)
   resolved_at: string;
   predicted_return: number;
   realized_return: number;
