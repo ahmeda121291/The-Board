@@ -523,9 +523,29 @@ class Orchestrator:
                 if bars is not None:
                     cache[bars.symbol] = bars
 
-        return resolve_open_positions(
-            self.repo, lambda pos: cache.get(pos.symbol), close_live=self._close_position_live
-        )
+        def lookup(pos):
+            # Positions store their EXECUTION symbol, but the cache is keyed by
+            # the ANALYSIS symbol — e.g. a CAD-era position holds "SOLCAD" while
+            # the divisions fetch "SOLUSD". Fall back through the base asset so
+            # a legacy position still resolves against the same coin's series
+            # (returns are fractional, so the quote currency cancels out).
+            bars = cache.get(pos.symbol)
+            if bars is None:
+                base = _base_asset(pos.symbol)
+                for q in _QUOTES:
+                    bars = cache.get(f"{base}{q}")
+                    if bars is not None:
+                        break
+            return bars
+
+        # A position nothing can price would otherwise be skipped in silence
+        # forever (four SOLCAD positions sat past-horizon for days this way).
+        # Surface it loudly so the dashboard/event log shows the gap.
+        unpriceable = sorted({p.symbol for p in self.repo.open_positions() if lookup(p) is None})
+        if unpriceable:
+            self.repo.audit("resolution_no_data", {"symbols": unpriceable})
+
+        return resolve_open_positions(self.repo, lookup, close_live=self._close_position_live)
 
     def _close_position_live(self, pos, outcome) -> bool:
         """Execute the EXIT for a resolved position: sell the held quantity on the

@@ -336,14 +336,20 @@ class KrakenBroker(Broker):
         exec_pair = exec_pair_for(order.symbol, self._quote_currency)
         price = self._ticker_price(exec_pair)
         # The system's risk unit is CAD: sizing, caps, and P&L are CAD numbers.
-        # When the exec quote isn't CAD, convert the CAD notional at the live
-        # FX rate BEFORE sizing the volume — otherwise a $25 CAD intent becomes
-        # a $25 USD (~$34 CAD) order and quietly breaches the caps. No rate,
+        # Convert the CAD notional into the EXEC PAIR's own quote currency at
+        # the live FX rate BEFORE sizing the volume — otherwise a $25 CAD
+        # intent becomes a $25 USD (~$34 CAD) order and quietly breaches the
+        # caps. The pair's quote, not the account's: a legacy CAD-pair sell on
+        # a USD-funded account prices in CAD and must size in CAD. No rate,
         # no trade: a clean error beats a mis-sized live order.
-        rate = quote_to_cad_rate(self._quote_currency)
+        pair_quote = next(
+            (q for q in ("USDT", "USDC", "USD", "CAD") if exec_pair.endswith(q)),
+            self._quote_currency,
+        )
+        rate = quote_to_cad_rate("USD" if pair_quote in ("USDT", "USDC") else pair_quote)
         if rate is None or rate <= 0:
             raise RuntimeError(
-                f"Kraken: no CAD FX rate for {self._quote_currency} — refusing to size order"
+                f"Kraken: no CAD FX rate for {pair_quote} — refusing to size order"
             )
         notional_quote = order.notional_cad / rate
         # Closing a position sells the exact held quantity; opening sizes from
