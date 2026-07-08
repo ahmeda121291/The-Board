@@ -155,6 +155,9 @@ class ResolvedOutcome(BaseModel):
 
     decision_id: str
     division: Division
+    #: The pair the position traded (e.g. SOLCAD/AAVEUSD) — so the scoreboard
+    #: can say WHICH coin performed, not just which division. "" on legacy rows.
+    symbol: str = ""
     resolved_at: datetime = Field(default_factory=utcnow)
     predicted_return: float
     realized_return: float

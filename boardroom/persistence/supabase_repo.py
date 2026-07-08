@@ -98,6 +98,7 @@ class SupabaseRepository(Repository):
             {
                 "decision_id": outcome.decision_id,
                 "division": outcome.division.value,
+                "symbol": outcome.symbol or None,
                 "resolved_at": outcome.resolved_at.isoformat(),
                 "predicted_return": outcome.predicted_return,
                 "realized_return": outcome.realized_return,

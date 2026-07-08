@@ -129,6 +129,7 @@ def _make_outcome(
     return ResolvedOutcome(
         decision_id=pos.decision_id,
         division=Division(pos.division),
+        symbol=pos.symbol,
         resolved_at=resolved_at,
         predicted_return=pos.predicted_return,
         realized_return=realized,

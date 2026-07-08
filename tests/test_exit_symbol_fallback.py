@@ -39,6 +39,8 @@ def test_legacy_cad_symbol_resolves_against_usd_series():
     assert updates, "past-horizon legacy position must resolve"
     assert repo.open_positions() == []
     assert any(e == "position_resolved" for e, _ in repo.audit_log)
+    # The outcome names the coin — the scoreboard shows WHAT traded, not just who.
+    assert repo.outcomes[-1].symbol == "XBTCAD"
 
 
 def test_unpriceable_position_is_audited_not_silent():

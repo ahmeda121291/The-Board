@@ -297,6 +297,13 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-07-08 (b)** — **Per-coin scoreboard.** Resolved outcomes now carry the
+  traded pair (`symbol`, migration 0013), so the dashboard's Performance table
+  shows WHICH coin each realized trade was (plus the critic's postmortem on
+  hover). The learning loop itself was already complete — process-vs-luck tag,
+  LLM postmortem, Beta-posterior calibration, leash, retirement, all folded in
+  per resolved trade and reloaded by the CEO each checkpoint — it simply had
+  zero completed trades to learn from until the stuck-SOL fix landed.
 - **2026-07-08** — **Exit-resolution symbol fallback (the stuck-SOL fix).**
   Positions store their EXECUTION pair (SOLCAD in the CAD era) but the exit
   loop's price cache is keyed by ANALYSIS symbols (SOLUSD) — the lookup missed,
