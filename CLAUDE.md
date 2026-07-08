@@ -98,7 +98,9 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   It sells the exact filled qty (`OpenPosition.qty`, migration 0011). A position is only
   finalized (P&L booked, tracking row deleted) when the sell actually executes — a rejected
   sell leaves it open to retry, so the record never claims a sale that didn't happen.
-  Exits evaluate on daily closes (intraday-tick exits are a future upgrade).
+  Exits evaluate on daily closes (intraday-tick exits are a future upgrade). The exit
+  price lookup falls back through the base asset (SOLCAD position ↔ SOLUSD series);
+  an unpriceable position audits `resolution_no_data`, never a silent skip.
 - **Execution truth** (`fills` table, migration 0012): every broker fill (buy AND
   sell, live AND paper) persists the instant the broker returns — BEFORE any other
   write — with qty/price/fee/txid. A mid-run crash can never lose the record of

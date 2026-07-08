@@ -297,6 +297,15 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-07-08** — **Exit-resolution symbol fallback (the stuck-SOL fix).**
+  Positions store their EXECUTION pair (SOLCAD in the CAD era) but the exit
+  loop's price cache is keyed by ANALYSIS symbols (SOLUSD) — the lookup missed,
+  so four past-horizon SOL positions sat open in silence for three days. The
+  cache lookup now falls back through the base asset across quotes, an
+  unpriceable position audits `resolution_no_data` instead of being skipped
+  silently, and order sizing converts by the **exec pair's own quote** (a
+  legacy CAD-pair sell on the USD-funded account sizes in CAD, not USD).
+  279 tests.
 - **2026-07-03 (b)** — **USD-funded mode.** Live check showed only 5/37 coins
   have a Kraken CAD market (BTC, ETH, SOL, XRP, PEPE) — the rest could never
   fill from a CAD account. `ACCOUNT_BASE_CURRENCY=USD` now executes on USD
