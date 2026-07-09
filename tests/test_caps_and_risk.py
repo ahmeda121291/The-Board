@@ -59,6 +59,22 @@ def test_circuit_breaker_all_clear():
     assert circuit_breaker_tripped(state, _caps()) == []
 
 
+def test_fee_drag_measured_against_equity_not_wins():
+    # The 2026-07-09 freeze: $0.29 of lifetime fees over one $1.15 winning
+    # trade read as "25% drag" under a wins denominator and halted the system.
+    # Against the $200 book it is 0.15% — nowhere near the 5% cap.
+    state = PortfolioState(equity_cad=200, peak_equity_cad=200, realized_pnl_today_cad=0,
+                           cumulative_cost_cad=0.29, cumulative_gross_return_cad=1.15)
+    assert circuit_breaker_tripped(state, _caps()) == []
+
+
+def test_fee_drag_trips_when_fees_actually_eat_the_book():
+    # 6% of equity burned in costs >= the 5% cap.
+    state = PortfolioState(equity_cad=200, peak_equity_cad=200, realized_pnl_today_cad=0,
+                           cumulative_cost_cad=12.0, cumulative_gross_return_cad=500.0)
+    assert any("fee drag" in r for r in circuit_breaker_tripped(state, _caps()))
+
+
 def test_cost_model_pessimistic_round_trip():
     cm = CostModel()
     kr = cm.round_trip_cost_cad(venue=Venue.KRAKEN, notional_cad=40, needs_fx=False)

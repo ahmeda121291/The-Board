@@ -90,11 +90,24 @@ export default async function Page() {
   const roll = rollupOutcomes(d.outcomes);
   const perf = d.performance?.payload ?? null;
 
-  // Equity: real synced Kraken cash when available, else baseline + realized P&L.
-  // Crypto-only — equities are sunset, so IBKR cash no longer counts here.
+  // Equity: the FULL Kraken book (cash + coins) from the latest portfolio
+  // snapshot — cash alone reads like a loss every time a buy converts cash
+  // into a position. Falls back to synced Kraken cash, then baseline + P&L.
+  const snapTotal = d.portfolio?.crypto?.total_value_cad ?? null;
   const krakenSynced = d.kraken_cash_cad !== null;
   const balancesSynced = d.balances_at !== null && krakenSynced;
-  const equity = balancesSynced ? (d.kraken_cash_cad as number) : dep.total + roll.pnl;
+  const equity =
+    snapTotal !== null && snapTotal > 0
+      ? snapTotal
+      : balancesSynced
+        ? (d.kraken_cash_cad as number)
+        : dep.total + roll.pnl;
+  const equitySyncedAt =
+    snapTotal !== null && snapTotal > 0
+      ? (d.portfolio?.generated_at ?? null)
+      : balancesSynced
+        ? d.balances_at
+        : null;
 
   const latest = d.decisions[0] ?? null;
   const checkpointTimes = process.env.CHECKPOINT_TIMES || process.env.CHECKPOINT_UTC || "13:30,19:00";
@@ -153,7 +166,7 @@ export default async function Page() {
         tradedLive={tradedLive}
         armedLive={armedLive}
         equity={equity}
-        equitySyncedAt={balancesSynced ? d.balances_at : null}
+        equitySyncedAt={equitySyncedAt}
         targetIso={targetIso}
         checkpointTimes={checkpointTimes}
         lastRun={lastRun}

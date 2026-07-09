@@ -297,6 +297,14 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-07-09** — **Fee-drag breaker measures against equity (unfreeze fix).**
+  The fee-drag breaker divided cumulative costs by cumulative *winning* P&L —
+  with four resolved trades ($0.29 fees, one $1.15 win) that read as "25.3%
+  drag" and froze all trading. It now measures costs against **equity** (the
+  documented "5% of equity" cap): 0.15% today, clear. Breakers re-evaluate
+  every run, so the fix self-clears the halt. Health-strip **Equity** now
+  shows the full Kraken book (cash + coins) from the latest portfolio
+  snapshot instead of cash only, which dipped misleadingly on every buy.
 - **2026-07-08 (b)** — **Per-coin scoreboard.** Resolved outcomes now carry the
   traded pair (`symbol`, migration 0013), so the dashboard's Performance table
   shows WHICH coin each realized trade was (plus the critic's postmortem on
