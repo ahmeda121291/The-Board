@@ -142,6 +142,7 @@ class SupabaseRepository(Repository):
             return {
                 "reserve_cad": row["reserve_cad"],
                 "hwm_cad": row["hwm_cad"],
+                "equity_hwm_cad": row.get("equity_hwm_cad") or 0.0,
                 "live_armed": bool(row.get("live_armed", False)),
                 "kraken_cash_cad": row.get("kraken_cash_cad"),
                 "ibkr_cash_cad": row.get("ibkr_cash_cad"),
@@ -154,6 +155,9 @@ class SupabaseRepository(Repository):
         self._t("system_state").upsert(
             {"id": 1, "reserve_cad": reserve_cad, "hwm_cad": hwm_cad}
         ).execute()
+
+    def set_equity_hwm(self, equity_hwm_cad: float) -> None:
+        self._t("system_state").upsert({"id": 1, "equity_hwm_cad": float(equity_hwm_cad)}).execute()
 
     def set_live_armed(self, armed: bool) -> None:
         self._t("system_state").upsert({"id": 1, "live_armed": bool(armed)}).execute()

@@ -107,6 +107,12 @@ class Repository(abc.ABC):
     def set_system_state(self, reserve_cad: float, hwm_cad: float) -> None: ...
 
     @abc.abstractmethod
+    def set_equity_hwm(self, equity_hwm_cad: float) -> None:
+        """Persist the LIVE-equity high-water mark (deposits + market moves)
+        the drawdown breaker judges against. Never lowered by callers."""
+        ...
+
+    @abc.abstractmethod
     def set_live_armed(self, armed: bool) -> None:
         """Persist whether the system is armed for live trading.
 
@@ -288,6 +294,9 @@ class InMemoryRepository(Repository):
         # In-place so balances / live_armed already on the row are preserved.
         self.system_state["reserve_cad"] = reserve_cad
         self.system_state["hwm_cad"] = hwm_cad
+
+    def set_equity_hwm(self, equity_hwm_cad: float) -> None:
+        self.system_state["equity_hwm_cad"] = float(equity_hwm_cad)
 
     def set_live_armed(self, armed: bool) -> None:
         self.system_state["live_armed"] = bool(armed)

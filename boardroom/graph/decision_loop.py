@@ -149,6 +149,42 @@ class Orchestrator:
                 self.repo.audit("ratchet", {"reserve_cad": new.reserve_cad, "equity_cad": round(equity, 2)})
         return investable_cad(equity, new.reserve_cad)
 
+    def live_investable_cad(self) -> float | None:
+        """The REAL Kraken book right now — fiat cash (all currencies, valued
+        in CAD) plus coin holdings at market — minus the protected reserve.
+
+        This is what sizing/caps resolve against, so a deposit is picked up
+        automatically at the next checkpoint (no STARTING_PORTFOLIO_CAD edit).
+        Also advances the live equity high-water mark the drawdown breaker
+        uses. Returns None when no real broker is wired (dry-run/tests) or the
+        venue can't be read — callers fall back to the realized-P&L baseline.
+        """
+        broker = self.brokers.get(Venue.KRAKEN)
+        if broker is None or type(broker).__name__ == "StubBroker":
+            return None
+        try:
+            cash = float(broker.get_cash_cad() or 0.0)
+            holdings = sum(
+                (p.get("market_value_cad") or 0.0) for p in broker.get_positions()
+            )
+        except Exception:
+            return None  # unreadable venue -> baseline, never a guess
+        equity = cash + holdings
+        if equity <= 0:
+            return None
+        s = self.repo.get_system_state()
+        reserve = s.get("reserve_cad", 0.0) or 0.0
+        investable = max(0.0, equity - reserve)
+        # Live HWM for the drawdown breaker: rises with deposits/gains, never
+        # falls. Kept separate from the ratchet's realized-basis HWM.
+        prev_hwm = s.get("equity_hwm_cad", 0.0) or 0.0
+        if investable > prev_hwm:
+            try:
+                self.repo.set_equity_hwm(round(investable, 2))
+            except Exception:  # visibility state must not block the run
+                pass
+        return investable
+
     def growth_tier(self, investable_cad: float) -> dict:
         """Measure TOTAL equity (investable + protected reserve, so the ratchet
         never demotes the system) against the deterministic growth ladder.
@@ -642,13 +678,18 @@ class Orchestrator:
         bankroll_cad: float | None,
         deployed_cad: float,
     ) -> LoopResult:
-        portfolio = (
-            portfolio_value_cad
-            if portfolio_value_cad is not None
-            else bankroll_cad
-            if bankroll_cad is not None
-            else self.settle_and_ratchet()  # live equity minus the protected reserve
-        )
+        if portfolio_value_cad is not None:
+            portfolio = portfolio_value_cad
+        elif bankroll_cad is not None:
+            portfolio = bankroll_cad
+        else:
+            # settle_and_ratchet keeps the ratchet/reserve on a REALIZED-P&L
+            # basis (a deposit must never be swept as a "gain"); the live venue
+            # book — cash + coins, deposits included automatically — is what
+            # sizing and caps actually resolve against when it's readable.
+            baseline_investable = self.settle_and_ratchet()
+            live_investable = self.live_investable_cad()
+            portfolio = live_investable if live_investable is not None else baseline_investable
         growth = self.growth_tier(portfolio)
         # Resolve matured positions FIRST so today's decision uses the freshest
         # calibration/leashes the just-resolved outcomes produced.
@@ -840,7 +881,14 @@ class Orchestrator:
             o.pnl_cad - o.cost_cad for o in outcomes if o.resolved_at.date() == today
         )
         s = self.repo.get_system_state()
-        peak = max(s.get("hwm_cad", 0.0) or 0.0, self.settings.starting_portfolio_cad)
+        # Peak = the larger of the realized-basis HWM (ratchet) and the LIVE
+        # equity HWM (deposits + market moves), so drawdown is judged against
+        # the biggest book the account has actually had.
+        peak = max(
+            s.get("hwm_cad", 0.0) or 0.0,
+            s.get("equity_hwm_cad", 0.0) or 0.0,
+            self.settings.starting_portfolio_cad,
+        )
         state = PortfolioState(
             equity_cad=equity_cad,
             peak_equity_cad=peak,
