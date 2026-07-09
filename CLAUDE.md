@@ -72,7 +72,12 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 ## Money & safety (non-negotiable)
 
 - **Caps are percent-of-portfolio** (scale with equity): deployable 80%, per-trade 20%,
-  Event 5%, daily-loss 6%, max-drawdown 15%, fee-drag 5%. Circuit breakers on loss/drawdown.
+  Event 5%, daily-loss 6%, max-drawdown 15%, fee-drag 5% (of equity). Circuit breakers
+  on loss/drawdown. **Sizing resolves against the LIVE Kraken book** (cash + coins −
+  reserve, `live_investable_cad`) so deposits flow in automatically at the next
+  checkpoint — `STARTING_PORTFOLIO_CAD` is only the offline fallback + ratchet/P&L
+  baseline. Ratchet stays realized-basis (deposits never swept); drawdown uses the
+  live `equity_hwm_cad` (migration 0014).
 - **Aggression schedule** (`ceo/engine.py`): bolder while small, calmer as it grows. Two
   knobs ride an equity ramp ($500→$5000): (1) the CEO's **deviation bar** is LOW while
   small (0.001 ≤ $500) rising to conservative (0.02 ≥ $5000) — it acts on almost any

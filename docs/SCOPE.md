@@ -297,6 +297,15 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-07-09 (b)** — **Live-equity sizing: deposits picked up automatically.**
+  Sizing/caps now resolve against the REAL Kraken book each checkpoint (fiat
+  cash in CAD terms + coin holdings at market, minus the reserve) instead of
+  `STARTING_PORTFOLIO_CAD + realized P&L` — so topping up the account needs no
+  config edit; the next checkpoint sees the money. The gains ratchet stays on
+  the realized-P&L basis (a deposit is never swept as a "gain"), and a new
+  live-equity high-water mark (`equity_hwm_cad`, migration 0014) feeds the
+  drawdown breaker so it scales with deposits. Unreadable venue → clean
+  fallback to the baseline, never a guess. 285 tests.
 - **2026-07-09** — **Fee-drag breaker measures against equity (unfreeze fix).**
   The fee-drag breaker divided cumulative costs by cumulative *winning* P&L —
   with four resolved trades ($0.29 fees, one $1.15 win) that read as "25.3%
