@@ -21,7 +21,8 @@ class PortfolioState:
     peak_equity_cad: float      # high-water mark, for drawdown
     realized_pnl_today_cad: float
     cumulative_cost_cad: float
-    cumulative_gross_return_cad: float  # for fee-drag ratio
+    #: Retained for callers/tests; no longer the fee-drag denominator (equity is).
+    cumulative_gross_return_cad: float
 
 
 @dataclass(frozen=True)
@@ -84,11 +85,16 @@ def circuit_breaker_tripped(state: PortfolioState, caps: RiskCaps) -> list[str]:
                 f"drawdown {drawdown:.1%} >= max {caps.max_drawdown_pct:.1%}"
             )
 
-    if state.cumulative_gross_return_cad > 0:
-        drag = state.cumulative_cost_cad / state.cumulative_gross_return_cad
+    # Fee drag is measured against EQUITY (the documented "5% of equity" cap),
+    # NOT against gross winning P&L — with a handful of resolved trades that
+    # ratio explodes ($0.29 of fees over one $1.15 win read as "25% drag" and
+    # froze the system on 2026-07-09). Costs vs the book answers the question
+    # the cap asks: is trading activity itself eating the account?
+    if state.equity_cad > 0:
+        drag = state.cumulative_cost_cad / state.equity_cad
         if drag >= caps.fee_drag_limit_pct:
             tripped.append(
-                f"fee drag {drag:.1%} >= limit {caps.fee_drag_limit_pct:.1%}"
+                f"fee drag {drag:.1%} of equity >= limit {caps.fee_drag_limit_pct:.1%}"
             )
 
     return tripped
