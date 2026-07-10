@@ -176,7 +176,29 @@ class SupabaseRepository(Repository):
         ).execute()
 
     def claim_next_run_request(self) -> dict | None:
-        from datetime import datetime, timezone
+        from datetime import datetime, timedelta, timezone
+
+        # Stale-claim recovery: if a poller died mid-run (the PC killed the
+        # process), its request stays "running" forever and the button looks
+        # broken. Reclaim anything running for >30 min back to pending so the
+        # next poll cycle retries it. (Request #22 sat orphaned this way on
+        # 2026-07-10.)
+        stale_before = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+        try:
+            reclaimed = (
+                self._t("run_requests")
+                .update({"status": "pending", "claimed_at": None})
+                .eq("status", "running")
+                .lt("claimed_at", stale_before)
+                .execute()
+            )
+            if reclaimed.data:
+                self.audit(
+                    "run_request_reclaimed",
+                    {"ids": [r.get("id") for r in reclaimed.data]},
+                )
+        except Exception:  # recovery is best-effort; never block the claim
+            pass
 
         res = (
             self._t("run_requests")
