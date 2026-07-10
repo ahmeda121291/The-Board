@@ -101,6 +101,12 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   bumped up to the exchange minimum so it actually fills — clamped to the per-trade cap, so
   it never breaches the risk envelope. Crypto trades execute in **CAD pairs** (account is
   CAD-funded; `exec_pair_for` maps USD→CAD).
+- **Capital rotation** (`_rotate_capital`, owner mandate 2026-07-10): a strong
+  leftover idea can take the WEAKEST holding's money when its net edge beats the
+  holding's remaining edge by > `ROTATION_EDGE_MULTIPLE` (1.5×) the switching
+  cost. Sell = forced resolution (real outcome, exit reason `rotation`, learning
+  loop scores it); buy = full CEO gauntlet. Max ONE rotation/checkpoint;
+  `ENABLE_ROTATION=false` kills it. Growth-over-sitting, but never churn.
 - **Auto-sell / exits** (`graph/resolution_loop.py`): each checkpoint the resolution loop
   checks open crypto positions and **places a real Kraken SELL** to close on a **stop-loss**
   (close ≤ −stop), a **take-profit** (close ≥ the predicted band top), or **horizon elapse**.

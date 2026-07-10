@@ -86,6 +86,13 @@ class Settings(BaseSettings):
     crypto_min_usd_volume_24h: float = Field(
         default=250_000.0, alias="CRYPTO_MIN_USD_VOLUME_24H"
     )
+    # Opportunity-cost rotation (owner mandate 2026-07-10, "grow > sit"): when
+    # a fresh idea's net edge beats the weakest holding's remaining edge by
+    # more than ROTATION_EDGE_MULTIPLE × the round-trip switching cost, sell
+    # the weak holding and fund the better coin — at most one rotation per
+    # checkpoint, so conviction (not churn) moves the money.
+    enable_rotation: bool = Field(default=True, alias="ENABLE_ROTATION")
+    rotation_edge_multiple: float = Field(default=1.5, alias="ROTATION_EDGE_MULTIPLE")
     # Aggregate exposure ceiling PER ASSET (fraction of portfolio) across all
     # open positions. Not a "never rebuy" rule: the CEO may keep adding to a
     # winner until the asset reaches this share of the book, then the next-best

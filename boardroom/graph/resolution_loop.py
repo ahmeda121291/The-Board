@@ -73,7 +73,7 @@ def _as_utc(ts: datetime) -> datetime:
 
 
 def resolve_position(
-    pos: OpenPosition, bars: Bars, *, now: datetime | None = None
+    pos: OpenPosition, bars: Bars, *, now: datetime | None = None, force_now: bool = False
 ) -> ResolvedOutcome | None:
     """Resolve one open position against a fresh price series, or None if not yet.
 
@@ -83,6 +83,10 @@ def resolve_position(
     (``band_high`` — the top of the predicted move); else at the latest close once
     the **horizon** has elapsed; otherwise it keeps waiting. The caller turns a
     resolution into a real sell.
+
+    ``force_now=True`` resolves at the latest close even before any trigger —
+    the capital-rotation path uses it to close a weak position early when a
+    better idea is waiting for the money.
     """
     df = bars.df
     opened_at = _as_utc(pos.opened_at)
@@ -114,9 +118,10 @@ def resolve_position(
             resolved_time = resolved_time.to_pydatetime() if hasattr(resolved_time, "to_pydatetime") else resolved_time
             return _make_outcome(pos, r, cost_fraction, _as_utc(resolved_time))
 
-    # No stop hit — resolve on horizon elapse, otherwise keep waiting.
+    # No stop hit — resolve on horizon elapse (or on demand for a rotation),
+    # otherwise keep waiting.
     elapsed_days = (now - opened_at).total_seconds() / 86400.0
-    if elapsed_days < pos.horizon_days:
+    if elapsed_days < pos.horizon_days and not force_now:
         return None
     realized = closes[-1] / entry_price - 1.0
     return _make_outcome(pos, realized, cost_fraction, now)

@@ -302,6 +302,16 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-07-10** — **Capital rotation (owner mandate: growth over sitting).**
+  Each checkpoint, if a strong idea is left over after normal funding, it can
+  take the money of the WEAKEST current holding: when the candidate's net edge
+  beats the holding's remaining edge (today's pitch for that asset, else zero)
+  by more than `ROTATION_EDGE_MULTIPLE` (1.5×) the round-trip switching cost,
+  the holding is sold at market (forced resolution, booked as a real outcome
+  with exit reason `rotation` — the learning loop scores it) and the candidate
+  is funded through the full CEO gauntlet. At most ONE rotation per
+  checkpoint; disable with `ENABLE_ROTATION=false`. Protection floor
+  unchanged: caps, breakers, cost gates all still bind. 293 tests.
 - **2026-07-09 (c)** — **Whole-exchange scan.** The wide crypto universe is now
   dynamic: every liquid USD-quoted Kraken pair (live 24h volume ≥ $250k,
   capped at the 150 deepest books, stablecoins/fiat/dark-pools/tokenized

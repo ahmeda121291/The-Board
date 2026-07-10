@@ -548,31 +548,7 @@ class Orchestrator:
         if not self.repo.open_positions():
             return []
 
-        cache: dict[str, Any] = {}
-        for d in self.divisions:
-            fetchers = d.fetchers or ([d.fetch] if d.fetch else [])
-            for fetch in fetchers:
-                try:
-                    bars = fetch()
-                except Exception:
-                    continue
-                if bars is not None:
-                    cache[bars.symbol] = bars
-
-        def lookup(pos):
-            # Positions store their EXECUTION symbol, but the cache is keyed by
-            # the ANALYSIS symbol — e.g. a CAD-era position holds "SOLCAD" while
-            # the divisions fetch "SOLUSD". Fall back through the base asset so
-            # a legacy position still resolves against the same coin's series
-            # (returns are fractional, so the quote currency cancels out).
-            bars = cache.get(pos.symbol)
-            if bars is None:
-                base = _base_asset(pos.symbol)
-                for q in _QUOTES:
-                    bars = cache.get(f"{base}{q}")
-                    if bars is not None:
-                        break
-            return bars
+        lookup = self._resolution_price_lookup()
 
         # A position nothing can price would otherwise be skipped in silence
         # forever (four SOLCAD positions sat past-horizon for days this way).
@@ -583,7 +559,143 @@ class Orchestrator:
 
         return resolve_open_positions(self.repo, lookup, close_live=self._close_position_live)
 
-    def _close_position_live(self, pos, outcome) -> bool:
+    def _rotate_capital(
+        self, remaining, pitches, challenges, hurdle_rate, portfolio, deployed,
+        *, capped_ids=None, no_exec_ids=None,
+    ) -> list:
+        """Opportunity-cost rotation: sell the WEAKEST holding to fund a fresh
+        idea whose net edge beats it by more than ROTATION_EDGE_MULTIPLE × the
+        round-trip switching cost. Deterministic, at most ONE rotation per
+        checkpoint — conviction moves the money, churn doesn't.
+
+        "Weakest" = lowest CURRENT net edge: today's pitch for the same asset
+        if the scan produced one, else zero (the scan sees no positive edge
+        left in it — prime rotation material). The buy still runs the full CEO
+        gauntlet (deviation bar, caps, trust sizing); a rotation never buys
+        anything the engine wouldn't fund with fresh cash.
+        """
+        s = self.settings
+        capped_ids = capped_ids or set()
+        no_exec_ids = no_exec_ids or set()
+        if not s.enable_rotation or not remaining:
+            return []
+        open_pos = self.repo.open_positions()
+        if not open_pos:
+            return []
+
+        def net_edge(p) -> float:
+            cost_frac = (p.expected_cost / p.capital_required) if p.capital_required else 0.0
+            return p.expected_return - cost_frac
+
+        # Today's best fresh view of each held asset's edge.
+        fresh: dict[str, float] = {}
+        for p in pitches:
+            a = _base_asset(p.symbol)
+            e = net_edge(p)
+            if a not in fresh or e > fresh[a]:
+                fresh[a] = e
+
+        held_edge = {pos.decision_id: fresh.get(_base_asset(pos.symbol), 0.0) for pos in open_pos}
+        weakest = min(open_pos, key=lambda pos: held_edge[pos.decision_id])
+
+        candidates = [
+            p for p in remaining
+            if p.pitch_id not in capped_ids
+            and p.pitch_id not in no_exec_ids
+            and _base_asset(p.symbol) != _base_asset(weakest.symbol)
+            and net_edge(p) > 0
+        ]
+        if not candidates:
+            return []
+        best = max(candidates, key=net_edge)
+
+        # The switch must clear its own costs with room to spare: selling the
+        # holding (taker fee) plus the candidate's computed round-trip cost.
+        rotate_size = weakest.size_cad
+        switch_cost_cad = rotate_size * 0.0026 + best.expected_cost
+        edge_gain_cad = (net_edge(best) - held_edge[weakest.decision_id]) * rotate_size
+        if edge_gain_cad <= s.rotation_edge_multiple * switch_cost_cad:
+            return []
+
+        # Close the weak holding at the latest close (forced resolution).
+        from boardroom.graph.learning_loop import record_resolution, update_division
+        from boardroom.graph.resolution_loop import resolve_position
+
+        bars = self._resolution_price_lookup()(weakest)
+        if bars is None:
+            return []
+        outcome = resolve_position(weakest, bars, force_now=True)
+        if outcome is None:
+            return []
+        if not self._close_position_live(weakest, outcome, exit_reason="rotation"):
+            self.repo.audit(
+                "rotation_sell_failed",
+                {"symbol": weakest.symbol, "decision_id": weakest.decision_id},
+            )
+            return []
+        record_resolution(outcome, self.repo)
+        self.repo.close_position(weakest.decision_id)
+        update_division(weakest.division, self.repo)
+        self.repo.audit(
+            "rotation",
+            {
+                "sold": weakest.symbol,
+                "sold_edge": round(held_edge[weakest.decision_id], 5),
+                "sold_pnl_cad": round(outcome.pnl_cad, 2),
+                "bought": best.symbol,
+                "bought_edge": round(net_edge(best), 5),
+                "switch_cost_cad": round(switch_cost_cad, 2),
+            },
+        )
+
+        # Fund the better coin through the normal CEO gauntlet with the freed
+        # capital counted back into headroom.
+        deployed_after = max(0.0, deployed - rotate_size)
+        decision, ranked = self.decide([best], hurdle_rate, deployed_after, portfolio)
+        if decision.kind != DecisionKind.FUND:
+            return []  # freed capital waits in the floor — audited above
+        session = self._build_session(
+            decision, [best], challenges, ranked, hurdle_rate, portfolio,
+            capped_ids=capped_ids, no_exec_ids=no_exec_ids,
+        )
+        session["rotation"] = {"sold": weakest.symbol, "bought": best.symbol}
+        self.repo.save_decision(decision, session)
+        fills = self.execute(decision, [best])
+        self.repo.save_decision(decision, session)
+        return fills
+
+    def _resolution_price_lookup(self):
+        """Position → fresh Bars, keyed by analysis symbol with a base-asset
+        fallback (a SOLCAD-era position resolves against the SOLUSD series).
+        The cache is built once per checkpoint and shared by the resolution
+        loop and the rotation path."""
+        cache = getattr(self, "_price_cache", None)
+        if cache is None:
+            cache = {}
+            for d in self.divisions:
+                fetchers = d.fetchers or ([d.fetch] if d.fetch else [])
+                for fetch in fetchers:
+                    try:
+                        bars = fetch()
+                    except Exception:
+                        continue
+                    if bars is not None:
+                        cache[bars.symbol] = bars
+            self._price_cache = cache
+
+        def lookup(pos):
+            bars = cache.get(pos.symbol)
+            if bars is None:
+                base = _base_asset(pos.symbol)
+                for q in _QUOTES:
+                    bars = cache.get(f"{base}{q}")
+                    if bars is not None:
+                        break
+            return bars
+
+        return lookup
+
+    def _close_position_live(self, pos, outcome, exit_reason: str | None = None) -> bool:
         """Execute the EXIT for a resolved position: sell the held quantity on the
         venue. Returns whether the position is now actually closed.
 
@@ -611,7 +723,7 @@ class Orchestrator:
             return False  # dry-run can't close a real live position — keep it open
         # The sell filled — record it before anything else can fail.
         r = outcome.realized_return
-        exit_reason = (
+        exit_reason = exit_reason or (
             "stop_loss"
             if pos.stop_fraction > 0 and r <= -pos.stop_fraction
             else "take_profit"
@@ -691,6 +803,7 @@ class Orchestrator:
             live_investable = self.live_investable_cad()
             portfolio = live_investable if live_investable is not None else baseline_investable
         growth = self.growth_tier(portfolio)
+        self._price_cache = None  # fresh series each checkpoint (org is reused)
         # Resolve matured positions FIRST so today's decision uses the freshest
         # calibration/leashes the just-resolved outcomes produced.
         self.resolve_positions()
@@ -829,6 +942,21 @@ class Orchestrator:
             fills += self.execute(extra, pitches)
             self.repo.save_decision(extra, extra_session)
             decisions.append(extra)
+
+        # Capital rotation (owner mandate): if a strong idea is left over after
+        # funding, it may still beat the WEAKEST coin we already hold by more
+        # than the cost of switching — sell that holding, fund the better coin.
+        if decisions[-1].kind == DecisionKind.FUND:
+            deployed += decisions[-1].size_cad
+        for d_ in decisions:
+            remaining = [p for p in remaining if p.pitch_id != d_.pitch_id]
+        try:
+            fills += self._rotate_capital(
+                remaining, pitches, challenges, hurdle_rate, portfolio, deployed,
+                capped_ids=capped_ids, no_exec_ids=no_exec_ids,
+            )
+        except Exception as e:  # noqa: BLE001 — rotation must never kill a checkpoint
+            self.repo.audit("rotation_error", {"error": str(e)[:160]})
 
         # Reconcile what the venue actually holds against what we track — the
         # net that catches an orphaned position no matter how it was created.
