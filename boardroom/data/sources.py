@@ -44,6 +44,76 @@ def _http_get(url: str, params: dict, timeout: float = 15.0):
     return resp
 
 
+# Quote-side / pegged bases that are cash-like, not trade candidates — plus
+# fiat crosses. A "surge" in USDT is a de-peg, not an opportunity.
+_NON_COIN_BASES = frozenset(
+    {
+        "USDT", "USDC", "USDS", "DAI", "TUSD", "PYUSD", "USDG", "USDQ", "USDR",
+        "RLUSD", "EURT", "EURQ", "EURR", "USD", "EUR", "GBP", "AUD", "JPY",
+        "CHF", "CAD",
+    }
+)
+
+
+def _usd_universe_from(
+    asset_pairs: dict,
+    tickers: dict,
+    *,
+    min_usd_volume: float,
+    max_pairs: int,
+) -> list[str]:
+    """Pure filter: liquid, tradable USD-quoted coin pairs from raw Kraken
+    payloads, sorted deepest-book first (24h USD volume). Unit-tested offline."""
+    ranked: list[tuple[float, str]] = []
+    for internal, info in (asset_pairs or {}).items():
+        ws = str(info.get("wsname") or "")
+        alt = str(info.get("altname") or "").upper()
+        if not ws.upper().endswith("/USD") or not alt or "." in alt:
+            continue  # not spot USD, or a dark-pool variant
+        base = ws.split("/")[0]
+        if base.upper() in _NON_COIN_BASES:
+            continue
+        if base.endswith("x") and len(base) > 2:
+            continue  # tokenized equities (AAPLx etc.) — this is a crypto book
+        t = tickers.get(internal) or tickers.get(alt)
+        if not t:
+            continue
+        try:
+            last = float(t["c"][0])
+            vol_24h_base = float(t["v"][1])
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
+        usd_volume = last * vol_24h_base
+        if usd_volume < min_usd_volume:
+            continue
+        ranked.append((usd_volume, alt))
+    ranked.sort(reverse=True)
+    return [alt for _, alt in ranked[: max(1, max_pairs)]]
+
+
+def kraken_usd_universe(
+    *, min_usd_volume: float = 250_000.0, max_pairs: int = 150, timeout: float = 25.0
+) -> list[str] | None:
+    """EVERY liquid USD-quoted coin pair Kraken lists right now, by live
+    exchange data (AssetPairs + 24h Ticker volume) — so a surging coin can't
+    hide outside a hand-curated list. Filters out stablecoins/fiat crosses,
+    dark pools, and tokenized equities; keeps the ``max_pairs`` deepest books.
+    Returns None on any failure — the caller falls back to the curated list.
+    """
+    try:
+        pairs = _http_get("https://api.kraken.com/0/public/AssetPairs", {}, timeout).json()
+        ticks = _http_get("https://api.kraken.com/0/public/Ticker", {}, timeout).json()
+        if pairs.get("error") or ticks.get("error"):
+            return None
+        universe = _usd_universe_from(
+            pairs["result"], ticks["result"],
+            min_usd_volume=min_usd_volume, max_pairs=max_pairs,
+        )
+        return universe or None
+    except Exception:
+        return None
+
+
 def fetch_kraken_ohlc(pair: str = "XBTUSD", interval_minutes: int = 1440) -> Bars:
     """Daily (or finer) OHLC for a Kraken pair from the public endpoint.
 

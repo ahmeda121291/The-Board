@@ -74,10 +74,15 @@ trade directly — they propose, and the CEO disposes.
 A pitch carries computed numbers (code) plus a short narrative (LLM). Quant fields
 are never LLM guesses.
 
-**Scanned universe (crypto-first).** Analysis runs on **USD-quoted Kraken pairs**
-— that's where the deep, liquid OHLC history lives — across ~37 coins (BTC, ETH,
-SOL, XRP, ADA, LINK, DOT core; wide adds LTC, AVAX, DOGE, ATOM, NEAR, APT, ARB,
-OP, INJ, SUI, TIA, PEPE, and more). **Execution settles in the account's funding currency** (`exec_pair_for`,
+**Scanned universe (crypto-first, whole-exchange).** Analysis runs on
+**USD-quoted Kraken pairs** — that's where the deep, liquid OHLC history lives.
+Since 2026-07-09 the wide scan is **dynamic**: every USD pair Kraken actually
+lists with ≥ `CRYPTO_MIN_USD_VOLUME_24H` ($250k) of 24h volume, capped at the
+`CRYPTO_UNIVERSE_MAX` (150) deepest books, refreshed from the live exchange at
+every checkpoint — stablecoins, fiat crosses, dark pools, and tokenized
+equities excluded. A surging coin can't hide outside a hand-curated list
+anymore (and DOGE is finally in, under Kraken's own `XDGUSD` name). The old
+curated ~37 remains the fallback if the exchange lookup fails. **Execution settles in the account's funding currency** (`exec_pair_for`,
 `ACCOUNT_BASE_CURRENCY`). A coin with no market in that quote is filtered out
 **before the CEO ranks it** — the executability gate checks Kraken's real pair
 list for the quote (public AssetPairs, cached per process), audits a
@@ -297,6 +302,16 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-07-09 (c)** — **Whole-exchange scan.** The wide crypto universe is now
+  dynamic: every liquid USD-quoted Kraken pair (live 24h volume ≥ $250k,
+  capped at the 150 deepest books, stablecoins/fiat/dark-pools/tokenized
+  equities excluded), refreshed each checkpoint — replaces the hand-curated
+  ~37 so a surging coin can't be invisible. DOGE becomes scannable and
+  tradable under Kraken's `XDGUSD` name. Tunables:
+  `CRYPTO_UNIVERSE_MAX` / `CRYPTO_MIN_USD_VOLUME_24H`; curated list is the
+  fallback. Cadence and entry discipline unchanged: daily-close evaluation,
+  Momentum buys volume-confirmed breakouts, no intraday surge-sniping (that
+  stays the canopy-tier unlock at $5k). 289 tests.
 - **2026-07-09 (b)** — **Live-equity sizing: deposits picked up automatically.**
   Sizing/caps now resolve against the REAL Kraken book each checkpoint (fiat
   cash in CAD terms + coin holdings at market, minus the reserve) instead of
