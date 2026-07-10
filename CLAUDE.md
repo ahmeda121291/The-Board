@@ -61,9 +61,13 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 - **News/catalyst feed** (`data/news.py`, keyless Yahoo search): computed `news_intensity`
   (recency-weighted headline burst) confirms a breakout; headlines attached as context via
   `Division.enrich()`. Grounding intact: score is code, headlines are context.
-- **Scanned universe** (factory.py): crypto scans ~37 coins on **USD-quoted** Kraken
-  pairs (deep data); execution translates to CAD (`exec_pair_for`) — no CAD market →
-  clean skip. Equity universe only loads when `ENABLE_EQUITIES=true`. Long-only.
+- **Scanned universe** (factory.py + `data/sources.kraken_usd_universe`): the wide
+  scan is DYNAMIC — every liquid USD-quoted Kraken pair (24h volume ≥
+  `CRYPTO_MIN_USD_VOLUME_24H`, capped at `CRYPTO_UNIVERSE_MAX` deepest books;
+  stables/fiat/dark-pools/tokenized-equities excluded), refreshed per checkpoint;
+  curated ~37 is the fallback. DOGE trades as Kraken's `XDGUSD`. Execution via
+  `exec_pair_for` — no market in the account quote → gate-skip before funding.
+  Equity universe only loads when `ENABLE_EQUITIES=true`. Long-only.
 - **CEO** ranks the *fundable* (crypto) pitches deterministically vs hurdle + track record;
   default HOLD; funds up to `MAX_FUNDINGS_PER_CHECKPOINT` (2) best DIFFERENT-asset ideas,
   respecting the per-asset aggregate cap. **Risk Manager** adversarially vetoes.

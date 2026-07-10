@@ -74,7 +74,22 @@ def _live_fetchers(wide: bool = False):
     from boardroom.data.sources import fetch_equity_daily, fetch_kraken_ohlc
 
     dsyms = DIRECTIONAL_UNIVERSE_WIDE if wide else DIRECTIONAL_UNIVERSE
-    esyms = EVENT_UNIVERSE_WIDE if wide else EVENT_UNIVERSE
+    esyms: list[str] = list(EVENT_UNIVERSE_WIDE if wide else EVENT_UNIVERSE)
+    if wide:
+        # The WHOLE exchange, not a curated slice: every liquid USD-quoted
+        # Kraken pair by live 24h volume — a double-digit day on a coin
+        # outside a hand-picked list is invisible; this closes that gap.
+        # Curated list stays as the fallback when the lookup fails.
+        from boardroom.config import get_settings as _gs
+        from boardroom.data.sources import kraken_usd_universe
+
+        _s = _gs()
+        dynamic = kraken_usd_universe(
+            min_usd_volume=_s.crypto_min_usd_volume_24h,
+            max_pairs=_s.crypto_universe_max,
+        )
+        if dynamic:
+            esyms = dynamic
     directional = [partial(fetch_equity_daily, s) for s in dsyms]
     event = [partial(fetch_kraken_ohlc, p, 1440) for p in esyms]
     return directional, event, list(dsyms), list(esyms)

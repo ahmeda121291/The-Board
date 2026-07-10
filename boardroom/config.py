@@ -78,6 +78,14 @@ class Settings(BaseSettings):
     # recommendations — Boardroom is a crypto agent. Flip true to resurrect the
     # advisory stock leg (the code stays dormant, not deleted).
     enable_equities: bool = Field(default=False, alias="ENABLE_EQUITIES")
+    # Dynamic scan universe: every liquid USD-quoted Kraken pair (by live 24h
+    # volume) instead of a hand-curated list — a surging coin can't hide
+    # outside the list. Tune breadth vs. checkpoint duration here; the curated
+    # list remains the fallback when the exchange lookup fails.
+    crypto_universe_max: int = Field(default=150, alias="CRYPTO_UNIVERSE_MAX")
+    crypto_min_usd_volume_24h: float = Field(
+        default=250_000.0, alias="CRYPTO_MIN_USD_VOLUME_24H"
+    )
     # Aggregate exposure ceiling PER ASSET (fraction of portfolio) across all
     # open positions. Not a "never rebuy" rule: the CEO may keep adding to a
     # winner until the asset reaches this share of the book, then the next-best
