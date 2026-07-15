@@ -46,6 +46,16 @@ function describe(a: AuditRow): { text: string; tone: "info" | "warn" | "bad" } 
           .join(", ")}`,
         tone: "bad",
       };
+    case "position_adopted":
+      return {
+        text: `Adopted untracked holding: ${p.qty} ${p.asset ?? "?"} (${cad(p.market_value_cad)}) — auto-sell now manages it (stop ${((p.stop_fraction ?? 0) * 100).toFixed(0)}%, horizon ${p.horizon_days ?? "?"}d)`,
+        tone: "warn",
+      };
+    case "untracked_sold":
+      return {
+        text: `Sold untracked holding: ${p.qty} ${p.asset ?? "?"} (${cad(p.market_value_cad)}) — flattened by the operator`,
+        tone: "warn",
+      };
     case "division_retired":
       return { text: `Division benched for miscalibration: ${p.division}`, tone: "warn" };
     case "refit":

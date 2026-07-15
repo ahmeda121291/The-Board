@@ -254,7 +254,9 @@ equities sunset; resurrect it from git history if the stock leg returns):
 1. **Executed** — confirmed fills only (`fills` table, written the moment the
    broker returns: side, qty, price, notional, fee, live/paper, exit reason).
    Paper trades sit behind a toggle. A reconciliation alert appears when the
-   venue holds coins with no tracked position behind them.
+   venue holds coins with no tracked position behind them; `boardroom adopt`
+   (on the trading machine) resolves it — adopt the orphan into a tracked,
+   auto-managed position, or flatten it with a live market sell.
 2. **Positions** — every open position with cost basis, current value,
    unrealized P&L, and the exit plan fixed at entry (stop / take-profit /
    horizon date), plus the full venue holdings snapshot.
@@ -302,6 +304,27 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-07-15** — **Untracked-holdings adoption (`boardroom adopt`).** The
+  reconciliation alert ("adopt or sell manually") finally has a tool behind
+  it. `boardroom adopt` lists the orphans — coins the venue holds with no
+  tracked position (crash residue, or a buy made on the exchange outside the
+  system, like the 4,361.86 US that appeared 2026-07-10 with no decision or
+  fill). `--asset X` ADOPTS one: a synthetic FUND decision (decision saved
+  first — the FK-ordering lesson) + a LIVE OpenPosition for the real venue
+  quantity, so the auto-sell engine exits it on a stop (default 15%,
+  `--stop`) or horizon (default 3d, `--horizon-days`) like any funded
+  position; entry basis = adoption-time value, P&L measures from adoption.
+  `--asset X --sell` FLATTENS it instead — full-quantity market sell behind
+  the same two-key live gate as every order (LIVE_TRADING **and**
+  `--confirm-live`; anything less prints a dry-run preview and touches
+  nothing), recorded as a fill (`untracked_sell`) before any other write.
+  New audits: `position_adopted`, `untracked_sold`. Also new: a **resolution
+  bars fallback** — a held coin missing from the checkpoint's scan (dropped
+  below the liquidity floor, or adopted and never pitched) is now priced
+  directly from Kraken public OHLC (once per pair per checkpoint) so its
+  exit can actually fire, instead of sitting `resolution_no_data` forever.
+  All adopted numbers are deterministic (venue balance, live ticker,
+  operator parameters) — the LLM is nowhere near this path. 303 tests.
 - **2026-07-10** — **Capital rotation (owner mandate: growth over sitting).**
   Each checkpoint, if a strong idea is left over after normal funding, it can
   take the money of the WEAKEST current holding: when the candidate's net edge
