@@ -130,6 +130,14 @@ def build_default_org(
 
             _quote = (orch_kwargs.get("settings") or _gs()).account_base_currency or "CAD"
             orch_kwargs["exec_pair_lookup"] = lambda: tradable_pairs_for(_quote)
+        # Resolution fallback: a held coin that isn't in this checkpoint's scan
+        # (dropped below the liquidity floor, or adopted from an untracked
+        # holding) still gets priced directly from Kraken's public OHLC, so its
+        # stop/horizon exit can actually fire. Live mode only — network.
+        if "resolution_bars_fallback" not in orch_kwargs:
+            from boardroom.data.sources import fetch_kraken_ohlc
+
+            orch_kwargs["resolution_bars_fallback"] = fetch_kraken_ohlc
     else:
         directional_fetchers, event_fetchers = _synthetic_fetchers()
         dir_syms, evt_syms = ["SPY", "QQQ"], ["XBTUSD", "ETHUSD"]

@@ -124,7 +124,9 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 - **Run health** (`runs` table): every checkpoint records started→ok/**crashed**
   (+error), the breaker evaluation, and a **venue reconciliation** (Kraken
   holdings vs tracked positions; orphans → `reconciliation_untracked` audit +
-  dashboard alert). **Circuit breakers are evaluated inside every run** and force
+  dashboard alert; resolve with `boardroom adopt` — adopt into a tracked
+  auto-managed position, or `--sell` behind the two-key live gate).
+  **Circuit breakers are evaluated inside every run** and force
   a deterministic HOLD when tripped. NaN/Inf sanitized before every Supabase
   write (`_json_safe`). Poller writes `system_state.poller_seen_at` heartbeat.
 - **Gains ratchet** sweeps a fraction of new highs into an **untouchable reserve**.
@@ -164,7 +166,7 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 - **Code**: `boardroom/` (config, schemas, divisions, ceo, risk, brokers, graph,
   agents, persistence, market.py, **recommend.py**, **portfolio.py**). **Tests**:
-  `tests/` (251 passing; `python -m pytest`).
+  `tests/` (303 passing; `python -m pytest`).
 - **Portfolio view** (`boardroom/portfolio.py`): each checkpoint (and `boardroom
   balances`) snapshots real holdings — `KrakenBroker.get_positions()` (coins priced
   in CAD + intraday change; IBKR book still captured in the payload but no longer

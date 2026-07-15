@@ -13,6 +13,8 @@ const EXIT_LABEL: Record<string, string> = {
   stop_loss: "stop-loss",
   take_profit: "take-profit",
   horizon: "horizon reached",
+  rotation: "rotation",
+  untracked_sell: "untracked holding sold",
 };
 
 function FillLine({ f }: { f: FillRow }) {
@@ -60,7 +62,10 @@ export function Executed({ fills, latestRecon }: { fills: FillRow[]; latestRecon
               .join(", ")}{" "}
             with no tracked position behind {untracked.length > 1 ? "them" : "it"} — the auto-sell
             engine is not managing {untracked.length > 1 ? "these" : "this"}. Usually the residue of
-            a crashed run; adopt or sell manually.
+            a crashed run or a buy made outside the system. On the trading machine, run{" "}
+            <code className="rounded bg-white/10 px-1">boardroom adopt</code> to bring it under
+            management, or <code className="rounded bg-white/10 px-1">boardroom adopt --asset X
+            --sell --confirm-live</code> to flatten it.
           </div>
         </div>
       ) : latestRecon ? (

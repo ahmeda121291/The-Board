@@ -435,6 +435,101 @@ def _preflight(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def _adopt(args: argparse.Namespace) -> int:
+    """List, adopt, or flatten UNTRACKED venue holdings.
+
+    These are coins the venue holds with no tracked position behind them (the
+    dashboard's ⚠ reconciliation alert) — residue of a crashed run, or a buy
+    made on the exchange outside the system. With no asset argument this just
+    lists them. ``--asset X`` adopts one into a tracked, auto-managed position;
+    ``--asset X --sell`` flattens it now (two-key live gate, like every order).
+    """
+    from boardroom.adoption import (
+        DEFAULT_HORIZON_DAYS,
+        DEFAULT_STOP_FRACTION,
+        adopt_untracked,
+        sell_untracked,
+        untracked_holdings,
+    )
+    from boardroom.brokers import make_brokers
+    from boardroom.persistence.repository import get_repository
+    from boardroom.schemas import Venue
+
+    s = get_settings()
+    if args.confirm_live and not s.live_trading:
+        console.print("[red]--confirm-live passed but LIVE_TRADING is false. Aborting.[/red]")
+        return 2
+
+    broker = make_brokers(prefer_live=True)[Venue.KRAKEN]
+    if type(broker).__name__ == "StubBroker":
+        console.print("[red]No Kraken credentials — cannot read venue holdings.[/red]")
+        return 2
+    repo = get_repository()
+
+    console.rule("[bold]Untracked venue holdings (Kraken)")
+    orphans = untracked_holdings(repo, broker)
+    if not orphans:
+        console.print("[green]None — every coin on the venue is behind a tracked position.[/green]")
+        return 0
+    for o in orphans:
+        v = o.get("market_value_cad")
+        console.print(
+            f"  {o['asset']:<10} qty {o['qty']:.8f}  "
+            f"≈ {f'{v:.2f} CAD' if v is not None else '[yellow]unpriceable[/yellow]'}"
+        )
+
+    if not args.asset:
+        console.print(
+            "\n[dim]boardroom adopt --asset X          → adopt: the auto-sell engine "
+            f"manages it (default stop {DEFAULT_STOP_FRACTION:.0%}, horizon {DEFAULT_HORIZON_DAYS:g}d)\n"
+            "boardroom adopt --asset X --sell   → flatten now "
+            "(requires LIVE_TRADING=true AND --confirm-live)[/dim]"
+        )
+        return 0
+
+    asset = args.asset.upper()
+    if args.sell:
+        live = bool(args.confirm_live and s.live_trading)
+        if not live:
+            o = next((x for x in orphans if x["asset"] == asset), None)
+            if o is None:
+                console.print(f"[red]{asset} is not an untracked holding.[/red]")
+                return 2
+            v = o.get("market_value_cad")
+            console.print(
+                f"\n[yellow]DRY-RUN preview[/yellow] — would market-sell "
+                f"{o['qty']:.8f} {asset} (≈{f'{v:.2f} CAD' if v is not None else '?'}). "
+                "Re-run with LIVE_TRADING=true and --confirm-live to execute."
+            )
+            return 2
+        try:
+            fill = sell_untracked(repo, broker, asset, live=True)
+        except (ValueError, RuntimeError) as e:
+            console.print(f"[red]{e}[/red]")
+            return 2
+        console.print(
+            f"\n[green]SOLD[/green] {fill.filled_qty:.8f} {asset} @ {fill.avg_price} — "
+            "recorded as a live fill (exit reason: untracked_sell). The alert clears "
+            "at the next checkpoint's reconciliation."
+        )
+        return 0
+
+    try:
+        pos = adopt_untracked(
+            repo, broker, asset, stop_fraction=args.stop, horizon_days=args.horizon_days
+        )
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        return 2
+    console.print(
+        f"\n[green]ADOPTED[/green] {pos.qty:.8f} {asset} → tracked position {pos.symbol} "
+        f"({pos.size_cad:.2f} CAD basis). The auto-sell engine now manages it: "
+        f"stop {pos.stop_fraction:.0%}, horizon {pos.horizon_days:g} day(s). "
+        "P&L measures from adoption. The alert clears at the next checkpoint."
+    )
+    return 0
+
+
 def _report(args: argparse.Namespace) -> int:
     from boardroom.graph.performance_loop import run_performance_loop
     from boardroom.risk.caps import PortfolioState
@@ -482,6 +577,27 @@ def main(argv: list[str] | None = None) -> int:
     p_poll.add_argument("--interval", type=float, default=20.0, help="seconds between checks (default 20)")
     p_poll.add_argument("--once", action="store_true", help="check once and exit (no loop)")
 
+    p_adopt = sub.add_parser(
+        "adopt", help="list/adopt/sell UNTRACKED venue holdings (the dashboard's ⚠ alert)"
+    )
+    p_adopt.add_argument("--asset", help="base asset to act on (e.g. US); omit to just list")
+    p_adopt.add_argument(
+        "--sell", action="store_true",
+        help="market-sell the full quantity instead of adopting (needs the live gate)",
+    )
+    p_adopt.add_argument(
+        "--stop", type=float, default=0.15,
+        help="stop-loss fraction for the adopted position (default 0.15)",
+    )
+    p_adopt.add_argument(
+        "--horizon-days", type=float, default=3.0,
+        help="days until the adopted position exits on horizon (default 3)",
+    )
+    p_adopt.add_argument(
+        "--confirm-live", action="store_true",
+        help="second key of the live gate — required for --sell to execute",
+    )
+
     p_bt = sub.add_parser("backtest", help="run the backtest gate")
     p_bt.add_argument("--synthetic", action="store_true")
 
@@ -510,6 +626,8 @@ def main(argv: list[str] | None = None) -> int:
         return _decide(args)
     if args.cmd == "poll":
         return _poll(args)
+    if args.cmd == "adopt":
+        return _adopt(args)
     if args.cmd == "backtest":
         return _backtest(args)
     if args.cmd == "report":

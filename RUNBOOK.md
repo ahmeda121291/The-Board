@@ -161,6 +161,25 @@ The poller logs to `logs\poller.log`. Remove with
 > Both reuse the same `LIVE_TRADING=true` + `--confirm-live` gate and the
 > market-hours guard. The daily **Boardroom Daily** task is independent and stays on.
 
+## Untracked holdings (the dashboard's ⚠ reconciliation alert)
+
+When the venue holds a coin with no tracked position behind it (residue of a
+crashed run, or a buy made on the exchange outside the system), every checkpoint
+flags it and the dashboard shows a red alert — the auto-sell engine is not
+managing that money. Resolve it here (the machine with the keys):
+
+```powershell
+boardroom adopt                       # list the orphans (read-only)
+boardroom adopt --asset US            # ADOPT: track it; auto-sell exits on a 15% stop or 3-day horizon
+boardroom adopt --asset US --stop 0.10 --horizon-days 5   # custom exit parameters
+boardroom adopt --asset US --sell --confirm-live          # or FLATTEN it now (live market sell)
+```
+
+Adoption records a decision + live position (P&L measured from adoption time);
+the sell path needs the same two-key gate as every real order (`LIVE_TRADING=true`
+AND `--confirm-live`) and is recorded as a fill (`untracked_sell`). Either way the
+alert clears at the next checkpoint's reconciliation.
+
 ## Safety reminders (enforced in code)
 - `LIVE_TRADING` defaults false; `decide` also requires `--confirm-live`.
 - Every venue credential must be **trade-only, withdrawals disabled**. The broker

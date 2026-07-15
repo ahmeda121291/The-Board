@@ -76,6 +76,14 @@ class Orchestrator:
     #: .tradable_pairs_for(account_base_currency)`` in live data mode; left
     #: None in synthetic/test mode so nothing touches the network.
     exec_pair_lookup: Any = None
+    #: Fallback bars fetcher (pair -> Bars, raising/None on failure) used at
+    #: RESOLUTION when a held position's coin isn't in this checkpoint's scan —
+    #: it dropped below the liquidity floor, or was adopted from an untracked
+    #: holding and never had a pitch. Wired to the public Kraken OHLC fetch in
+    #: live data mode; None in synthetic/test mode so nothing touches the
+    #: network. Without it such a position sits unpriceable forever (audited
+    #: as ``resolution_no_data``) and its exit never fires.
+    resolution_bars_fallback: Any = None
 
     @property
     def effective_live(self) -> bool:
@@ -682,6 +690,11 @@ class Orchestrator:
                     if bars is not None:
                         cache[bars.symbol] = bars
             self._price_cache = cache
+            self._fallback_tried = set()  # fresh checkpoint → the fallback may retry
+        # Pairs the fallback already tried this checkpoint (hit or miss), so a
+        # coin with no data is fetched at most once per pair per checkpoint.
+        tried: set = getattr(self, "_fallback_tried", set())
+        self._fallback_tried = tried
 
         def lookup(pos):
             bars = cache.get(pos.symbol)
@@ -690,6 +703,22 @@ class Orchestrator:
                 for q in _QUOTES:
                     bars = cache.get(f"{base}{q}")
                     if bars is not None:
+                        break
+            if bars is None and self.resolution_bars_fallback is not None and pos.venue == "kraken":
+                # Held but not scanned this checkpoint (below the liquidity
+                # floor, or an adopted orphan) — fetch its series directly so
+                # the position can still resolve instead of sitting forever.
+                base = _base_asset(pos.symbol)
+                for pair in dict.fromkeys((pos.symbol, f"{base}USD")):
+                    if pair in tried:
+                        continue
+                    tried.add(pair)
+                    try:
+                        bars = self.resolution_bars_fallback(pair)
+                    except Exception:
+                        bars = None
+                    if bars is not None:
+                        cache[pair] = bars
                         break
             return bars
 
@@ -1044,6 +1073,8 @@ class Orchestrator:
         except Exception:  # noqa: BLE001
             return None
 
+        from boardroom.adoption import find_untracked
+
         tracked: dict[str, float] = {}
         for pos in self.repo.open_positions():
             if pos.venue != "kraken":
@@ -1051,16 +1082,8 @@ class Orchestrator:
             base = _base_asset(pos.symbol)
             tracked[base] = tracked.get(base, 0.0) + (pos.qty or 0.0)
 
-        untracked = []
-        for h in held or []:
-            sym = h.get("symbol", "")
-            qty = float(h.get("qty", 0.0) or 0.0)
-            if qty <= 1e-8:
-                continue
-            if sym not in tracked:
-                untracked.append(
-                    {"asset": sym, "qty": qty, "market_value_cad": h.get("market_value_cad")}
-                )
+        # Same definition of "orphan" as `boardroom adopt` — one code path.
+        untracked = find_untracked(held, tracked)
 
         recon = {
             "checked_at": datetime.now(timezone.utc).isoformat(),
