@@ -124,7 +124,10 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 - **Run health** (`runs` table): every checkpoint records started→ok/**crashed**
   (+error), the breaker evaluation, and a **venue reconciliation** (Kraken
   holdings vs tracked positions; orphans → `reconciliation_untracked` audit +
-  dashboard alert). **Circuit breakers are evaluated inside every run** and force
+  dashboard alert). Act on an orphan with **`boardroom adopt`**: list them, or
+  `boardroom adopt --asset <SYM> --sell --confirm-live` to flatten one back to
+  cash (`Orchestrator.flatten_holding` — exact held qty via `Order.base_qty`,
+  account-quote pair, on-exchange only, two-key live gate). **Circuit breakers are evaluated inside every run** and force
   a deterministic HOLD when tripped. NaN/Inf sanitized before every Supabase
   write (`_json_safe`). Poller writes `system_state.poller_seen_at` heartbeat.
 - **Gains ratchet** sweeps a fraction of new highs into an **untouchable reserve**.

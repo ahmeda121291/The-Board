@@ -1075,6 +1075,60 @@ class Orchestrator:
             self.repo.audit("reconciliation_untracked", {"untracked": untracked})
         return recon
 
+    def flatten_holding(self, asset: str) -> dict | None:
+        """Sell the entire Kraken balance of one asset back to cash.
+
+        The action side of reconciliation: an orphan (a coin held with no tracked
+        position — crash residue or a buy made outside the loop) is money the
+        auto-sell loop can't manage. This flattens it. Selling stays on-exchange —
+        a trade, never a withdrawal — and honors the two-key live gate
+        (``LIVE_TRADING`` + ``--confirm-live``); without both it simulates and
+        places no order. Sells the exact held quantity via ``Order.base_qty``.
+        Returns a dict describing the (simulated or real) fill, or None if the
+        asset isn't held on a live Kraken account.
+        """
+        broker = self.brokers.get(Venue.KRAKEN)
+        if broker is None or type(broker).__name__ == "StubBroker":
+            return None
+        target = asset.strip().upper()
+        held = next(
+            (h for h in (broker.get_positions() or [])
+             if str(h.get("symbol", "")).upper() == target),
+            None,
+        )
+        if held is None:
+            return None
+        qty = float(held.get("qty", 0.0) or 0.0)
+        if qty <= 1e-8:
+            return None
+        value = held.get("market_value_cad")
+        quote = self.settings.account_base_currency or "CAD"
+        order = Order(
+            symbol=f"{held['symbol']}{quote}",
+            side=OrderSide.SELL,
+            notional_cad=float(value) if value else 0.0,
+            division="adopt",
+            client_order_id=str(uuid.uuid4()),
+            base_qty=qty,
+        )
+        fill = broker.place_order(order, live=self.effective_live)
+        result = {
+            "asset": held["symbol"],
+            "qty": round(qty, 8),
+            "pair": order.symbol,
+            "value_cad": value,
+            "price": fill.avg_price,
+            "live": fill.is_live,
+        }
+        if fill.is_live:
+            self._record_fill(fill, exit_reason="adopt_flatten", notional_cad=order.notional_cad)
+            # If a tracked row somehow existed for this asset, retire it too.
+            for pos in self.repo.open_positions():
+                if pos.venue == "kraken" and _base_asset(pos.symbol) == held["symbol"]:
+                    self.repo.close_position(pos.decision_id)
+            self.repo.audit("position_flattened", result)
+        return result
+
     def _build_session(
         self, decision, pitches, challenges, ranked, hurdle_rate, portfolio,
         capped_ids: set[str] | None = None, growth: dict | None = None,
