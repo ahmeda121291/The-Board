@@ -76,6 +76,12 @@ class Orchestrator:
     #: .tradable_pairs_for(account_base_currency)`` in live data mode; left
     #: None in synthetic/test mode so nothing touches the network.
     exec_pair_lookup: Any = None
+    #: symbol -> Bars for a HELD position whose coin fell out of the scanned
+    #: universe (volume/rank churn drops it from every division's fetchers, so
+    #: the resolution loop can't price it and its stops/horizon go unmanaged —
+    #: six coins sat like that on 2026-07-26). Wired to the public Kraken OHLC
+    #: fetch in live data mode; left None in synthetic/test mode (no network).
+    resolution_fallback_fetch: Any = None
 
     @property
     def effective_live(self) -> bool:
@@ -691,6 +697,19 @@ class Orchestrator:
                     bars = cache.get(f"{base}{q}")
                     if bars is not None:
                         break
+            if bars is None and self.resolution_fallback_fetch is not None:
+                # The coin left the scanned universe but we still HOLD it — fetch
+                # its series directly so the position stays manageable. Misses are
+                # cached as None so each symbol costs at most one try per checkpoint.
+                for sym in dict.fromkeys([pos.symbol, f"{_base_asset(pos.symbol)}USD"]):
+                    if sym not in cache:
+                        try:
+                            cache[sym] = self.resolution_fallback_fetch(sym)
+                        except Exception:  # noqa: BLE001 — unpriceable is audited upstream
+                            cache[sym] = None
+                    bars = cache[sym]
+                    if bars is not None:
+                        break
             return bars
 
         return lookup
@@ -831,7 +850,16 @@ class Orchestrator:
             session = self._build_session(decision, [], {}, [], hurdle_rate, portfolio, growth=growth)
             session["circuit_breakers"] = breakers
             self.repo.save_decision(decision, session)
-            self._finish_run_ok(run_id, decision, breakers, recon=None)
+            # A tripped breaker halts NEW RISK — not read-only housekeeping.
+            # Reconciliation (orphan detection) and the portfolio snapshot are
+            # what the dashboard lives on; skipping them here froze both for as
+            # long as the breaker stayed tripped (2026-07-26/27).
+            recon = self.reconcile_positions()
+            try:
+                self.snapshot_portfolio()
+            except Exception as e:  # noqa: BLE001
+                self.repo.audit("portfolio_snapshot_error", {"error": str(e)[:160]})
+            self._finish_run_ok(run_id, decision, breakers, recon=recon)
             return LoopResult(decision, [], [], {}, [], breakers)
 
         pitches = self.gather_pitches(portfolio)
@@ -1074,6 +1102,60 @@ class Orchestrator:
         if untracked:
             self.repo.audit("reconciliation_untracked", {"untracked": untracked})
         return recon
+
+    def flatten_holding(self, asset: str) -> dict | None:
+        """Sell the entire Kraken balance of one asset back to cash.
+
+        The action side of reconciliation: an orphan (a coin held with no tracked
+        position — crash residue or a buy made outside the loop) is money the
+        auto-sell loop can't manage. This flattens it. Selling stays on-exchange —
+        a trade, never a withdrawal — and honors the two-key live gate
+        (``LIVE_TRADING`` + ``--confirm-live``); without both it simulates and
+        places no order. Sells the exact held quantity via ``Order.base_qty``.
+        Returns a dict describing the (simulated or real) fill, or None if the
+        asset isn't held on a live Kraken account.
+        """
+        broker = self.brokers.get(Venue.KRAKEN)
+        if broker is None or type(broker).__name__ == "StubBroker":
+            return None
+        target = asset.strip().upper()
+        held = next(
+            (h for h in (broker.get_positions() or [])
+             if str(h.get("symbol", "")).upper() == target),
+            None,
+        )
+        if held is None:
+            return None
+        qty = float(held.get("qty", 0.0) or 0.0)
+        if qty <= 1e-8:
+            return None
+        value = held.get("market_value_cad")
+        quote = self.settings.account_base_currency or "CAD"
+        order = Order(
+            symbol=f"{held['symbol']}{quote}",
+            side=OrderSide.SELL,
+            notional_cad=float(value) if value else 0.0,
+            division="adopt",
+            client_order_id=str(uuid.uuid4()),
+            base_qty=qty,
+        )
+        fill = broker.place_order(order, live=self.effective_live)
+        result = {
+            "asset": held["symbol"],
+            "qty": round(qty, 8),
+            "pair": order.symbol,
+            "value_cad": value,
+            "price": fill.avg_price,
+            "live": fill.is_live,
+        }
+        if fill.is_live:
+            self._record_fill(fill, exit_reason="adopt_flatten", notional_cad=order.notional_cad)
+            # If a tracked row somehow existed for this asset, retire it too.
+            for pos in self.repo.open_positions():
+                if pos.venue == "kraken" and _base_asset(pos.symbol) == held["symbol"]:
+                    self.repo.close_position(pos.decision_id)
+            self.repo.audit("position_flattened", result)
+        return result
 
     def _build_session(
         self, decision, pitches, challenges, ranked, hurdle_rate, portfolio,

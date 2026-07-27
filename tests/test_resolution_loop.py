@@ -183,3 +183,52 @@ def test_resolution_loop_skips_unready_and_handles_fetch_failure():
 
     assert updates == []                               # neither resolved
     assert len(repo.open_positions()) == 2             # both still open
+
+
+# ---- fallback pricing: a HELD coin that left the scanned universe -------------------
+
+def test_resolution_fallback_prices_position_outside_universe():
+    """Six coins (AXS, BLUR, DRV, PYTH, SYRUP, TRU) churned out of the dynamic
+    universe on 2026-07-26 and their positions sat unmanaged — no division
+    fetcher covered them, so stops/take-profit/horizon never evaluated. The
+    orchestrator must fall back to fetching a held symbol's series directly."""
+    from boardroom.data.snapshot import Bars
+    from boardroom.factory import build_default_org
+
+    now = datetime.now(timezone.utc)
+    times = pd.to_datetime([now - timedelta(days=15 - i) for i in range(16)], utc=True)
+    closes = [100.0] * 15 + [110.0]
+    df = pd.DataFrame(
+        {"time": times, "open": closes, "high": closes, "low": closes,
+         "close": closes, "volume": [1e6] * 16}
+    )
+    axs_bars = Bars(symbol="AXSUSD", venue=Venue.KRAKEN, df=df, source="test")
+
+    fetched: list[str] = []
+
+    def fallback(sym: str) -> Bars:
+        fetched.append(sym)
+        if sym != "AXSUSD":
+            raise RuntimeError(f"no series for {sym}")
+        return axs_bars
+
+    repo = InMemoryRepository()
+    repo.save_open_position(
+        OpenPosition(
+            decision_id=str(__import__("uuid").uuid4()), division="crypto_trend",
+            venue="kraken", symbol="AXSUSD", size_cad=25.0, predicted_return=0.02,
+            predicted_confidence=0.6, cost_cad=0.1, stop_fraction=0.5, band_low=-1.0,
+            band_high=5.0, horizon_days=5.0, opened_at=now - timedelta(days=10),
+            live=False,  # paper — resolves without a real sell
+        )
+    )
+    org = build_default_org(data_mode="synthetic", repo=repo)
+    assert org.resolution_fallback_fetch is None, "synthetic mode must stay offline"
+    org.resolution_fallback_fetch = fallback
+
+    org.resolve_positions()
+
+    assert "AXSUSD" in fetched, "the held symbol must be fetched directly"
+    assert repo.open_positions() == [], "the past-horizon position must resolve"
+    assert len(repo.outcomes) == 1
+    assert not any(e == "resolution_no_data" for e, _ in repo.audit_log)

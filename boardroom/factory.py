@@ -130,6 +130,15 @@ def build_default_org(
 
             _quote = (orch_kwargs.get("settings") or _gs()).account_base_currency or "CAD"
             orch_kwargs["exec_pair_lookup"] = lambda: tradable_pairs_for(_quote)
+        # Resolution fallback: a HELD coin that churns out of the scanned
+        # universe still needs a price series each checkpoint, or its
+        # stops/take-profit/horizon go unmanaged. Live mode only (network).
+        if "resolution_fallback_fetch" not in orch_kwargs:
+            from boardroom.data.sources import fetch_kraken_ohlc
+
+            orch_kwargs["resolution_fallback_fetch"] = (
+                lambda sym: fetch_kraken_ohlc(sym, 1440)
+            )
     else:
         directional_fetchers, event_fetchers = _synthetic_fetchers()
         dir_syms, evt_syms = ["SPY", "QQQ"], ["XBTUSD", "ETHUSD"]

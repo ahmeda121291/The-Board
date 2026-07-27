@@ -2,6 +2,7 @@
 
     boardroom doctor              # check config & the safety rails
     boardroom decide [--synthetic] [--confirm-live]
+    boardroom adopt [--asset X --sell --confirm-live]  # reconcile untracked holdings
     boardroom backtest [--synthetic]
     boardroom report ...          # print a weekly readout from stored outcomes
 
@@ -435,6 +436,91 @@ def _preflight(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def _adopt(args: argparse.Namespace) -> int:
+    """Reconcile untracked Kraken holdings — the orphans the auto-sell loop can't see.
+
+    A coin held on Kraken with no tracked open position (crash residue, or a buy
+    made outside the loop) is money nothing manages. This command surfaces those
+    and can flatten one back to cash:
+
+        boardroom adopt                                    # list untracked holdings
+        boardroom adopt --asset AAVE --sell --confirm-live # sell the whole balance to cash
+
+    A live sell needs BOTH LIVE_TRADING=true AND --confirm-live, the same gate as
+    decide/run; without them it's a dry-run that places no order.
+    """
+    from boardroom.brokers.stub import StubBroker
+    from boardroom.factory import build_default_org
+    from boardroom.schemas import Venue
+
+    s = get_settings()
+    org = build_default_org(
+        data_mode="synthetic" if args.synthetic else "live", prefer_live_brokers=True
+    )
+    org.confirm_live = args.confirm_live
+    console.rule("[bold]Boardroom adopt — reconcile untracked holdings")
+
+    broker = org.brokers.get(Venue.KRAKEN)
+    if broker is None or isinstance(broker, StubBroker):
+        console.print(
+            "[yellow]Kraken credentials not configured — nothing to reconcile.[/yellow]\n"
+            "[dim]Run on the trading machine with KRAKEN_API_KEY / KRAKEN_API_SECRET set.[/dim]"
+        )
+        return 1
+
+    # ---- flatten one asset ---------------------------------------------------
+    if args.sell:
+        if not args.asset:
+            console.print("[red]--sell requires --asset SYMBOL (e.g. --asset AAVE).[/red]")
+            return 2
+        if args.confirm_live and not s.live_trading:
+            console.print("[red]--confirm-live passed but LIVE_TRADING is false. Aborting.[/red]")
+            return 2
+        res = org.flatten_holding(args.asset)
+        if res is None:
+            console.print(f"[yellow]No {args.asset.upper()} balance on Kraken to flatten.[/yellow]")
+            return 1
+        val = f"≈{res['value_cad']} CAD" if res["value_cad"] is not None else "value unknown"
+        if res["live"]:
+            console.print(
+                f"[green]FLATTENED[/green] sold {res['qty']:g} {res['asset']} on {res['pair']} ({val})"
+            )
+        else:
+            console.print(
+                f"[yellow]DRY-RUN[/yellow] would sell {res['qty']:g} {res['asset']} on "
+                f"{res['pair']} ({val}) — no order placed."
+            )
+            console.print(
+                "[dim]Re-run with --confirm-live and LIVE_TRADING=true to sell for real.[/dim]"
+            )
+        return 0
+
+    # ---- list untracked holdings ---------------------------------------------
+    recon = org.reconcile_positions()
+    if recon is None:
+        console.print("[yellow]Couldn't read Kraken holdings (network or credentials).[/yellow]")
+        return 1
+    untracked = recon.get("untracked", [])
+    if not untracked:
+        console.print(
+            "[green]No untracked holdings — every coin Kraken holds is under management.[/green]"
+        )
+        return 0
+    console.print(
+        "[bold]Untracked holdings[/bold] "
+        "[dim](held on Kraken, not managed by the auto-sell loop)[/dim]:\n"
+    )
+    for h in untracked:
+        mv = h.get("market_value_cad")
+        val = f"≈${mv:.2f}" if mv is not None else "value unknown"
+        console.print(f"  • {h['qty']:g} {h['asset']}  ({val})")
+    console.print(
+        "\n[dim]Flatten one back to cash:[/dim] "
+        "boardroom adopt --asset <SYMBOL> --sell --confirm-live"
+    )
+    return 0
+
+
 def _report(args: argparse.Namespace) -> int:
     from boardroom.graph.performance_loop import run_performance_loop
     from boardroom.risk.caps import PortfolioState
@@ -482,6 +568,12 @@ def main(argv: list[str] | None = None) -> int:
     p_poll.add_argument("--interval", type=float, default=20.0, help="seconds between checks (default 20)")
     p_poll.add_argument("--once", action="store_true", help="check once and exit (no loop)")
 
+    p_adopt = sub.add_parser("adopt", help="reconcile untracked Kraken holdings (list or flatten)")
+    p_adopt.add_argument("--asset", help="asset code to act on, e.g. AAVE")
+    p_adopt.add_argument("--sell", action="store_true", help="flatten the --asset balance to cash")
+    p_adopt.add_argument("--confirm-live", action="store_true", help="execute a live SELL (requires LIVE_TRADING=true)")
+    p_adopt.add_argument("--synthetic", action="store_true", help="use stub brokers (offline)")
+
     p_bt = sub.add_parser("backtest", help="run the backtest gate")
     p_bt.add_argument("--synthetic", action="store_true")
 
@@ -508,6 +600,8 @@ def main(argv: list[str] | None = None) -> int:
         return _balances(args)
     if args.cmd == "decide":
         return _decide(args)
+    if args.cmd == "adopt":
+        return _adopt(args)
     if args.cmd == "poll":
         return _poll(args)
     if args.cmd == "backtest":

@@ -241,6 +241,13 @@ dashboard's read-only safety property. The daily scheduler stays on alongside th
 | Stocks | **No equity execution path at all.** The IBKR integration is read-only (holdings + cash); the system only *recommends* stock trades. |
 | Keys | Trade-only, scoped per venue. Kraken and the equities account are **isolated** — a leak in one can't touch the other. |
 | Live gate | A live (crypto) order requires **both** the global `LIVE_TRADING=true` flag **and** a per-call `--confirm-live`. Otherwise every run is a dry-run simulation. |
+| Orphan reconciliation | Each checkpoint compares Kraken's real holdings against tracked open positions; a coin held with no tracked position is an **orphan** (crash residue / an outside buy) the auto-sell loop can't manage. It's surfaced as a dashboard alert, and **`boardroom adopt`** reconciles it. |
+
+**`boardroom adopt`.** Lists untracked orphans and can flatten one back to cash:
+`boardroom adopt` (list) · `boardroom adopt --asset AAVE --sell --confirm-live`
+(sell the whole balance). The sell settles in the account's quote currency and
+sells the exact held quantity; it stays on-exchange — a trade, never a
+withdrawal — behind the same two-key live gate as any other live order.
 
 ---
 
@@ -302,6 +309,24 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-07-27** — **Two stuck-state fixes** (found while the drawdown breaker was
+  tripped). (1) **Resolution price fallback**: a HELD coin that churns out of the
+  dynamic universe (volume/rank) lost its price series, so its stops/take-profit/
+  horizon went unmanaged — six coins (AXS, BLUR, DRV, PYTH, SYRUP, TRU) sat like
+  that from 2026-07-26. The resolution loop now fetches a held symbol's OHLC
+  directly from Kraken's public endpoint when no division covers it (live mode
+  only; misses cached per checkpoint). (2) **Breaker path keeps housekeeping**: a
+  tripped breaker halts new risk but no longer skips the read-only portfolio
+  snapshot + orphan reconciliation — previously both froze for as long as a
+  breaker stayed tripped, going stale exactly when scrutiny mattered most.
+- **2026-07-22** — **`boardroom adopt` — act on orphaned holdings.** The checkpoint
+  already flagged untracked Kraken holdings (a coin held with no tracked position
+  the auto-sell loop can't manage); now there's a command to act on them.
+  `boardroom adopt` lists the orphans; `boardroom adopt --asset <SYM> --sell
+  --confirm-live` flattens one back to cash — settling in the account quote,
+  selling the exact held quantity (`Order.base_qty`), on-exchange only (never a
+  withdrawal), behind the two-key live gate. `Orchestrator.flatten_holding` does
+  the work; no new tables.
 - **2026-07-10** — **Capital rotation (owner mandate: growth over sitting).**
   Each checkpoint, if a strong idea is left over after normal funding, it can
   take the money of the WEAKEST current holding: when the candidate's net edge

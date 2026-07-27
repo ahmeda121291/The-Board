@@ -114,8 +114,14 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   finalized (P&L booked, tracking row deleted) when the sell actually executes — a rejected
   sell leaves it open to retry, so the record never claims a sale that didn't happen.
   Exits evaluate on daily closes (intraday-tick exits are a future upgrade). The exit
-  price lookup falls back through the base asset (SOLCAD position ↔ SOLUSD series);
-  an unpriceable position audits `resolution_no_data`, never a silent skip.
+  price lookup falls back through the base asset (SOLCAD position ↔ SOLUSD series),
+  then — live mode only — fetches the HELD symbol's OHLC directly from Kraken's
+  public endpoint (`resolution_fallback_fetch`) when the coin churned out of the
+  scanned universe (six coins sat unmanaged that way on 2026-07-26); an
+  unpriceable position audits `resolution_no_data`, never a silent skip. A
+  tripped breaker halts new risk but still runs the read-only housekeeping
+  (portfolio snapshot + orphan reconciliation) — they no longer freeze while
+  breakers are tripped.
 - **Execution truth** (`fills` table, migration 0012): every broker fill (buy AND
   sell, live AND paper) persists the instant the broker returns — BEFORE any other
   write — with qty/price/fee/txid. A mid-run crash can never lose the record of
@@ -124,7 +130,10 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 - **Run health** (`runs` table): every checkpoint records started→ok/**crashed**
   (+error), the breaker evaluation, and a **venue reconciliation** (Kraken
   holdings vs tracked positions; orphans → `reconciliation_untracked` audit +
-  dashboard alert). **Circuit breakers are evaluated inside every run** and force
+  dashboard alert). Act on an orphan with **`boardroom adopt`**: list them, or
+  `boardroom adopt --asset <SYM> --sell --confirm-live` to flatten one back to
+  cash (`Orchestrator.flatten_holding` — exact held qty via `Order.base_qty`,
+  account-quote pair, on-exchange only, two-key live gate). **Circuit breakers are evaluated inside every run** and force
   a deterministic HOLD when tripped. NaN/Inf sanitized before every Supabase
   write (`_json_safe`). Poller writes `system_state.poller_seen_at` heartbeat.
 - **Gains ratchet** sweeps a fraction of new highs into an **untouchable reserve**.
