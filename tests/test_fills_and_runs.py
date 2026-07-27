@@ -292,3 +292,40 @@ def test_decision_saved_before_position_and_resaved_after():
     position_at = repo.calls.index("save_open_position")
     assert first_decision < position_at, "decision (FK parent) must be saved before the position"
     assert repo.calls.count("save_decision") == 2, "decision re-saved after execution for the live flag"
+
+
+# ---- a tripped breaker halts new risk, NOT read-only housekeeping -------------------
+
+def test_tripped_breaker_still_snapshots_and_reconciles():
+    """The Jul-26 freeze: while the drawdown breaker was tripped, the early
+    return skipped the portfolio snapshot and orphan reconciliation, so the
+    dashboard went stale exactly when it mattered most. Both are read-only and
+    must run on the breaker path too."""
+    repo = InMemoryRepository()
+    # Trip the daily-loss breaker: a realized loss beyond 6% of a 250 CAD book.
+    repo.save_outcome(
+        ResolvedOutcome(
+            decision_id=str(uuid.uuid4()), division=Division.EVENT, predicted_return=0.02,
+            realized_return=-0.2, predicted_confidence=0.4, win=False, pnl_cad=-30.0,
+            cost_cad=0.5, inside_band=False,
+            process_luck=ProcessLuckTag.GOOD_PROCESS_BAD_OUTCOME,
+        )
+    )
+    org = build_default_org(
+        data_mode="synthetic", repo=repo,
+        brokers={
+            Venue.KRAKEN: HoldingsBroker(
+                [{"symbol": "AAVE", "qty": 0.7399, "market_value_cad": 101.91}]
+            ),
+            Venue.IBKR: StubBroker(Venue.IBKR),
+        },
+    )
+    result = org.run_once(portfolio_value_cad=250.0)
+
+    assert result.breakers, "breaker should have tripped"
+    # Housekeeping still happened: snapshot written, orphan flagged, recon on the run row.
+    assert repo.portfolios, "portfolio snapshot must be written on the breaker path"
+    assert any(e == "reconciliation_untracked" for e, _ in repo.audit_log)
+    runs = repo.recent_runs()
+    assert runs[0]["recon"] is not None
+    assert runs[0]["recon"]["untracked"][0]["asset"] == "AAVE"

@@ -309,6 +309,16 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-07-27** — **Two stuck-state fixes** (found while the drawdown breaker was
+  tripped). (1) **Resolution price fallback**: a HELD coin that churns out of the
+  dynamic universe (volume/rank) lost its price series, so its stops/take-profit/
+  horizon went unmanaged — six coins (AXS, BLUR, DRV, PYTH, SYRUP, TRU) sat like
+  that from 2026-07-26. The resolution loop now fetches a held symbol's OHLC
+  directly from Kraken's public endpoint when no division covers it (live mode
+  only; misses cached per checkpoint). (2) **Breaker path keeps housekeeping**: a
+  tripped breaker halts new risk but no longer skips the read-only portfolio
+  snapshot + orphan reconciliation — previously both froze for as long as a
+  breaker stayed tripped, going stale exactly when scrutiny mattered most.
 - **2026-07-22** — **`boardroom adopt` — act on orphaned holdings.** The checkpoint
   already flagged untracked Kraken holdings (a coin held with no tracked position
   the auto-sell loop can't manage); now there's a command to act on them.
