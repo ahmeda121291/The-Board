@@ -341,6 +341,7 @@ class SupabaseRepository(Repository):
                 "opened_at": position.opened_at.isoformat(),
                 "live": position.live,
                 "qty": _finite(position.qty),
+                "take_profit": _finite(position.take_profit),
             }
         ).execute()
 
@@ -365,6 +366,7 @@ class SupabaseRepository(Repository):
                     opened_at=datetime.fromisoformat(row["opened_at"]),
                     live=bool(row.get("live", False)),
                     qty=float(row.get("qty", 0.0) or 0.0),
+                    take_profit=float(row.get("take_profit", 0.0) or 0.0),
                 )
             )
         return out

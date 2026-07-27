@@ -53,6 +53,9 @@ class OpenPosition:
     opened_at: datetime
     live: bool = False
     qty: float = 0.0  # filled base-asset quantity — what a close() sells
+    #: Exit trigger as a fractional return. 0 == legacy row: fall back to
+    #: band_high (the pre-2026-07-27 behavior) so old open positions still resolve.
+    take_profit: float = 0.0
 
 
 class Repository(abc.ABC):
