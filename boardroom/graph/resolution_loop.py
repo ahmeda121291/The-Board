@@ -40,13 +40,23 @@ def build_open_position(
 ) -> OpenPosition:
     """Snapshot a funded pitch into an OpenPosition for later resolution.
 
-    The stop fraction is recovered from the pitch's computed ``max_loss``; the
-    predicted band is the expected return ± 2 horizon-scaled volatilities — the
-    "did reality land near our prediction" window the Critic reads for process.
+    The stop fraction is recovered from the pitch's computed ``max_loss`` but
+    CAPPED (`EXIT_STOP_CAP_PCT`), and the take-profit is a fixed R-multiple of
+    the stop (`EXIT_TP_R_MULTIPLE`) — symmetric exits by construction. A month
+    of live outcomes showed the old shape (TP at the band top ~+20-28%, stops
+    10-14% deep) hit the TP once in 29 trades: small wins, big losses. The
+    predicted band (± 2 horizon-scaled volatilities) is unchanged — it stays
+    the Critic's "did reality land near our prediction" scoring window, no
+    longer the exit trigger.
     """
+    from boardroom.config import get_settings
+
+    s = get_settings()
     capital = pitch.capital_required
-    stop_fraction = (pitch.max_loss - pitch.expected_cost) / capital if capital > 0 else 0.0
-    stop_fraction = max(0.0, stop_fraction)
+    raw_stop = (pitch.max_loss - pitch.expected_cost) / capital if capital > 0 else 0.0
+    cap = max(0.0, s.exit_stop_cap_pct)
+    stop_fraction = min(raw_stop, cap) if raw_stop > 0 else cap
+    take_profit = s.exit_tp_r_multiple * stop_fraction
     vol = float(pitch.signals.features.get("volatility", 0.0))
     horizon_vol = vol * math.sqrt(max(1.0, pitch.time_horizon_days))
     return OpenPosition(
@@ -65,6 +75,7 @@ def build_open_position(
         opened_at=opened_at or decision.created_at,
         live=decision.live,
         qty=qty,
+        take_profit=take_profit,
     )
 
 
@@ -107,8 +118,10 @@ def resolve_position(
     cost_fraction = pos.cost_cad / pos.size_cad if pos.size_cad > 0 else 0.0
 
     # Walk post-entry closes; EXIT at the first stop-loss breach (down) or
-    # take-profit hit (up). Take-profit = the top of the predicted band.
-    take_profit = pos.band_high if pos.band_high and pos.band_high > 0 else None
+    # take-profit hit (up). Take-profit = the explicit R-multiple trigger;
+    # legacy rows (take_profit 0) fall back to the old band-top behavior.
+    tp_level = pos.take_profit if getattr(pos, "take_profit", 0.0) > 0 else pos.band_high
+    take_profit = tp_level if tp_level and tp_level > 0 else None
     for i in range(entry_idx + 1, len(closes)):
         r = closes[i] / entry_price - 1.0
         hit_stop = pos.stop_fraction > 0 and r <= -pos.stop_fraction

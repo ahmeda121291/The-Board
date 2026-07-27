@@ -309,6 +309,19 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-07-27 (b)** — **Strategy autopsy fixes** (a month live: realized −$5.70
+  over 29 trades vs +7.9% average predicted). (1) **Exit asymmetry**: the
+  take-profit was the predicted band top (~+20–28%, hit once in 29 trades) while
+  stops ran 10–14% deep — small wins, big losses by construction. Now the stop is
+  capped (`EXIT_STOP_CAP_PCT`, 6%) and the take-profit is a fixed R-multiple of it
+  (`EXIT_TP_R_MULTIPLE`, 1.5× → 9%); the predicted band stays as the Critic's
+  scoring window only. New `open_positions.take_profit` column (migration 0015);
+  legacy rows (0) keep band-top behavior. (2) **Prediction shrinkage**: each
+  pitch's expected return is blended toward the division's REALIZED mean before
+  any gate/rank/size acts on it (weight `max(prior_n/(prior_n+n), min_weight)`,
+  `PREDICTION_SHRINK_PRIOR_N`=5 / `PREDICTION_SHRINK_MIN_WEIGHT`=0.3; raw model
+  number kept in features for audit). Fantasy forecasts stop clearing the cost
+  gate; a cold streak can't silence the model entirely.
 - **2026-07-27** — **Two stuck-state fixes** (found while the drawdown breaker was
   tripped). (1) **Resolution price fallback**: a HELD coin that churns out of the
   dynamic universe (volume/rank) lost its price series, so its stops/take-profit/

@@ -73,6 +73,25 @@ class Settings(BaseSettings):
     # actually fills. ~25 CAD comfortably clears Kraken's minimums for the majors.
     min_order_cad: float = Field(default=25.0, alias="MIN_ORDER_CAD")
 
+    # ---- Exit shape (2026-07-27 asymmetry fix) --------------------------------
+    # A month of live outcomes showed inverted risk/reward: the take-profit sat
+    # at the predicted band top (~+20-28%, hit once in 29 trades) while stops
+    # ran 10-14% deep — small wins, big losses. Exits are now symmetric by
+    # construction: the stop is capped and the take-profit is a fixed multiple
+    # of the stop distance (R-multiple), both tunable.
+    exit_stop_cap_pct: float = Field(default=0.06, alias="EXIT_STOP_CAP_PCT")
+    exit_tp_r_multiple: float = Field(default=1.5, alias="EXIT_TP_R_MULTIPLE")
+
+    # ---- Prediction shrinkage (2026-07-27 calibration fix) --------------------
+    # Models predicted +7.9%/trade while realizing -0.8% — every gate and size
+    # was fed fantasy. Each pitch's expected return is blended toward the
+    # division's REALIZED mean before anything acts on it: weight
+    # max(prior_n/(prior_n+n_outcomes), min_weight) stays on the model, the
+    # rest on the record. min_weight keeps a floor under the model's voice so
+    # a cold streak can't freeze trading forever.
+    prediction_shrink_prior_n: float = Field(default=5.0, alias="PREDICTION_SHRINK_PRIOR_N")
+    prediction_shrink_min_weight: float = Field(default=0.3, alias="PREDICTION_SHRINK_MIN_WEIGHT")
+
     # ---- Crypto-first controls ------------------------------------------------
     # Equities are SUNSET by default (2026-07): no equity scans, no stock
     # recommendations — Boardroom is a crypto agent. Flip true to resurrect the

@@ -109,7 +109,14 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   `ENABLE_ROTATION=false` kills it. Growth-over-sitting, but never churn.
 - **Auto-sell / exits** (`graph/resolution_loop.py`): each checkpoint the resolution loop
   checks open crypto positions and **places a real Kraken SELL** to close on a **stop-loss**
-  (close ≤ −stop), a **take-profit** (close ≥ the predicted band top), or **horizon elapse**.
+  (close ≤ −stop, stop CAPPED at `EXIT_STOP_CAP_PCT` 6%), a **take-profit** (close ≥
+  `take_profit` = `EXIT_TP_R_MULTIPLE` 1.5× the stop ≈ +9%; migration 0015 — the
+  predicted band is the Critic's scoring window only now, legacy rows fall back to
+  band-top), or **horizon elapse**. **Prediction shrinkage** (2026-07-27): every pitch's
+  expected return is blended toward the division's realized mean
+  (`_shrink_expected_return`, weight `max(prior_n/(prior_n+n), min_weight)`,
+  knobs `PREDICTION_SHRINK_PRIOR_N`/`PREDICTION_SHRINK_MIN_WEIGHT`) BEFORE the cost
+  gate/ranking/sizing — the month-one failure was +7.9% predicted vs −0.8% realized.
   It sells the exact filled qty (`OpenPosition.qty`, migration 0011). A position is only
   finalized (P&L booked, tracking row deleted) when the sell actually executes — a rejected
   sell leaves it open to retry, so the record never claims a sale that didn't happen.

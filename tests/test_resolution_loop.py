@@ -139,9 +139,11 @@ def test_build_open_position_recovers_stop_and_band():
         pitch_id="p1", size_cad=40.0,
     )
     pos = build_open_position(pitch, decision)
-    # stop_fraction = (max_loss - cost) / capital = (4.4 - 0.4) / 40 = 0.10
-    assert pos.stop_fraction == pytest.approx(0.10)
-    # band = expected_return ± 2 * vol * sqrt(horizon)
+    # raw stop = (max_loss - cost) / capital = (4.4 - 0.4) / 40 = 0.10, but the
+    # 2026-07-27 exit fix CAPS it at EXIT_STOP_CAP_PCT (6%) with TP at 1.5R.
+    assert pos.stop_fraction == pytest.approx(0.06)
+    assert pos.take_profit == pytest.approx(0.09)
+    # band = expected_return ± 2 * vol * sqrt(horizon) — Critic window unchanged
     half = 2.0 * 0.02 * (5.0 ** 0.5)
     assert pos.band_low == pytest.approx(0.03 - half)
     assert pos.band_high == pytest.approx(0.03 + half)
@@ -232,3 +234,93 @@ def test_resolution_fallback_prices_position_outside_universe():
     assert repo.open_positions() == [], "the past-horizon position must resolve"
     assert len(repo.outcomes) == 1
     assert not any(e == "resolution_no_data" for e, _ in repo.audit_log)
+
+
+# ---- exit asymmetry fix: capped stop + R-multiple take-profit -----------------------
+
+def _pitch_for_exit(max_loss=5.0, cost=0.25, capital=25.0, expected=0.08, vol=0.05):
+    snap = DataSnapshot(
+        symbol="ETHUSD", venue=Venue.KRAKEN, as_of=datetime.now(timezone.utc),
+        age_seconds=5, is_fresh=True, rows=90, content_hash="x", source="test",
+    )
+    sig = ComputedSignals(
+        features={"volatility": vol}, model_name="m", model_version="v",
+        expected_return=expected, win_probability=0.6, raw_confidence=0.6, horizon_days=5.0,
+    )
+    return Pitch(
+        pitch_id="p-exit", division=Division.EVENT, venue=Venue.KRAKEN, symbol="ETHUSD",
+        snapshot=snap, signals=sig, capital_required=capital, expected_return=expected,
+        confidence=0.6, time_horizon_days=5.0, max_loss=max_loss, expected_cost=cost,
+    )
+
+
+def test_stop_is_capped_and_tp_is_r_multiple():
+    # Raw stop would be (5.0-0.25)/25 = 19% — the old deep-stop shape. It must
+    # cap at 6% with the take-profit at 1.5R = 9%, not the ~+18% band top.
+    decision = Decision(decision_id="d-exit", kind=DecisionKind.FUND, size_cad=25.0)
+    pos = build_open_position(_pitch_for_exit(), decision)
+    assert pos.stop_fraction == pytest.approx(0.06)
+    assert pos.take_profit == pytest.approx(0.09)
+    # The Critic's scoring band is untouched by the exit change.
+    assert pos.band_high == pytest.approx(0.08 + 2 * 0.05 * (5.0 ** 0.5))
+
+
+def test_take_profit_exit_triggers_at_r_multiple():
+    decision = Decision(decision_id="d-tp", kind=DecisionKind.FUND, size_cad=25.0)
+    pos = build_open_position(_pitch_for_exit(), decision, opened_at=_BASE)
+    # +10% on day 2 — above the 9% TP, far below the old ~18% band top.
+    outcome = resolve_position(pos, _bars([100, 100, 110, 110]))
+    assert outcome is not None
+    assert outcome.realized_return == pytest.approx(0.10)
+
+
+def test_legacy_position_still_uses_band_top():
+    # A pre-migration row has take_profit=0 → the old band-top trigger applies.
+    pos = OpenPosition(
+        decision_id="d-legacy", division="event", venue="kraken", symbol="ETHUSD",
+        size_cad=25.0, predicted_return=0.08, predicted_confidence=0.6, cost_cad=0.25,
+        stop_fraction=0.15, band_low=-0.1, band_high=0.18, horizon_days=30.0,
+        opened_at=_BASE, live=False, qty=0.0, take_profit=0.0,
+    )
+    # +10% must NOT trigger (band top is 18%); +20% must.
+    assert resolve_position(pos, _bars([100, 110, 110])) is None
+    outcome = resolve_position(pos, _bars([100, 120, 120]))
+    assert outcome is not None
+
+
+# ---- prediction shrinkage: forecasts blend toward the realized record ---------------
+
+def _outcome(division, realized):
+    from boardroom.schemas import ResolvedOutcome
+
+    return ResolvedOutcome(
+        decision_id=str(__import__("uuid").uuid4()), division=division,
+        predicted_return=0.08, realized_return=realized, predicted_confidence=0.6,
+        win=realized > 0, pnl_cad=realized * 25.0, cost_cad=0.1, inside_band=False,
+    )
+
+
+def test_expected_return_shrinks_toward_realized_mean():
+    from boardroom.factory import build_default_org
+
+    repo = InMemoryRepository()
+    for _ in range(10):
+        repo.save_outcome(_outcome(Division.EVENT, -0.05))
+    org = build_default_org(data_mode="synthetic", repo=repo)
+
+    pitch = _pitch_for_exit(expected=0.08)
+    adjusted = org._shrink_expected_return(pitch)
+    # w = max(5/(5+10), 0.3) = 1/3 → (1/3)*0.08 + (2/3)*(-0.05) ≈ -0.0067
+    w = 5.0 / 15.0
+    assert adjusted.expected_return == pytest.approx(w * 0.08 + (1 - w) * -0.05)
+    assert adjusted.signals.features["expected_return_model_raw"] == pytest.approx(0.08)
+    # A fantasy forecast against a losing record now fails the cost gate.
+    assert not adjusted.clears_cost()
+
+
+def test_no_history_means_no_shrink():
+    from boardroom.factory import build_default_org
+
+    org = build_default_org(data_mode="synthetic", repo=InMemoryRepository())
+    pitch = _pitch_for_exit(expected=0.08)
+    assert org._shrink_expected_return(pitch).expected_return == pytest.approx(0.08)

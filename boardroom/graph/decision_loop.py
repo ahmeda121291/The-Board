@@ -114,10 +114,38 @@ class Orchestrator:
         pitches: list[Pitch] = []
         for div in self.divisions:
             for pitch in div.propose_all(bankroll_cad=bankroll_cad):
+                pitch = self._shrink_expected_return(pitch)
                 pitch = narrate_pitch(pitch, self.llm)
                 self.repo.save_pitch(pitch)
                 pitches.append(pitch)
         return pitches
+
+    def _shrink_expected_return(self, pitch: Pitch) -> Pitch:
+        """Blend the model's predicted return toward the division's REALIZED mean.
+
+        A month live, models predicted +7.9%/trade and realized -0.8% — every
+        cost gate, ranking, and size acted on fantasy. Empirical-Bayes shrink:
+        weight ``prior_n/(prior_n + n_outcomes)`` stays on the model (floored at
+        ``min_weight`` so a cold streak can never silence it entirely), the rest
+        goes to the record. Applied BEFORE the pitch is saved or gated, so the
+        persisted number is the number acted on; the raw model output is kept in
+        the features for audit. Deterministic code on real outcomes — grounding
+        law intact.
+        """
+        outcomes = self.repo.recent_outcomes(division=pitch.division.value, limit=50)
+        n = len(outcomes)
+        if n == 0:
+            return pitch
+        realized_mean = sum(o.realized_return for o in outcomes) / n
+        s = self.settings
+        prior_n = max(0.0, s.prediction_shrink_prior_n)
+        w = max(prior_n / (prior_n + n), min(1.0, max(0.0, s.prediction_shrink_min_weight)))
+        adjusted = w * pitch.expected_return + (1.0 - w) * realized_mean
+        if adjusted != pitch.expected_return:
+            pitch.signals.features["expected_return_model_raw"] = float(pitch.expected_return)
+            pitch.signals.features["expected_return_shrink_weight"] = round(w, 4)
+            pitch.expected_return = adjusted
+        return pitch
 
     def risk_review(
         self, pitches: list[Pitch], portfolio_value_cad: float = 200.0
@@ -742,11 +770,12 @@ class Orchestrator:
             return False  # dry-run can't close a real live position — keep it open
         # The sell filled — record it before anything else can fail.
         r = outcome.realized_return
+        tp = pos.take_profit if getattr(pos, "take_profit", 0.0) > 0 else pos.band_high
         exit_reason = exit_reason or (
             "stop_loss"
             if pos.stop_fraction > 0 and r <= -pos.stop_fraction
             else "take_profit"
-            if pos.band_high and pos.band_high > 0 and r >= pos.band_high
+            if tp and tp > 0 and r >= tp
             else "horizon"
         )
         self._record_fill(
