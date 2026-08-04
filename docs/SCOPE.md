@@ -35,8 +35,10 @@ IBKR-diff feature), but by default:
   `ACCOUNT_BASE_CURRENCY=USD`. The system's **risk unit stays CAD** — caps,
   equity, P&L — with conversion at the broker boundary: order sizing divides
   the CAD notional by the live USDCAD rate (**no rate = no trade**, never
-  1:1), cash reads value ZCAD + ZUSD in CAD, and holdings are priced on the
-  quote market then converted. Sizing at 1:1 would silently over-buy ~37%.
+  1:1), cash sums **every fiat balance code** Kraken reports (ZCAD/ZUSD, plain
+  CAD/USD, `*.F` Rewards-enrolled, `*.HOLD` deposits on hold) valued in CAD,
+  and holdings are priced on the quote market then converted. Sizing at 1:1
+  would silently over-buy ~37%.
 - Up to **`MAX_FUNDINGS_PER_CHECKPOINT` (default 2) different coins** can be
   funded per checkpoint, and a **per-asset aggregate cap**
   (`ASSET_MAX_EXPOSURE_PCT`, default 20% of the book) stops any single trending
@@ -309,6 +311,16 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-08-04** — **Fiat balance codes: deposits are never invisible.** A new
+  Kraken deposit can land under a variant asset code — `CAD.HOLD`/`USD.HOLD`
+  (funding hold) or `CAD.F`/`USD.F` (Rewards-enrolled) — which the old cash
+  reader (exact `ZCAD` + `ZUSD` lookups) silently ignored, so the dashboard's
+  equity never moved after a top-up. `get_cash_cad` now classifies **every**
+  balance code via `_fiat_currency()` and sums per currency (CAD at face, USD
+  at live FX with the documented 1:1-understatement fallback, other fiat only
+  at a live rate). Same classifier now guards `get_positions`, so fiat
+  variants can't masquerade as coin holdings — and coins like ZRX are no
+  longer dropped by the old Z-prefix heuristic. 328 tests.
 - **2026-07-27 (b)** — **Strategy autopsy fixes** (a month live: realized −$5.70
   over 29 trades vs +7.9% average predicted). (1) **Exit asymmetry**: the
   take-profit was the predicted band top (~+20–28%, hit once in 29 trades) while
