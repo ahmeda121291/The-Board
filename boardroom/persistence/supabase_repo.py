@@ -44,6 +44,40 @@ def _finite(x: float, default: float = 0.0) -> float:
     return f if math.isfinite(f) else default
 
 
+def _outcome_from_row(row: dict) -> ResolvedOutcome:
+    """Hydrate a ResolvedOutcome from an ``outcomes`` table row.
+
+    ``resolved_at`` MUST come from the row: the schema default stamps "now", and
+    an outcome that reads as freshly-resolved makes the DAILY-loss breaker count
+    it forever — that bug turned the daily breaker into a lifetime breaker and
+    froze every checkpoint once cumulative losses passed the daily limit.
+    """
+    resolved_at = None
+    raw = row.get("resolved_at")
+    if raw:
+        try:
+            resolved_at = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            resolved_at = None
+    kwargs = dict(
+        decision_id=row["decision_id"],
+        division=Division(row["division"]),
+        symbol=row.get("symbol") or "",
+        predicted_return=row["predicted_return"],
+        realized_return=row["realized_return"],
+        predicted_confidence=row["predicted_confidence"],
+        win=row["win"],
+        pnl_cad=row["pnl_cad"],
+        cost_cad=row["cost_cad"],
+        inside_band=row["inside_band"],
+        process_luck=ProcessLuckTag(row["process_luck"]) if row["process_luck"] else None,
+        postmortem=row.get("postmortem", ""),
+    )
+    if resolved_at is not None:
+        kwargs["resolved_at"] = resolved_at
+    return ResolvedOutcome(**kwargs)
+
+
 class SupabaseRepository(Repository):
     def __init__(self) -> None:
         from supabase import create_client
@@ -408,21 +442,4 @@ class SupabaseRepository(Repository):
         if division:
             q = q.eq("division", division)
         res = q.execute()
-        out: list[ResolvedOutcome] = []
-        for row in res.data:
-            out.append(
-                ResolvedOutcome(
-                    decision_id=row["decision_id"],
-                    division=Division(row["division"]),
-                    predicted_return=row["predicted_return"],
-                    realized_return=row["realized_return"],
-                    predicted_confidence=row["predicted_confidence"],
-                    win=row["win"],
-                    pnl_cad=row["pnl_cad"],
-                    cost_cad=row["cost_cad"],
-                    inside_band=row["inside_band"],
-                    process_luck=ProcessLuckTag(row["process_luck"]) if row["process_luck"] else None,
-                    postmortem=row.get("postmortem", ""),
-                )
-            )
-        return out
+        return [_outcome_from_row(row) for row in res.data]

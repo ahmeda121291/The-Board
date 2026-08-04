@@ -311,6 +311,16 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-08-04 (b)** — **Daily-loss breaker was counting ALL-TIME losses.**
+  `SupabaseRepository.recent_outcomes` never hydrated `resolved_at` from the
+  row, so every outcome took the schema default ("now") and the daily-loss
+  breaker's `resolved_at.date() == today` filter matched the ENTIRE history:
+  once lifetime losses passed 6% of equity the system force-held every
+  checkpoint, forever (live: frozen 2026-08-01→04 on "daily loss 63.97" that
+  was actually the all-time total; the true daily figure was under the limit).
+  Row→model mapping extracted to `_outcome_from_row` (also restores `symbol`),
+  unit-tested against the exact failure mode. The in-memory repo used by tests
+  preserves objects, which is why no test ever caught it. 332 tests.
 - **2026-08-04** — **Fiat balance codes: deposits are never invisible.** A new
   Kraken deposit can land under a variant asset code — `CAD.HOLD`/`USD.HOLD`
   (funding hold) or `CAD.F`/`USD.F` (Rewards-enrolled) — which the old cash
