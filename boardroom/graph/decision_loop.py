@@ -234,15 +234,22 @@ class Orchestrator:
         return payload
 
     def load_adaptive_state(self) -> None:
-        """Hydrate the CEO engine with live calibration posteriors and leashes."""
+        """Hydrate the CEO engine with live calibration posteriors and leashes.
+
+        A non-retired division's leash is clamped up to the ``LEASH_MIN`` floor
+        here — this is what revives divisions whose stored leash walked to zero
+        before the floor existed (zero is an absorbing state: no trades, no new
+        evidence, no recovery). Retired divisions stay at 0 until an explicit
+        ``boardroom revive``."""
         from boardroom.adaptive.calibration import CalibrationPosterior
 
+        floor = max(0.0, self.settings.leash_min)
         for div in self.divisions:
             st = self.repo.get_division_state(div.division.value)
             self.engine.posteriors[div.division.value] = CalibrationPosterior(
                 division=st.division, alpha=st.alpha, beta=st.beta
             )
-            self.engine.leashes[div.division.value] = 0.0 if st.retired else st.leash
+            self.engine.leashes[div.division.value] = 0.0 if st.retired else max(st.leash, floor)
 
     def load_model_params(self) -> None:
         """Apply persisted (re-fit) model coefficients to each division's model.

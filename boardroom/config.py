@@ -81,6 +81,29 @@ class Settings(BaseSettings):
     # of the stop distance (R-multiple), both tunable.
     exit_stop_cap_pct: float = Field(default=0.06, alias="EXIT_STOP_CAP_PCT")
     exit_tp_r_multiple: float = Field(default=1.5, alias="EXIT_TP_R_MULTIPLE")
+    # Let winners RUN (owner mandate 2026-08-04, "go big"): instead of selling
+    # the instant the take-profit prints, hitting the TP *arms a trailing stop*
+    # — the position rides as long as each close holds within the stop distance
+    # of its peak close, even past the horizon. Upside is uncapped; the give-back
+    # from the peak is bounded by the same capped stop distance. Flip false to
+    # restore the hard R-multiple take-profit.
+    exit_trail_enabled: bool = Field(default=True, alias="EXIT_TRAIL_ENABLED")
+
+    # ---- Adaptive leash floor + comeback path (owner mandate 2026-08-04) ------
+    # The leash used to walk to ZERO on a losing streak — an absorbing state
+    # (no trades -> no new evidence -> no recovery) that silently shut the
+    # whole system off. A non-retired division's leash now floors at
+    # ``leash_min``: it always keeps trading at minimum size, so it can earn
+    # its way back. Calibration is judged on a ROLLING window of the most
+    # recent outcomes (old losses age out instead of being held forever).
+    # Retirement (the real kill switch) needs BOTH persistent miscalibration
+    # (windowed mean below ``retire_mean_below``) AND a net-negative record,
+    # over at least ``retire_min_sample`` resolved outcomes; ``boardroom
+    # revive`` is the explicit human override that brings a division back.
+    leash_min: float = Field(default=0.15, alias="LEASH_MIN")
+    calibration_window: int = Field(default=30, alias="CALIBRATION_WINDOW")
+    retire_min_sample: int = Field(default=30, alias="RETIRE_MIN_SAMPLE")
+    retire_mean_below: float = Field(default=0.35, alias="RETIRE_MEAN_BELOW")
 
     # ---- Prediction shrinkage (2026-07-27 calibration fix) --------------------
     # Models predicted +7.9%/trade while realizing -0.8% — every gate and size

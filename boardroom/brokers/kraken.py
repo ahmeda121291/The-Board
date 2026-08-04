@@ -119,6 +119,24 @@ def quote_to_cad_rate(quote: str, timeout: float = 15.0) -> float | None:
         return None
 
 
+_FIAT_CODES = {"CAD", "USD", "EUR", "GBP", "CHF", "JPY", "AUD"}
+
+
+def _fiat_currency(asset: str) -> str | None:
+    """The fiat currency a Kraken Balance asset code represents, or None for crypto.
+
+    Kraken reports the same fiat under several codes depending on account state:
+    legacy Z-prefixed (``ZCAD``/``ZUSD``), plain (``CAD``/``USD``), and suffixed
+    variants — ``USD.F``/``CAD.F`` (balances auto-enrolled in Kraken Rewards) and
+    ``USD.HOLD``/``CAD.HOLD`` (recent deposits on funding hold). A deposit that
+    lands under a variant code is still the account's cash and must be counted.
+    """
+    code = asset.split(".")[0].upper()
+    if len(code) == 4 and code.startswith("Z") and code[1:] in _FIAT_CODES:
+        return code[1:]
+    return code if code in _FIAT_CODES else None
+
+
 def exec_pair_for(symbol: str, quote: str = "CAD") -> str:
     """Translate a data-universe pair to the account's quote currency for orders.
 
@@ -231,8 +249,8 @@ class KrakenBroker(Broker):
                 continue
             if qty <= 1e-8:
                 continue  # dust / zero
-            if asset.upper().startswith("Z") or asset == self._cad_asset:
-                continue  # fiat (ZCAD/ZUSD/ZEUR…) is cash, not a coin holding
+            if _fiat_currency(asset) is not None or asset == self._cad_asset:
+                continue  # fiat in any code (ZCAD, USD.F, CAD.HOLD…) is cash, not a coin
             base = _normalize_kraken_asset(asset)
             last = opn = None
             to_cad = rate
@@ -275,19 +293,38 @@ class KrakenBroker(Broker):
             return False
 
     def get_cash_cad(self) -> float:
-        """Fiat cash valued in CAD — ZCAD at face value plus ZUSD converted at
-        the live USDCAD rate. Handles both funding modes (and the transition:
-        a half-converted account is simply the sum). If the FX rate is
-        unavailable, USD is counted at 1:1 — an UNDERstatement, so the caps
-        that resolve against equity err small, never large."""
+        """Fiat cash valued in CAD — every fiat balance code Kraken reports,
+        summed per currency: CAD at face value, the rest converted at the live
+        FX rate. Kraken splits the same currency across codes (``ZCAD``,
+        ``CAD.F`` for Rewards-enrolled balances, ``CAD.HOLD`` for deposits on
+        hold, plain ``CAD``), so a fresh deposit is counted no matter which
+        code it lands under. Handles both funding modes (and the transition: a
+        half-converted account is simply the sum). If the FX rate is
+        unavailable, USD is counted at 1:1 and other fiat is skipped — both
+        UNDERstatements, so the caps that resolve against equity err small,
+        never large."""
         if not self._has_creds:
             return 0.0
         bal = self._private("Balance")
-        cash = float(bal.get(self._cad_asset, 0.0))
-        usd = float(bal.get("ZUSD", 0.0))
-        if usd > 1e-9:
-            rate = quote_to_cad_rate("USD")
-            cash += usd * (rate if rate else 1.0)
+        totals: dict[str, float] = {}
+        for asset, amount in (bal or {}).items():
+            cur = "CAD" if asset == self._cad_asset else _fiat_currency(asset)
+            if cur is None:
+                continue
+            try:
+                qty = float(amount)
+            except (TypeError, ValueError):
+                continue
+            if qty > 1e-9:
+                totals[cur] = totals.get(cur, 0.0) + qty
+        cash = totals.pop("CAD", 0.0)
+        for cur, qty in totals.items():
+            rate = quote_to_cad_rate(cur)
+            if rate:
+                cash += qty * rate
+            elif cur == "USD":
+                cash += qty  # no FX rate — 1:1 understates USD, never overstates
+            # other fiat with no rate: skipped rather than guessed
         return cash
 
     # ---- floor APR provider --------------------------------------------------

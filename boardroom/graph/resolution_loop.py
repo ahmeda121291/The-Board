@@ -98,7 +98,17 @@ def resolve_position(
     ``force_now=True`` resolves at the latest close even before any trigger —
     the capital-rotation path uses it to close a weak position early when a
     better idea is waiting for the money.
+
+    **Trailing exits** (``EXIT_TRAIL_ENABLED``, owner mandate 2026-08-04 "let
+    winners run"): when enabled, the take-profit level no longer sells — it
+    ARMS a trailing stop. The position then rides its peak close and exits
+    only when a close gives back the stop distance from that peak, even past
+    the horizon. Upside is uncapped; the give-back is bounded by the same
+    capped stop fraction. Disabled, the hard R-multiple take-profit applies.
     """
+    from boardroom.config import get_settings
+
+    trail_enabled = get_settings().exit_trail_enabled
     df = bars.df
     opened_at = _as_utc(pos.opened_at)
     now = _as_utc(now) if now is not None else _as_utc(bars.last_time)
@@ -122,16 +132,39 @@ def resolve_position(
     # legacy rows (take_profit 0) fall back to the old band-top behavior.
     tp_level = pos.take_profit if getattr(pos, "take_profit", 0.0) > 0 else pos.band_high
     take_profit = tp_level if tp_level and tp_level > 0 else None
+    # Trail distance = the position's own (capped) stop fraction; fall back to
+    # the take-profit distance if a legacy row carries no stop.
+    trail_fraction = pos.stop_fraction if pos.stop_fraction > 0 else (take_profit or 0.0)
+    armed = False       # take-profit printed — trailing stop is live
+    peak_r = 0.0        # best post-arming close-to-close return
     for i in range(entry_idx + 1, len(closes)):
         r = closes[i] / entry_price - 1.0
-        hit_stop = pos.stop_fraction > 0 and r <= -pos.stop_fraction
-        hit_tp = take_profit is not None and r >= take_profit
-        if hit_stop or hit_tp:
+        if not armed:
+            if pos.stop_fraction > 0 and r <= -pos.stop_fraction:
+                resolved_time = times.iloc[i]
+                resolved_time = resolved_time.to_pydatetime() if hasattr(resolved_time, "to_pydatetime") else resolved_time
+                return _make_outcome(pos, r, cost_fraction, _as_utc(resolved_time))
+            if take_profit is not None and r >= take_profit:
+                if not (trail_enabled and trail_fraction > 0):
+                    resolved_time = times.iloc[i]
+                    resolved_time = resolved_time.to_pydatetime() if hasattr(resolved_time, "to_pydatetime") else resolved_time
+                    return _make_outcome(pos, r, cost_fraction, _as_utc(resolved_time))
+                armed = True
+                peak_r = r
+            continue
+        # Armed: ride the peak; exit when a close gives back the trail distance.
+        peak_r = max(peak_r, r)
+        if (1.0 + r) <= (1.0 + peak_r) * (1.0 - trail_fraction):
             resolved_time = times.iloc[i]
             resolved_time = resolved_time.to_pydatetime() if hasattr(resolved_time, "to_pydatetime") else resolved_time
             return _make_outcome(pos, r, cost_fraction, _as_utc(resolved_time))
 
-    # No stop hit — resolve on horizon elapse (or on demand for a rotation),
+    if armed and not force_now:
+        # A winner still riding its trail is never cut by the clock — the
+        # trailing stop (bounded give-back from the peak) is the exit.
+        return None
+
+    # No trigger — resolve on horizon elapse (or on demand for a rotation),
     # otherwise keep waiting.
     elapsed_days = (now - opened_at).total_seconds() / 86400.0
     if elapsed_days < pos.horizon_days and not force_now:

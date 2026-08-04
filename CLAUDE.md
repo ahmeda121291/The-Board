@@ -91,6 +91,14 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   `AGGRESSIVE_BELOW_CAD` / `CONSERVATIVE_ABOVE_CAD`. The **daily-loss (6%) and drawdown
   (15%) circuit breakers are NEVER scaled** — they're the "don't lose it all in one day"
   backstop regardless of aggression.
+- **Leash floor + revive** (2026-08-04 go-big mandate): a non-retired division's leash
+  floors at `LEASH_MIN` (0.15) — never zero (zero was an absorbing state that silently
+  parked the whole system). Calibration runs on a rolling `CALIBRATION_WINDOW` (30) of
+  recent outcomes; retirement (real kill switch, audited) needs BOTH windowed mean <
+  `RETIRE_MEAN_BELOW` (0.35) AND net-negative money over ≥ `RETIRE_MIN_SAMPLE` (30);
+  `n_resolved`/`net_vs_floor_cad` now recomputed from real history each update (were
+  stuck at 0 — retirement could never fire). **`boardroom revive`** lists division
+  states / revives one (fresh flat prior, leash 0.5) — the only way back.
 - **Growth ladder** (`adaptive/growth.py`): every checkpoint maps total equity
   (investable + reserve) to a named tier — **signals only**, no behavior change.
   Rungs align with the aggression ramp ($500/$5k); grove ($2.5k) flags intraday
@@ -109,10 +117,13 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   `ENABLE_ROTATION=false` kills it. Growth-over-sitting, but never churn.
 - **Auto-sell / exits** (`graph/resolution_loop.py`): each checkpoint the resolution loop
   checks open crypto positions and **places a real Kraken SELL** to close on a **stop-loss**
-  (close ≤ −stop, stop CAPPED at `EXIT_STOP_CAP_PCT` 6%), a **take-profit** (close ≥
-  `take_profit` = `EXIT_TP_R_MULTIPLE` 1.5× the stop ≈ +9%; migration 0015 — the
-  predicted band is the Critic's scoring window only now, legacy rows fall back to
-  band-top), or **horizon elapse**. **Prediction shrinkage** (2026-07-27): every pitch's
+  (close ≤ −stop, stop CAPPED at `EXIT_STOP_CAP_PCT` 6%), a **trailing exit** (2026-08-04,
+  `EXIT_TRAIL_ENABLED` default true: reaching the take-profit `EXIT_TP_R_MULTIPLE` 1.5× stop
+  ≈ +9% no longer sells — it ARMS a trailing stop at the position's capped stop distance;
+  upside uncapped, rides past the horizon, exits on the first close that gives back the
+  trail from its peak; disabled = old hard TP; migration 0015 — the predicted band is the
+  Critic's scoring window only now, legacy rows fall back to band-top), or **horizon
+  elapse** (unarmed positions only). **Prediction shrinkage** (2026-07-27): every pitch's
   expected return is blended toward the division's realized mean
   (`_shrink_expected_return`, weight `max(prior_n/(prior_n+n), min_weight)`,
   knobs `PREDICTION_SHRINK_PRIOR_N`/`PREDICTION_SHRINK_MIN_WEIGHT`) BEFORE the cost

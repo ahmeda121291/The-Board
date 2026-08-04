@@ -521,6 +521,38 @@ def _adopt(args: argparse.Namespace) -> int:
     return 0
 
 
+def _revive(args: argparse.Namespace) -> int:
+    """List division learning states, or explicitly revive one.
+
+    Revival is the human override for the adaptive kill switch: a retired (or
+    leash-starved) division gets a fresh flat prior and a working leash, and
+    the comeback is audited. Without --division this just shows the scoreboard.
+    """
+    from boardroom.graph.learning_loop import revive_division
+    from boardroom.persistence import get_repository
+
+    repo = get_repository()
+    if not args.division:
+        console.rule("[bold]Division learning state")
+        for div in ("yield", "crypto_trend", "momentum", "event", "directional", "effort"):
+            st = repo.get_division_state(div)
+            mean = st.alpha / (st.alpha + st.beta) if (st.alpha + st.beta) > 0 else 0.0
+            status = "[red]RETIRED[/red]" if st.retired else f"leash {st.leash:.2f}"
+            console.print(
+                f"  {div:<12} {status:<18} hit-rate {mean:.2f} "
+                f"({st.n_resolved} resolved, net {st.net_vs_floor_cad:+.2f} CAD)"
+            )
+        console.print("\n[dim]Revive one:[/dim] boardroom revive --division <name> [--leash 0.5]")
+        return 0
+
+    st = revive_division(args.division, repo, leash=args.leash)
+    console.print(
+        f"[green]REVIVED[/green] {st.division} — fresh Beta(1,1) prior, leash {st.leash:.2f}. "
+        "It re-earns (or re-loses) trust from here."
+    )
+    return 0
+
+
 def _report(args: argparse.Namespace) -> int:
     from boardroom.graph.performance_loop import run_performance_loop
     from boardroom.risk.caps import PortfolioState
@@ -574,6 +606,10 @@ def main(argv: list[str] | None = None) -> int:
     p_adopt.add_argument("--confirm-live", action="store_true", help="execute a live SELL (requires LIVE_TRADING=true)")
     p_adopt.add_argument("--synthetic", action="store_true", help="use stub brokers (offline)")
 
+    p_revive = sub.add_parser("revive", help="list division states, or bring a retired/starved division back")
+    p_revive.add_argument("--division", help="division to revive, e.g. momentum / crypto_trend")
+    p_revive.add_argument("--leash", type=float, default=0.5, help="leash to restart at (default 0.5)")
+
     p_bt = sub.add_parser("backtest", help="run the backtest gate")
     p_bt.add_argument("--synthetic", action="store_true")
 
@@ -602,6 +638,8 @@ def main(argv: list[str] | None = None) -> int:
         return _decide(args)
     if args.cmd == "adopt":
         return _adopt(args)
+    if args.cmd == "revive":
+        return _revive(args)
     if args.cmd == "poll":
         return _poll(args)
     if args.cmd == "backtest":

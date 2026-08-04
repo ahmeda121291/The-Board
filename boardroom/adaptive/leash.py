@@ -23,6 +23,7 @@ def update_leash(
     realized_edge_vs_floor: float,
     leash_max: float = 1.0,
     max_step: float = 0.1,
+    leash_min: float = 0.0,
 ) -> float:
     """Nudge a division's leash based on demonstrated calibration and edge.
 
@@ -36,7 +37,14 @@ def update_leash(
 
     Bounded move: the change is always clamped to ``[-max_step, +max_step]`` so
     no single update can lurch the allocation. The result is then clamped to
-    ``[0, leash_max]``.
+    ``[leash_min, leash_max]``.
+
+    ``leash_min`` is the comeback floor (owner mandate 2026-08-04): a leash that
+    reaches exactly 0 is an absorbing state — the division sizes to zero, never
+    trades, never produces new evidence, and can never recover. Flooring at a
+    small positive value keeps a struggling division trading at minimum size so
+    it can earn its trust back (or go on to retire properly). Retirement — the
+    deliberate kill switch — still forces 0 at the caller.
     """
     mean = posterior.mean()
     good_calibration = mean > 0.55
@@ -54,4 +62,4 @@ def update_leash(
     delta = min(max_step, max(-max_step, delta))
 
     new_leash = current_leash + delta
-    return min(leash_max, max(0.0, new_leash))
+    return min(leash_max, max(max(0.0, leash_min), new_leash))

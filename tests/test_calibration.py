@@ -193,13 +193,20 @@ def test_no_retire_below_min_sample_even_if_terrible():
     assert should_retire(posterior=p, net_vs_floor_cad=-100.0, n_resolved=5, min_sample=20) is False
 
 
-def test_retire_when_miscalibrated_with_enough_sample():
-    p = post(mean=0.4, n=50)
-    assert should_retire(posterior=p, net_vs_floor_cad=10.0, n_resolved=50, min_sample=20) is True
+def test_no_retire_on_miscalibration_alone():
+    # Badly calibrated but MAKING money — keep it (2026-08-04 AND-rule).
+    p = post(mean=0.2, n=50)
+    assert should_retire(posterior=p, net_vs_floor_cad=10.0, n_resolved=50, min_sample=20) is False
 
 
-def test_retire_when_net_negative_with_enough_sample():
-    p = post(mean=0.7, n=50)  # well calibrated...
+def test_no_retire_on_negative_money_alone():
+    # Losing money but calling its shots — a cold streak, not a broken edge.
+    p = post(mean=0.7, n=50)
+    assert should_retire(posterior=p, net_vs_floor_cad=-1.0, n_resolved=50, min_sample=20) is False
+
+
+def test_retire_when_miscalibrated_and_net_negative():
+    p = post(mean=0.2, n=50)
     assert should_retire(posterior=p, net_vs_floor_cad=-1.0, n_resolved=50, min_sample=20) is True
 
 
