@@ -39,23 +39,21 @@ class GrowthTier:
 
 
 #: Ascending by ``min_equity_cad``; ``tier_for`` picks the highest bound met.
-#: The $500/$5,000 rungs deliberately match the CEO aggression schedule
+#: The $1,000/$5,000 rungs deliberately match the CEO aggression schedule
 #: (AGGRESSIVE_BELOW_CAD / CONSERVATIVE_ABOVE_CAD) so the ladder narrates the
-#: same ramp the sizing already rides.
+#: same ramp the sizing already rides (go-big 2026-08-04: the taper start moved
+#: 500 → 1000, and the old sprout/sapling rungs merged at that boundary).
 TIERS: tuple[GrowthTier, ...] = (
     GrowthTier(0, "seed", 0.0,
-               "max aggression — low CEO bar, bold Event cap, compounding the seed",
+               "max aggression — ZERO CEO bar, bold Event cap, compounding the seed",
                False, False),
-    GrowthTier(1, "sprout", 500.0,
-               "aggression taper begins — the CEO bar starts rising with equity",
+    GrowthTier(1, "sapling", 1000.0,
+               "aggression taper begins — the CEO bar starts rising; caps resolve to meaningful CAD",
                False, False),
-    GrowthTier(2, "sapling", 1000.0,
-               "book supports steadier sizing — caps now resolve to meaningful CAD",
-               False, False),
-    GrowthTier(3, "grove", 2500.0,
+    GrowthTier(2, "grove", 2500.0,
                "intraday tick-level exits are now worth their cost — human call to build",
                True, False),
-    GrowthTier(4, "canopy", 5000.0,
+    GrowthTier(3, "canopy", 5000.0,
                "fully conservative bar — intraday surge entries eligible, human call",
                True, True),
 )

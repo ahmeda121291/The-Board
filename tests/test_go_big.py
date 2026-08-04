@@ -194,3 +194,35 @@ def test_trailing_disabled_restores_hard_take_profit(monkeypatch):
     out = rl.resolve_position(pos, _bars(closes, start))
     assert out is not None
     assert abs(out.realized_return - 0.10) < 1e-9  # sold at the TP print
+
+
+# ---- deviation bar is ZERO while small (defaults) ----------------------------
+
+def test_default_deviation_bar_is_zero_while_small():
+    from boardroom.ceo.engine import CEODecisionEngine
+    from boardroom.config import RiskCaps
+
+    s = Settings(_env_file=None)
+    assert s.ceo_deviation_threshold_low == 0.0
+    assert s.aggressive_below_cad == 1000.0
+    caps = RiskCaps(
+        total_deployable_pct=s.total_deployable_pct,
+        per_trade_max_pct=s.per_trade_max_pct,
+        event_hard_cap_pct=s.event_hard_cap_pct,
+        daily_loss_limit_pct=s.daily_loss_limit_pct,
+        max_drawdown_pct=s.max_drawdown_pct,
+        fee_drag_limit_pct=s.fee_drag_limit_pct,
+    )
+    eng = CEODecisionEngine(
+        caps=caps,
+        deviation_threshold=s.ceo_deviation_threshold,
+        deviation_threshold_low=s.ceo_deviation_threshold_low,
+        aggressive_below_cad=s.aggressive_below_cad,
+        conservative_above_cad=s.conservative_above_cad,
+    )
+    # The live failure: equity ~672, best score 0.001, old bar ~0.0017 -> HOLD.
+    # New defaults: under $1000 the bar is exactly zero -> any positive-score
+    # survivor funds.
+    assert eng._effective_threshold(672.0) == 0.0
+    assert eng._effective_threshold(999.0) == 0.0
+    assert eng._effective_threshold(5000.0) == s.ceo_deviation_threshold

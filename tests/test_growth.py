@@ -10,8 +10,7 @@ from boardroom.persistence.repository import InMemoryRepository
 def test_tier_boundaries():
     assert tier_for(0.0).name == "seed"
     assert tier_for(200.0).name == "seed"
-    assert tier_for(499.99).name == "seed"
-    assert tier_for(500.0).name == "sprout"
+    assert tier_for(999.99).name == "seed"
     assert tier_for(1000.0).name == "sapling"
     assert tier_for(2500.0).intraday_tick_exits_eligible
     assert not tier_for(2500.0).surge_entries_eligible
@@ -34,8 +33,8 @@ def test_tiers_only_ever_unlock():
 def test_tier_payload_points_at_next_unlock():
     p = tier_payload(tier_for(200.0), 200.0)
     assert p["tier"] == "seed"
-    assert p["next_tier"] == "sprout"
-    assert p["next_tier_at_cad"] == 500.0
+    assert p["next_tier"] == "sapling"
+    assert p["next_tier_at_cad"] == 1000.0
     assert p["intraday_tick_exits_eligible"] is False
     assert p["surge_entries_eligible"] is False
     top = tier_payload(TIERS[-1], 9999.0)
@@ -43,7 +42,7 @@ def test_tier_payload_points_at_next_unlock():
 
 
 def test_ladder_rungs_match_the_aggression_schedule():
-    # The $500/$5,000 rungs narrate the same ramp the CEO sizing already rides.
+    # The $1,000/$5,000 rungs narrate the same ramp the CEO sizing already rides.
     from boardroom.config import get_settings
 
     s = get_settings()
@@ -59,7 +58,7 @@ def test_run_once_audits_tier_and_carries_it_in_the_session():
     audits = [p for e, p in repo.audit_log if e == "growth_tier"]
     assert audits and audits[-1]["tier"] == "seed"
     assert audits[-1]["surge_entries_eligible"] is False
-    assert audits[-1]["next_tier_at_cad"] == 500.0
+    assert audits[-1]["next_tier_at_cad"] == 1000.0
 
     _, session = repo.decisions[-1]
     assert session["growth_tier"]["tier"] == "seed"
