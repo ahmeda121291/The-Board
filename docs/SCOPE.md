@@ -229,9 +229,17 @@ dashboard's read-only safety property. The daily scheduler stays on alongside th
 2. **Measurement loop (per outcome):** every resolved trade updates each division's
    calibration (a Beta posterior — *demonstrated* accuracy, not stated confidence),
    attribution, and the scoreboard.
-3. **Adaptive loop (ongoing):** trust/leash per division adjusts from calibration;
-   the CFO studies the whole picture and recommends structural changes for human
-   sign-off.
+3. **Adaptive loop (ongoing):** trust/leash per division adjusts from calibration
+   judged on a ROLLING window (`CALIBRATION_WINDOW`, 30) of the most recent
+   outcomes — old results age out in both directions. A non-retired division's
+   leash floors at `LEASH_MIN` (0.15), never zero: it always keeps trading at
+   minimum size so it can earn trust back (zero was an absorbing state that
+   silently shut the system off). Retirement — the real kill switch — needs
+   BOTH windowed miscalibration (mean < `RETIRE_MEAN_BELOW`, 0.35) AND a
+   net-negative record over ≥ `RETIRE_MIN_SAMPLE` (30) resolutions; it is
+   audited, and only the human `boardroom revive` brings a division back
+   (fresh flat prior, working leash). The CFO studies the whole picture and
+   recommends structural changes for human sign-off.
 
 ---
 
@@ -311,6 +319,28 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-08-04 (c)** — **Go-big mandate: no silent self-parking, and winners run.**
+  Owner directive after finding the system fully parked. (1) **Leash floor +
+  rolling calibration**: the per-division leash had walked to 0 for BOTH live
+  divisions (crypto_trend 17/42 wins, momentum ~1/10) — an absorbing state (no
+  trades → no evidence → no recovery). A non-retired division's leash now
+  floors at `LEASH_MIN` (0.15) and hydration clamps stored zeros up, so the
+  currently-starved divisions revive on the next checkpoint; calibration is
+  judged on the most recent `CALIBRATION_WINDOW` (30) outcomes so old losses
+  age out. (2) **Retirement fixed and rearmed**: `n_resolved`/`net_vs_floor_cad`
+  were never updated (stuck at 0), so the documented kill switch could never
+  fire; they're now recomputed from the real outcome history each update, and
+  retirement needs BOTH windowed mean < `RETIRE_MEAN_BELOW` (0.35) AND
+  net-negative money over ≥ `RETIRE_MIN_SAMPLE` (30) — a division that's
+  merely cold keeps trading at the floor; one that's demonstrably broken
+  retires with an audit trail. New **`boardroom revive`** lists division
+  states and is the only way back (fresh flat prior, default leash 0.5).
+  (3) **Trailing exits** (`EXIT_TRAIL_ENABLED`, default true): hitting the
+  take-profit no longer sells — it ARMS a trailing stop at the position's own
+  capped stop distance; the ride is uncapped, survives the horizon clock, and
+  exits on the first close that gives back the trail from its peak (the +9%
+  hard TP had been capping every winner; the old asymmetric-band failure can't
+  return because the give-back is bounded by the 6%-capped stop). 344 tests.
 - **2026-08-04 (b)** — **Daily-loss breaker was counting ALL-TIME losses.**
   `SupabaseRepository.recent_outcomes` never hydrated `resolved_at` from the
   row, so every outcome took the schema default ("now") and the daily-loss

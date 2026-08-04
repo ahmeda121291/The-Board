@@ -17,12 +17,14 @@ from tests.test_resolution_loop import _bars, _pos
 
 
 # ---- take-profit exit -------------------------------------------------------
-def test_take_profit_exits_before_horizon():
+def test_take_profit_arms_trail_and_winner_exits_on_pullback():
     pos = _pos(horizon_days=30.0, band_high=0.05, stop_fraction=0.10)
-    bars = _bars([100.0, 101.0, 103.0, 106.0, 106.0, 106.0])  # +6% on day 3, well before horizon
+    # +6% arms the trail, the ride tops at +20%, and the first close that gives
+    # back the stop distance from the peak exits — at +7%, well before horizon.
+    bars = _bars([100.0, 101.0, 103.0, 106.0, 120.0, 107.0])
     out = resolve_position(pos, bars)
     assert out is not None
-    assert out.realized_return >= 0.05      # exited at the take-profit, not at +0 horizon drift
+    assert out.realized_return >= 0.05      # exited on the trail break, not at +0 horizon drift
     assert out.win is True
 
 

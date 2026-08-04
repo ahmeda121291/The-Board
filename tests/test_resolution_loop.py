@@ -112,9 +112,12 @@ def test_small_gain_below_cost_is_a_loss():
 
 def test_realized_outside_band_flags_process():
     pos = _pos(band_low=-0.01, band_high=0.01)
-    bars = _bars([100.0, 101.0, 102.0, 105.0, 106.0, 107.0])
+    # Arms the trail at +1%, rides to +6%, and the pullback close exits at -5%
+    # — far outside the ±1% predicted band.
+    bars = _bars([100.0, 101.0, 102.0, 105.0, 106.0, 95.0])
     out = resolve_position(pos, bars)
-    assert out.inside_band is False  # +7% landed well outside the predicted band
+    assert out is not None
+    assert out.inside_band is False  # landed well outside the predicted band
 
 
 # --------------------------------------------------------------------------- #
@@ -265,11 +268,13 @@ def test_stop_is_capped_and_tp_is_r_multiple():
     assert pos.band_high == pytest.approx(0.08 + 2 * 0.05 * (5.0 ** 0.5))
 
 
-def test_take_profit_exit_triggers_at_r_multiple():
+def test_take_profit_arms_trail_at_r_multiple():
     decision = Decision(decision_id="d-tp", kind=DecisionKind.FUND, size_cad=25.0)
     pos = build_open_position(_pitch_for_exit(), decision, opened_at=_BASE)
-    # +10% on day 2 — above the 9% TP, far below the old ~18% band top.
-    outcome = resolve_position(pos, _bars([100, 100, 110, 110]))
+    # +10% crosses the 9% TP (far below the old ~18% band top) and ARMS the
+    # trail; the ride peaks at +18% and the first close giving back the 6% stop
+    # distance exits at +10%.
+    outcome = resolve_position(pos, _bars([100, 100, 110, 118, 110]))
     assert outcome is not None
     assert outcome.realized_return == pytest.approx(0.10)
 
@@ -282,9 +287,10 @@ def test_legacy_position_still_uses_band_top():
         stop_fraction=0.15, band_low=-0.1, band_high=0.18, horizon_days=30.0,
         opened_at=_BASE, live=False, qty=0.0, take_profit=0.0,
     )
-    # +10% must NOT trigger (band top is 18%); +20% must.
+    # +10% must NOT trigger (band top is 18%); +20% arms the trail and the
+    # pullback through the 15%-stop trail distance exits.
     assert resolve_position(pos, _bars([100, 110, 110])) is None
-    outcome = resolve_position(pos, _bars([100, 120, 120]))
+    outcome = resolve_position(pos, _bars([100, 120, 130, 108]))
     assert outcome is not None
 
 

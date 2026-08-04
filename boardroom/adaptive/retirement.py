@@ -21,25 +21,35 @@ def should_retire(
     posterior: CalibrationPosterior,
     net_vs_floor_cad: float,
     n_resolved: int,
-    min_sample: int = 20,
+    min_sample: int = 30,
+    mean_below: float = 0.35,
 ) -> bool:
     """Decide whether to retire a division.
 
     Returns ``True`` only after at least ``min_sample`` resolved outcomes AND
-    either of:
+    BOTH of (owner mandate 2026-08-04 — retirement is for divisions that are
+    demonstrably broken, not merely cold):
 
-    - persistent miscalibration: ``posterior.mean() < 0.45``, or
+    - persistent miscalibration: ``posterior.mean() < mean_below``, and
     - net-negative vs the floor after cost: ``net_vs_floor_cad < 0``.
+
+    The old rule (either condition, at a 0.45 mean bar) retired any division
+    running below a coin-flip during a losing stretch — combined with the
+    leash walking to zero it amounted to a one-way shutdown. Requiring both
+    conditions on a rolling calibration window keeps a cold-but-recoverable
+    division trading at the leash floor while still killing one that loses
+    money AND can't call its shots over a real sample.
 
     Below ``min_sample`` resolved outcomes this always returns ``False`` — not
     enough evidence to justify the kill switch.
 
     A ``True`` verdict means the orchestrator must drop this division's leash to
-    ZERO. The division can only come back after re-validation (a new backtest
-    seeds a fresh prior); this function does not implement revival.
+    ZERO. The division comes back only via explicit human revival
+    (``boardroom revive`` seeds a fresh prior); this function does not
+    implement revival.
     """
     if n_resolved < min_sample:
         return False
-    miscalibrated = posterior.mean() < 0.45
+    miscalibrated = posterior.mean() < mean_below
     net_negative = net_vs_floor_cad < 0.0
-    return miscalibrated or net_negative
+    return miscalibrated and net_negative
