@@ -53,10 +53,14 @@ class Settings(BaseSettings):
     # conservative value as equity climbs. Hard caps are unaffected — this only
     # changes how readily the CEO acts.
     ceo_deviation_threshold: float = Field(default=0.02, alias="CEO_DEVIATION_THRESHOLD")
-    # Bolder while small: act on essentially any genuine positive-edge crypto idea
-    # that clears cost + the floor. Rises to the conservative bar as equity grows.
-    ceo_deviation_threshold_low: float = Field(default=0.001, alias="CEO_DEVIATION_THRESHOLD_LOW")
-    aggressive_below_cad: float = Field(default=500.0, alias="AGGRESSIVE_BELOW_CAD")
+    # Bolder while small: act on ANY genuine positive-edge crypto idea that
+    # clears cost + the floor + the Risk Manager. The bar is exactly ZERO while
+    # the account is under `aggressive_below_cad` (go-big mandate 2026-08-04:
+    # post-shrinkage scores live in the 0.001-0.005 range, so even a 0.001 bar
+    # meant the floor won every checkpoint — "active risk-taking" that never
+    # traded). Rises to the conservative bar as equity grows into the thousands.
+    ceo_deviation_threshold_low: float = Field(default=0.0, alias="CEO_DEVIATION_THRESHOLD_LOW")
+    aggressive_below_cad: float = Field(default=1000.0, alias="AGGRESSIVE_BELOW_CAD")
     conservative_above_cad: float = Field(default=5000.0, alias="CONSERVATIVE_ABOVE_CAD")
 
     # The crypto Event position cap also rides the aggression schedule: while the

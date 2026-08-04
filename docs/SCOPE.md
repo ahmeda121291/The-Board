@@ -158,9 +158,12 @@ dollar amounts to outgrow. Resolved against live equity (falls back to the
 | Fee-drag limit | 5% | Cumulative cost ceiling. |
 
 **Aggression schedule (bold while small, calmer as it grows).** Two levers ride an
-equity ramp (`$500`→`$5000`): the CEO's **deviation bar** (how readily it leaves the
-floor) is low while tiny and rises to conservative as equity grows; and the **crypto
-Event position cap** is bold while small (up to the 20% per-trade max,
+equity ramp (`$1000`→`$5000`): the CEO's **deviation bar** (how readily it leaves the
+floor) is **exactly ZERO under $1000** — any idea with genuine positive net edge that
+clears cost, the yield floor, and the Risk Manager gets funded (go-big 2026-08-04:
+post-shrinkage scores live at the 0.001–0.005 scale, so even a 0.001 bar meant the
+floor won every checkpoint) — rising to the conservative 0.02 as equity grows; and
+the **crypto Event position cap** is bold while small (up to the 20% per-trade max,
 `EVENT_HARD_CAP_PCT_SMALL`) tapering to the conservative 5% as equity grows. This is
 deliberate — small play-money account, willing to take real risk for growth, auto-de-risking
 into the thousands. **The daily-loss (6%) and max-drawdown (15%) breakers are never scaled**
@@ -319,6 +322,15 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-08-04 (d)** — **Zero deviation bar while small — the floor stops winning by
+  default.** First post-unpark live run proved the last chokepoint: pitches passed
+  every gate (cost, floor, Risk Manager), ranked at score 0.001 — and lost to a
+  0.0017 deviation bar. Post-shrinkage scores live at the 0.001–0.005 scale, so the
+  "low" 0.001 bar still meant HOLD forever. `CEO_DEVIATION_THRESHOLD_LOW` now
+  defaults to **0.0** and `AGGRESSIVE_BELOW_CAD` to **$1000**: under $1000 equity,
+  ANY surviving positive-net-edge idea funds (min-order floor makes it a real $25
+  trade). Growth ladder re-rung to match (sprout/sapling merged at $1000). Breakers,
+  caps, cost gate, and the two-key live gate unchanged. 345 tests.
 - **2026-08-04 (c)** — **Go-big mandate: no silent self-parking, and winners run.**
   Owner directive after finding the system fully parked. (1) **Leash floor +
   rolling calibration**: the per-division leash had walked to 0 for BOTH live

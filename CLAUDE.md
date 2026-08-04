@@ -83,9 +83,10 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   baseline. Ratchet stays realized-basis (deposits never swept); drawdown uses the
   live `equity_hwm_cad` (migration 0014).
 - **Aggression schedule** (`ceo/engine.py`): bolder while small, calmer as it grows. Two
-  knobs ride an equity ramp ($500→$5000): (1) the CEO's **deviation bar** is LOW while
-  small (0.001 ≤ $500) rising to conservative (0.02 ≥ $5000) — it acts on almost any
-  positive-edge crypto idea while tiny; (2) the **crypto Event position cap** is BOLD while
+  knobs ride an equity ramp ($1000→$5000): (1) the CEO's **deviation bar** is ZERO while
+  small (0.0 ≤ $1000, go-big 2026-08-04 — post-shrinkage scores are 0.001-scale, so any
+  positive bar meant the floor always won) rising to conservative (0.02 ≥ $5000) — it
+  funds ANY surviving positive-net-edge crypto idea while tiny; (2) the **crypto Event position cap** is BOLD while
   small (up to the 20% per-trade max, `EVENT_HARD_CAP_PCT_SMALL`) tapering to 5% as equity
   grows. Tunable via `CEO_DEVIATION_THRESHOLD*` / `EVENT_HARD_CAP_PCT_SMALL` /
   `AGGRESSIVE_BELOW_CAD` / `CONSERVATIVE_ABOVE_CAD`. The **daily-loss (6%) and drawdown
