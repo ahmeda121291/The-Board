@@ -54,6 +54,11 @@ class CEODecisionEngine:
     #: it (clamped to the per-trade cap / headroom) so small-conviction crypto
     #: orders clear the venue's minimum instead of being rejected. 0 disables.
     min_order_cad: float = 0.0
+    #: Conviction floor as a fraction of the book (owner mandate 2026-08-05):
+    #: the effective floor is max(min_order_cad, min_order_pct × portfolio), so
+    #: funded positions are a meaningful slice of equity and scale as it grows
+    #: instead of pinning at the exchange minimum forever. Same clamps apply.
+    min_order_pct: float = 0.0
     posteriors: dict[str, CalibrationPosterior] = field(default_factory=dict)
     leashes: dict[str, float] = field(default_factory=dict)
 
@@ -192,15 +197,20 @@ class CEODecisionEngine:
                 ranked,
             )
 
-        # Venue minimum-order floor: a small-conviction size can land below the
-        # exchange's minimum order size and get rejected. Bump it up to the floor
-        # so the trade actually executes — but never above the per-trade cap or
-        # the deployable headroom (so this can't breach the risk envelope).
+        # Conviction floor: a small-conviction size can land below the exchange
+        # minimum (rejected) or at dust that can't compound. Bump a funded size
+        # up to max(exchange minimum, min_order_pct of the book) — but never
+        # above the per-trade cap or the deployable headroom, so the floor can
+        # never breach the risk envelope.
         size = best.trusted_size_cad
-        if self.min_order_cad > 0 and 0 < size < self.min_order_cad:
+        floor = max(
+            self.min_order_cad,
+            max(0.0, self.min_order_pct) * max(0.0, portfolio_value_cad),
+        )
+        if floor > 0 and 0 < size < floor:
             per_trade = caps.cap_for(best.pitch.division.value, portfolio_value_cad)
             headroom = max(0.0, caps.deployable_cad(portfolio_value_cad) - deployed_cad)
-            size = round(min(self.min_order_cad, per_trade, headroom), 2)
+            size = round(min(floor, per_trade, headroom), 2)
             best.trusted_size_cad = size  # keep the ranking display consistent
 
         return (

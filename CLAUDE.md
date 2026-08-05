@@ -106,6 +106,10 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   tick-level exits and canopy ($5k) flags intraday surge entries as eligible —
   `requires_human`, surfaced via the `growth_tier` audit event + session field,
   never auto-enabled.
+- **Conviction floor** (2026-08-05 "we're ready"): a funded order is bumped to
+  **max(`MIN_ORDER_CAD` 25, `MIN_ORDER_PCT` 10% × book)** — positions are a real
+  slice of equity (~$68 on a $676 book) and scale as it grows, clamped to the
+  per-trade cap so the envelope holds. `MIN_ORDER_PCT=0` reverts to $25 floors.
 - **Minimum-order floor** (`MIN_ORDER_CAD`, default 25): a small-conviction crypto order is
   bumped up to the exchange minimum so it actually fills — clamped to the per-trade cap, so
   it never breaches the risk envelope. Crypto trades execute in **CAD pairs** (account is

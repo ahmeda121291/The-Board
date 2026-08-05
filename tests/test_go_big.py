@@ -16,6 +16,7 @@ import datetime as dt
 import uuid
 
 import pandas as pd
+import pytest
 
 from boardroom.adaptive.calibration import CalibrationPosterior
 from boardroom.adaptive.leash import update_leash
@@ -226,3 +227,40 @@ def test_default_deviation_bar_is_zero_while_small():
     assert eng._effective_threshold(672.0) == 0.0
     assert eng._effective_threshold(999.0) == 0.0
     assert eng._effective_threshold(5000.0) == s.ceo_deviation_threshold
+
+
+# ---- percent-of-book conviction floor (owner mandate 2026-08-05) -------------
+
+def test_order_floor_scales_with_the_book():
+    from boardroom.ceo.engine import CEODecisionEngine, DecisionKind
+    from boardroom.config import RiskCaps
+    import tests.test_ceo_engine as tce
+
+    caps = RiskCaps(
+        total_deployable_pct=0.80, per_trade_max_pct=0.20, event_hard_cap_pct=0.05,
+        daily_loss_limit_pct=0.06, max_drawdown_pct=0.15, fee_drag_limit_pct=0.05,
+    )
+    p = tce._pitch(
+        division=Division.CRYPTO_TREND, venue=Venue.KRAKEN, expected_return=0.05,
+        capital=30.0, max_loss=2.0, expected_cost=0.02, confidence=0.7,
+    )
+    eng = CEODecisionEngine(
+        caps=caps, deviation_threshold=0.0,
+        min_order_cad=25.0, min_order_pct=0.10,
+    )
+    decision, _ = eng.decide([p], hurdle_rate=0.0002, deployed_cad=0.0, portfolio_value_cad=676.0)
+    assert decision.kind == DecisionKind.FUND
+    assert decision.size_cad == pytest.approx(67.60)  # 10% of the book, not $25
+
+    # On a big book the floor still can't breach the per-trade cap (20%).
+    decision2, _ = eng.decide([p], hurdle_rate=0.0002, deployed_cad=0.0, portfolio_value_cad=676.0)
+    assert decision2.size_cad <= 0.20 * 676.0 + 1e-9
+
+    # Tiny book: the exchange minimum still wins (max of the two floors).
+    decision3, _ = eng.decide([p], hurdle_rate=0.0002, deployed_cad=0.0, portfolio_value_cad=100.0)
+    assert decision3.size_cad == pytest.approx(20.0)  # clamped to per-trade cap 20% of $100
+
+
+def test_default_settings_carry_the_pct_floor():
+    s = Settings(_env_file=None)
+    assert s.min_order_pct == pytest.approx(0.10)

@@ -76,6 +76,15 @@ class Settings(BaseSettings):
     # bump a funded order up to this floor (never above the per-trade cap) so it
     # actually fills. ~25 CAD comfortably clears Kraken's minimums for the majors.
     min_order_cad: float = Field(default=25.0, alias="MIN_ORDER_CAD")
+    # Conviction floor as a FRACTION of the book (owner mandate 2026-08-05,
+    # "we're ready"): the effective order floor is
+    # max(MIN_ORDER_CAD, MIN_ORDER_PCT × portfolio) — so positions are a
+    # meaningful slice of equity and scale automatically as the account grows,
+    # instead of every trade sitting at the $25 exchange minimum forever. At a
+    # 6%-capped stop, a 10% position risks ~0.6% of the book per trade; the
+    # per-trade cap (20%), deployable cap, and the never-scaled daily-loss /
+    # drawdown breakers still bound everything. Set 0 to disable.
+    min_order_pct: float = Field(default=0.10, alias="MIN_ORDER_PCT")
 
     # ---- Exit shape (2026-07-27 asymmetry fix) --------------------------------
     # A month of live outcomes showed inverted risk/reward: the take-profit sat
