@@ -323,6 +323,17 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-08-05 (f)** — **Volatility tilt — spot's honest substitute for leverage.**
+  Leverage is off the table structurally: Kraken's OSC restricted-dealer terms
+  prohibit margin/leverage for Canadian clients (the same regime behind the
+  BLESS `CA:ON` rejection), and the owner was told plainly rather than sold a
+  workaround. What spot CAN do: prefer the wildest liquid movers. A positive
+  CEO score is now multiplied by **(1 + `VOL_TILT_STRENGTH` × min(vol/`VOL_TILT_REF`, 2))**
+  (defaults 0.5 / 5% daily vol → a 12%-vol meme coin gets 2.0×, a 2%-vol major
+  1.2×), using the pitch's own computed volatility feature — pure code, no LLM.
+  Leverage-like daily swings from the asset itself, with zero liquidation risk;
+  the cost gate still kills anything that can't pay its way, and gated pitches
+  are never rescued by wildness. Strength 0 disables. 362 tests.
 - **2026-08-05 (e)** — **LOTTO MANDATE — the owner's explicit throwaway-money
   directive** ("as BIG as possible; if it ends at zero it's fine"): deployable
   98%, per-trade/per-asset caps 100% (the whole book can ride the single best

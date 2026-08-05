@@ -83,6 +83,12 @@ class CEODecisionEngine:
     #: A losing coin is demoted, never banned — a strong fresh signal can
     #: still fund it and give it a chance to redeem.
     symbol_tilts: dict[str, float] = field(default_factory=dict)
+    #: Volatility tilt (lotto mandate 2026-08-05) — spot's honest substitute
+    #: for leverage: at comparable edge, prefer the wildest movers. A positive
+    #: score is multiplied by (1 + strength × min(vol/ref, 2.0)), vol taken
+    #: from the pitch's own computed ``volatility`` feature. 0 disables.
+    vol_tilt_strength: float = 0.0
+    vol_tilt_ref: float = 0.05
 
     def _ramp(self, equity: float, at_small: float, at_grown: float) -> float:
         """Linear aggression ramp: ``at_small`` while equity <= aggressive_below_cad,
@@ -165,6 +171,13 @@ class CEODecisionEngine:
             tilt = self.symbol_tilts.get(_base_of(pitch.symbol), 0.0)
             if tilt:
                 score *= 1.0 + tilt
+        # 7. Volatility tilt: at comparable edge, the wildest liquid mover wins
+        #    the ticket — leverage-like daily swings from the asset itself,
+        #    with zero liquidation risk. Pure code on the computed vol feature.
+        if score > 0 and self.vol_tilt_strength > 0 and self.vol_tilt_ref > 0:
+            vol = float(pitch.signals.features.get("volatility", 0.0) or 0.0)
+            if vol > 0:
+                score *= 1.0 + self.vol_tilt_strength * min(vol / self.vol_tilt_ref, 2.0)
         reason = None if size > 0 else "sized to zero after trust/caps"
         return RankedPitch(pitch, trust, trusted_conf, size, score, reason)
 

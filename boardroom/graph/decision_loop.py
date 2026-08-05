@@ -104,6 +104,8 @@ class Orchestrator:
                 min_order_cad=self.settings.min_order_cad,
                 min_order_pct=self.settings.min_order_pct,
                 kelly_fraction=self.settings.kelly_fraction,
+                vol_tilt_strength=self.settings.vol_tilt_strength,
+                vol_tilt_ref=self.settings.vol_tilt_ref,
             )
         # Default to stub brokers; real Kraken/IBKR are injected at Milestone 6.
         self.brokers.setdefault(Venue.KRAKEN, StubBroker(Venue.KRAKEN))
