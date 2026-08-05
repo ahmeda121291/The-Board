@@ -104,7 +104,7 @@ def test_asset_cap_diverts_capital_to_next_best_idea():
 
     sol = _pitch("SOLUSD", er=0.06)   # best idea, but capped out
     eth = _pitch("ETHUSD", er=0.04)   # next best — should get the capital
-    org = _org(repo, [sol, eth], MAX_FUNDINGS_PER_CHECKPOINT=1)
+    org = _org(repo, [sol, eth], MAX_FUNDINGS_PER_CHECKPOINT=1, ASSET_MAX_EXPOSURE_PCT=0.20)
 
     result = org.run_once(portfolio_value_cad=250.0)
 

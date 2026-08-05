@@ -70,6 +70,9 @@ class CEODecisionEngine:
     #: funded positions are a meaningful slice of equity and scale as it grows
     #: instead of pinning at the exchange minimum forever. Same clamps apply.
     min_order_pct: float = 0.0
+    #: Kelly fraction for conviction sizing (owner dial 2026-08-05: full Kelly).
+    #: The hard caps still clamp every size, whatever this is set to.
+    kelly_fraction: float = 0.25
     posteriors: dict[str, CalibrationPosterior] = field(default_factory=dict)
     leashes: dict[str, float] = field(default_factory=dict)
     #: Per-ASSET realized track record tilt (trade autopsy 2026-08-05: repeat
@@ -148,6 +151,7 @@ class CEODecisionEngine:
             deployed_cad=deployed_cad,
             portfolio_value_cad=portfolio_value_cad,
             leash=self.leashes.get(div, 1.0),
+            kelly_fraction=self.kelly_fraction,
         )
 
         # 5. Risk-adjusted score (rank metric), computed on the trust-adjusted size.

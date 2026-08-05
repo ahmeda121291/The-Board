@@ -323,6 +323,18 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-08-05 (d)** — **Owner risk dials — max aggression, chosen explicitly.** Asked
+  the owner the four risk-of-ruin questions directly; the answers (on the record):
+  per-trade cap **40%** (was 20; per-asset aggregate cap follows to 40% so a full
+  position is reachable), daily-loss breaker **12%** (was 6 — at ~$100+ positions the
+  old line tripped on a single overnight gap and froze the day), **FULL Kelly**
+  (`KELLY_FRACTION` 1.0, new dial; hard caps still clamp every size) with the
+  shrinkage floor softened to **0.7** (the model keeps ≥70% of its voice — the record
+  still drags fantasy down, it no longer silences conviction), and the **gains
+  ratchet OFF** (`RATCHET_CAPTURE_PCT` 0, new dial — every profit dollar stays
+  invested and compounds; the already-banked reserve is never released). Drawdown
+  breaker stays 15% from peak — the last hard line. Neither breaker ever rides the
+  aggression ramp. 358 tests.
 - **2026-08-05 (c)** — **Trade autopsy → targeted aggression.** One-time read of all
   57 resolved trades: horizon exits made **+$27** (avg +2.6%) and the two real
   take-profits **+$10.9**, while stop-losses lost **−$67.8** at an average −20.4% —
