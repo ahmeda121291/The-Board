@@ -159,11 +159,12 @@ def test_crashed_run_is_recorded_as_crashed():
 
 def test_daily_loss_breaker_forces_hold_and_is_persisted():
     repo = InMemoryRepository()
-    # A realized loss today beyond 6% of a 250 CAD book (limit 15 CAD).
+    # A realized loss today beyond the 50% malfunction tripwire of a 250 CAD
+    # book (limit 125 CAD).
     repo.save_outcome(
         ResolvedOutcome(
             decision_id=str(uuid.uuid4()), division=Division.EVENT, predicted_return=0.02,
-            realized_return=-0.2, predicted_confidence=0.4, win=False, pnl_cad=-30.0,
+            realized_return=-0.6, predicted_confidence=0.4, win=False, pnl_cad=-150.0,
             cost_cad=0.5, inside_band=False,
             process_luck=ProcessLuckTag.GOOD_PROCESS_BAD_OUTCOME,
         )
@@ -302,11 +303,11 @@ def test_tripped_breaker_still_snapshots_and_reconciles():
     dashboard went stale exactly when it mattered most. Both are read-only and
     must run on the breaker path too."""
     repo = InMemoryRepository()
-    # Trip the daily-loss breaker: a realized loss beyond 6% of a 250 CAD book.
+    # Trip the daily-loss tripwire: a realized loss beyond 50% of a 250 CAD book.
     repo.save_outcome(
         ResolvedOutcome(
             decision_id=str(uuid.uuid4()), division=Division.EVENT, predicted_return=0.02,
-            realized_return=-0.2, predicted_confidence=0.4, win=False, pnl_cad=-30.0,
+            realized_return=-0.6, predicted_confidence=0.4, win=False, pnl_cad=-150.0,
             cost_cad=0.5, inside_band=False,
             process_luck=ProcessLuckTag.GOOD_PROCESS_BAD_OUTCOME,
         )

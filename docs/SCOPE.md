@@ -323,6 +323,17 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-08-05 (e)** — **LOTTO MANDATE — the owner's explicit throwaway-money
+  directive** ("as BIG as possible; if it ends at zero it's fine"): deployable
+  98%, per-trade/per-asset caps 100% (the whole book can ride the single best
+  idea), order floor 40% of book, stop cap widened to 10% (volatile runners
+  aren't shaken out; the trail arms at 12.5%), full Kelly + 0.7 shrinkage floor
+  unchanged, ratchet off. The daily-loss (50%) and drawdown (80%) breakers are
+  reframed as MALFUNCTION tripwires — they exist to halt a runaway bug, not to
+  protect capital the owner has explicitly put at risk. Recorded honestly in the
+  same commit: this is a maximum-variance configuration; the modal outcome is a
+  drawn-down book punctuated by occasional multi-x runs — exactly what was
+  ordered, on the record. 358 tests.
 - **2026-08-05 (d)** — **Owner risk dials — max aggression, chosen explicitly.** Asked
   the owner the four risk-of-ruin questions directly; the answers (on the record):
   per-trade cap **40%** (was 20; per-asset aggregate cap follows to 40% so a full

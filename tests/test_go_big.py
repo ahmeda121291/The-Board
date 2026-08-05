@@ -263,4 +263,4 @@ def test_order_floor_scales_with_the_book():
 
 def test_default_settings_carry_the_pct_floor():
     s = Settings(_env_file=None)
-    assert s.min_order_pct == pytest.approx(0.15)
+    assert s.min_order_pct == pytest.approx(0.40)

@@ -116,7 +116,7 @@ def test_loader_builds_bounded_tilts_from_outcomes():
 
 def test_autopsy_defaults():
     s = Settings(_env_file=None)
-    assert s.min_order_pct == pytest.approx(0.15)
+    assert s.min_order_pct == pytest.approx(0.40)
     assert s.max_fundings_per_checkpoint == 3
     assert s.exit_tp_r_multiple == pytest.approx(1.25)
     assert s.rotation_edge_multiple == pytest.approx(2.0)

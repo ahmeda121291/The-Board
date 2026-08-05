@@ -36,11 +36,11 @@ class Settings(BaseSettings):
     # are resolved to CAD at decision time against current equity.
     # See docs/RISK_MODEL.md.
     account_base_currency: str = Field(default="CAD", alias="ACCOUNT_BASE_CURRENCY")
-    total_deployable_pct: float = Field(default=0.80, alias="TOTAL_DEPLOYABLE_PCT")
-    per_trade_max_pct: float = Field(default=0.40, alias="PER_TRADE_MAX_PCT")
+    total_deployable_pct: float = Field(default=0.98, alias="TOTAL_DEPLOYABLE_PCT")
+    per_trade_max_pct: float = Field(default=1.0, alias="PER_TRADE_MAX_PCT")
     event_hard_cap_pct: float = Field(default=0.05, alias="EVENT_HARD_CAP_PCT")
-    daily_loss_limit_pct: float = Field(default=0.12, alias="DAILY_LOSS_LIMIT_PCT")
-    max_drawdown_pct: float = Field(default=0.15, alias="MAX_DRAWDOWN_PCT")
+    daily_loss_limit_pct: float = Field(default=0.50, alias="DAILY_LOSS_LIMIT_PCT")
+    max_drawdown_pct: float = Field(default=0.80, alias="MAX_DRAWDOWN_PCT")
     fee_drag_limit_pct: float = Field(default=0.05, alias="FEE_DRAG_LIMIT_PCT")
     # Reference portfolio value, used when live equity isn't supplied (CLI
     # display, dry-run). Your funding baseline — caps resolve against this until
@@ -66,11 +66,14 @@ class Settings(BaseSettings):
     # The crypto Event position cap also rides the aggression schedule: while the
     # account is small it can size a single crypto bet up to ``event_hard_cap_pct_small``
     # (defaults to the per-trade max — bold while small), tapering to the
-    # conservative ``event_hard_cap_pct`` as equity grows into the thousands. The
-    # daily-loss and drawdown circuit breakers never ride the aggression ramp —
-    # they are the "don't lose it all in one day" backstop at every size
-    # (levels owner-set 2026-08-05: daily-loss 12%, drawdown 15%).
-    event_hard_cap_pct_small: float = Field(default=0.40, alias="EVENT_HARD_CAP_PCT_SMALL")
+    # conservative ``event_hard_cap_pct`` as equity grows into the thousands.
+    # LOTTO MANDATE (owner, 2026-08-05 "BIG BIG BIG — zero is fine"): caps are
+    # opened to the structural maximum — deployable 98%, per-trade/asset 100%,
+    # order floor 40% of book — so the CEO can put essentially the whole book on
+    # its best idea every checkpoint. The breakers are no longer loss LIMITS,
+    # they are MALFUNCTION tripwires only (daily 50%, drawdown 80%): they halt
+    # a runaway bug, not a bad bet the owner already accepted.
+    event_hard_cap_pct_small: float = Field(default=1.0, alias="EVENT_HARD_CAP_PCT_SMALL")
 
     # Exchange minimum-order floor (CAD). Kraken rejects orders below a per-coin
     # minimum; on a small account a weak-conviction size can fall under it. We
@@ -81,11 +84,12 @@ class Settings(BaseSettings):
     # "we're ready"): the effective order floor is
     # max(MIN_ORDER_CAD, MIN_ORDER_PCT × portfolio) — so positions are a
     # meaningful slice of equity and scale automatically as the account grows,
-    # instead of every trade sitting at the $25 exchange minimum forever. At a
-    # 6%-capped stop, a 10% position risks ~0.6% of the book per trade; the
-    # per-trade cap (20%), deployable cap, and the never-scaled daily-loss /
-    # drawdown breakers still bound everything. Set 0 to disable.
-    min_order_pct: float = Field(default=0.15, alias="MIN_ORDER_PCT")
+    # instead of every trade sitting at the $25 exchange minimum forever.
+    # Lotto mandate: 40% of the book minimum per funded idea — with a 10% stop
+    # that risks ~4% of the book per losing ticket, cut fast and re-rolled up
+    # to 3 ideas x 8 checkpoints a day, winners trailing uncapped. Set 0 to
+    # revert to fixed $25 floors.
+    min_order_pct: float = Field(default=0.40, alias="MIN_ORDER_PCT")
     # Kelly fraction for conviction sizing (owner dial 2026-08-05: FULL Kelly).
     # 1.0 sizes at the textbook growth-optimal bet; the caps above still clamp
     # every result, so "full Kelly" can never exceed the per-trade/deployable
@@ -98,7 +102,7 @@ class Settings(BaseSettings):
     # ran 10-14% deep — small wins, big losses. Exits are now symmetric by
     # construction: the stop is capped and the take-profit is a fixed multiple
     # of the stop distance (R-multiple), both tunable.
-    exit_stop_cap_pct: float = Field(default=0.06, alias="EXIT_STOP_CAP_PCT")
+    exit_stop_cap_pct: float = Field(default=0.10, alias="EXIT_STOP_CAP_PCT")
     exit_tp_r_multiple: float = Field(default=1.25, alias="EXIT_TP_R_MULTIPLE")
     # Let winners RUN (owner mandate 2026-08-04, "go big"): instead of selling
     # the instant the take-profit prints, hitting the TP *arms a trailing stop*
@@ -158,7 +162,7 @@ class Settings(BaseSettings):
     # open positions. Not a "never rebuy" rule: the CEO may keep adding to a
     # winner until the asset reaches this share of the book, then the next-best
     # idea gets the capital. Prevents a single trending coin eating everything.
-    asset_max_exposure_pct: float = Field(default=0.40, alias="ASSET_MAX_EXPOSURE_PCT")
+    asset_max_exposure_pct: float = Field(default=1.0, alias="ASSET_MAX_EXPOSURE_PCT")
     # Gains-ratchet sweep fraction (owner dial 2026-08-05: 0 = sweeps DISABLED,
     # all profits stay invested and compound). Any positive fraction banks that
     # share of each new realized high into the untouchable reserve; the existing
