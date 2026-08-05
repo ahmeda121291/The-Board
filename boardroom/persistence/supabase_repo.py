@@ -196,6 +196,27 @@ class SupabaseRepository(Repository):
     def set_live_armed(self, armed: bool) -> None:
         self._t("system_state").upsert({"id": 1, "live_armed": bool(armed)}).execute()
 
+    def restricted_assets(self) -> set[str]:
+        try:
+            res = (
+                self._t("system_state").select("restricted_assets").eq("id", 1).limit(1).execute()
+            )
+            if res.data:
+                return {str(a).upper() for a in (res.data[0].get("restricted_assets") or [])}
+        except Exception:  # noqa: BLE001 — pre-migration column; gate just stays open
+            pass
+        return set()
+
+    def add_restricted_asset(self, asset: str) -> None:
+        try:
+            cur = self.restricted_assets()
+            cur.add(asset.upper())
+            self._t("system_state").upsert(
+                {"id": 1, "restricted_assets": sorted(cur)}
+            ).execute()
+        except Exception:  # noqa: BLE001 — memory is best-effort, never fails a run
+            pass
+
     def set_balances(
         self, *, kraken_cash_cad: float | None, ibkr_cash_cad: float | None, equity_cad: float | None
     ) -> None:

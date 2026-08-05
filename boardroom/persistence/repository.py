@@ -124,6 +124,16 @@ class Repository(abc.ABC):
         """
         ...
 
+    def restricted_assets(self) -> set[str]:
+        """Base assets the venue has refused to trade for this account
+        (regional permission errors, e.g. Kraken's "restricted for CA:ON").
+        Remembered so a coin that can never fill stops eating funding slots.
+        Default: none."""
+        return set()
+
+    def add_restricted_asset(self, asset: str) -> None:
+        """Remember a venue-refused base asset. Default: no-op."""
+
     @abc.abstractmethod
     def set_balances(
         self, *, kraken_cash_cad: float | None, ibkr_cash_cad: float | None, equity_cad: float | None
@@ -303,6 +313,14 @@ class InMemoryRepository(Repository):
 
     def set_live_armed(self, armed: bool) -> None:
         self.system_state["live_armed"] = bool(armed)
+
+    def restricted_assets(self) -> set[str]:
+        return set(self.system_state.get("restricted_assets", []))
+
+    def add_restricted_asset(self, asset: str) -> None:
+        cur = set(self.system_state.get("restricted_assets", []))
+        cur.add(asset.upper())
+        self.system_state["restricted_assets"] = sorted(cur)
 
     def set_balances(
         self, *, kraken_cash_cad: float | None, ibkr_cash_cad: float | None, equity_cad: float | None

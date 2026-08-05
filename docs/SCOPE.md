@@ -322,6 +322,19 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-08-05** — **Execution robustness: sells clamp to reality, refused assets
+  remembered.** First fully-live night surfaced two blockers. (1) **Sell clamp**:
+  a tracked position can exceed the actually-sellable spot balance (in-kind fee
+  dust; Earn-allocated coins) — TRU/EUL exits bounced for days on
+  `EOrder:Insufficient funds` over ~1e-6 coins, leaving ~$40 stuck. SELL orders
+  with a tracked qty now clamp to Kraken's own available spot balance
+  (`_available_base_qty`; Earn `.F`/`.S` variants excluded; unreadable balance →
+  trade tracked qty as before; zero balance → clean error). (2) **Restricted
+  assets**: Kraken listed BLESSUSD but refused the funded buy
+  ("EAccount:Invalid permissions: BLESS trading restricted for CA:ON"), burning a
+  funding slot. Permission refusals are now remembered in
+  `system_state.restricted_assets` (migration 0016, applied + BLESS seeded) and
+  gated out of funding alongside the executability gate. 351 tests.
 - **2026-08-04 (d)** — **Zero deviation bar while small — the floor stops winning by
   default.** First post-unpark live run proved the last chokepoint: pitches passed
   every gate (cost, floor, Risk Manager), ranked at score 0.001 — and lost to a
