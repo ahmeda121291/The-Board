@@ -45,7 +45,7 @@ def test_crypto_codes_are_not_fiat(asset):
 def _broker_with_balances(monkeypatch, balances: dict, usdcad: float | None = 1.35):
     broker = KrakenBroker()
     monkeypatch.setattr(type(broker), "_has_creds", property(lambda self: True))
-    monkeypatch.setattr(broker, "_private", lambda method, data=None: dict(balances))
+    monkeypatch.setattr(broker, "_private", lambda method, data=None, retries=1: dict(balances))
     monkeypatch.setattr(kraken_mod, "quote_to_cad_rate", lambda quote, timeout=15.0: usdcad)
     return broker
 

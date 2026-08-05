@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     # 6%-capped stop, a 10% position risks ~0.6% of the book per trade; the
     # per-trade cap (20%), deployable cap, and the never-scaled daily-loss /
     # drawdown breakers still bound everything. Set 0 to disable.
-    min_order_pct: float = Field(default=0.10, alias="MIN_ORDER_PCT")
+    min_order_pct: float = Field(default=0.15, alias="MIN_ORDER_PCT")
 
     # ---- Exit shape (2026-07-27 asymmetry fix) --------------------------------
     # A month of live outcomes showed inverted risk/reward: the take-profit sat
@@ -93,7 +93,7 @@ class Settings(BaseSettings):
     # construction: the stop is capped and the take-profit is a fixed multiple
     # of the stop distance (R-multiple), both tunable.
     exit_stop_cap_pct: float = Field(default=0.06, alias="EXIT_STOP_CAP_PCT")
-    exit_tp_r_multiple: float = Field(default=1.5, alias="EXIT_TP_R_MULTIPLE")
+    exit_tp_r_multiple: float = Field(default=1.25, alias="EXIT_TP_R_MULTIPLE")
     # Let winners RUN (owner mandate 2026-08-04, "go big"): instead of selling
     # the instant the take-profit prints, hitting the TP *arms a trailing stop*
     # — the position rides as long as each close holds within the stop distance
@@ -147,7 +147,7 @@ class Settings(BaseSettings):
     # the weak holding and fund the better coin — at most one rotation per
     # checkpoint, so conviction (not churn) moves the money.
     enable_rotation: bool = Field(default=True, alias="ENABLE_ROTATION")
-    rotation_edge_multiple: float = Field(default=1.5, alias="ROTATION_EDGE_MULTIPLE")
+    rotation_edge_multiple: float = Field(default=2.0, alias="ROTATION_EDGE_MULTIPLE")
     # Aggregate exposure ceiling PER ASSET (fraction of portfolio) across all
     # open positions. Not a "never rebuy" rule: the CEO may keep adding to a
     # winner until the asset reaches this share of the book, then the next-best
@@ -156,7 +156,7 @@ class Settings(BaseSettings):
     # How many ideas the CEO may fund in ONE checkpoint (each must clear the bar
     # and every cap independently; same-asset repeats are excluded within a
     # checkpoint). >1 diversifies instead of winner-take-all.
-    max_fundings_per_checkpoint: int = Field(default=2, alias="MAX_FUNDINGS_PER_CHECKPOINT")
+    max_fundings_per_checkpoint: int = Field(default=3, alias="MAX_FUNDINGS_PER_CHECKPOINT")
 
     # The floor's annualized carry — the hurdle every other division must beat.
     # Set this to the APR you actually earn (Kraken staking/lending). When the
@@ -176,7 +176,9 @@ class Settings(BaseSettings):
     # the IBKR holdings diff — at EACH. Defaults to ~9:30am and ~3pm ET (13:30 &
     # 19:00 UTC in summer): one near the open, one before the close. The live
     # runner is driven by Task Scheduler `--once` triggers at these local times.
-    checkpoint_times: str = Field(default="13:30,15:30,17:30,19:00", alias="CHECKPOINT_TIMES")
+    checkpoint_times: str = Field(
+        default="01:30,04:30,07:30,10:30,13:30,16:30,19:30,22:30", alias="CHECKPOINT_TIMES"
+    )
 
     # ---- LLM (the agents' brain) --------------------------------------------
     anthropic_api_key: SecretStr | None = Field(default=None, alias="ANTHROPIC_API_KEY")
