@@ -22,7 +22,7 @@ import time
 import urllib.parse
 from datetime import datetime, timezone
 
-from boardroom.brokers.base import Broker, Fill, Order
+from boardroom.brokers.base import Broker, Fill, Order, OrderSide
 from boardroom.config import get_settings
 from boardroom.schemas import Venue
 
@@ -327,6 +327,34 @@ class KrakenBroker(Broker):
             # other fiat with no rate: skipped rather than guessed
         return cash
 
+    def _available_base_qty(self, exec_pair: str) -> float | None:
+        """Spot balance available to SELL for ``exec_pair``'s base asset.
+
+        Sums only plain spot codes (Earn/staked ``.F``/``.S``/``.B`` variants
+        can't be sold on the spot book); legacy X-prefixed codes are normalized
+        (XXBT → XBT). Returns None when the balance can't be read — the caller
+        then trades the tracked quantity unmodified rather than guessing."""
+        base = exec_pair
+        for q in ("USDT", "USDC", "USD", "CAD", "EUR"):
+            if base.endswith(q) and len(base) > len(q):
+                base = base[: -len(q)]
+                break
+        try:
+            balances = self._private("Balance")
+        except Exception:
+            return None
+        total = 0.0
+        for asset, amount in (balances or {}).items():
+            if "." in asset:
+                continue  # Earn/staked variant — not spot-sellable
+            if _normalize_kraken_asset(asset) != base:
+                continue
+            try:
+                total += float(amount)
+            except (TypeError, ValueError):
+                continue
+        return total
+
     # ---- floor APR provider --------------------------------------------------
     def staking_apr(self, assets: tuple[str, ...] = ("USD", "USDC", "USDT", "DAI")) -> float:
         """Best available staking/earn APR (as a FRACTION) across ``assets``.
@@ -396,6 +424,20 @@ class KrakenBroker(Broker):
             if order.base_qty is not None
             else volume_from_notional(notional_quote, price)
         )
+        if order.side is OrderSide.SELL and order.base_qty is not None:
+            # A tracked qty can exceed what's actually sellable: in-kind fees
+            # and rounding leave the spot balance dust short (TRU/EUL exits
+            # bounced for days on EOrder:Insufficient funds over ~1e-6 coins),
+            # and Earn-allocated (.F/.S) balances aren't spot-sellable. Clamp
+            # to the venue's own answer so the exit fills instead of erroring
+            # forever; an unreadable balance just sells the tracked qty as-is.
+            avail = self._available_base_qty(exec_pair)
+            if avail is not None:
+                if avail <= 1e-8:
+                    raise RuntimeError(
+                        f"Kraken: no available spot balance to sell on {exec_pair}"
+                    )
+                volume = min(volume, round(avail, 8))
         payload = {
             "pair": exec_pair,
             "type": order.side.value,

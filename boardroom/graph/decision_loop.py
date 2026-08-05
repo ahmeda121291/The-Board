@@ -362,6 +362,17 @@ class Orchestrator:
             fill = broker.place_order(order, live=live)
         except Exception as e:  # noqa: BLE001
             decision.live = False
+            err = str(e)
+            # A jurisdiction refusal ("Invalid permissions ... restricted for
+            # CA:ON") is permanent for this account — remember the asset so it
+            # never eats another funding slot.
+            if "Invalid permissions" in err or "restricted for" in err:
+                base = _base_asset(pitch.symbol).upper()
+                self.repo.add_restricted_asset(base)
+                self.repo.audit(
+                    "restricted_asset",
+                    {"symbol": pitch.symbol, "asset": base, "error": err[:160]},
+                )
             self.repo.audit(
                 "execute_error",
                 {
@@ -369,7 +380,7 @@ class Orchestrator:
                     "venue": pitch.venue.value,
                     "symbol": pitch.symbol,
                     "size_cad": decision.size_cad,
-                    "error": str(e)[:200],
+                    "error": err[:200],
                 },
             )
             return fills
@@ -930,6 +941,22 @@ class Orchestrator:
                             "exec_pair": pair,
                             "quote": quote,
                         },
+                    )
+
+        # Regional-permission gate: Kraken can list a pair yet refuse orders
+        # for this account's jurisdiction (2026-08-05: BLESSUSD bounced with
+        # "Invalid permissions: BLESS trading restricted for CA:ON" and burned
+        # a funding slot). Assets that have bounced that way are remembered in
+        # system_state and never pitched capital again.
+        restricted = self.repo.restricted_assets()
+        if restricted:
+            for p in list(fundable):
+                if _base_asset(p.symbol).upper() in restricted:
+                    no_exec_ids.add(p.pitch_id)
+                    fundable.remove(p)
+                    self.repo.audit(
+                        "restricted_asset_skip",
+                        {"pitch_id": p.pitch_id, "symbol": p.symbol},
                     )
 
         survivors, challenges = self.risk_review(fundable, portfolio)
