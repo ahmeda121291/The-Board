@@ -201,7 +201,8 @@ human decision requiring code/scheduler changes.
 ## 5. When it runs — and the market-hours rule
 
 - **Several checkpoints per day** — `CHECKPOINT_TIMES`, default
-  **`13:30,15:30,17:30,19:00` UTC** (4× across the ET session — more shots for crypto
+  **`01:30,04:30,07:30,10:30,13:30,16:30,19:30,22:30` UTC** (8×/day, every 3h — crypto
+  is 24/7, and stops only evaluate at checkpoints, so density = tighter real stops — more shots for crypto
   while the account is small). Each checkpoint auto-trades crypto AND refreshes the
   advisory stock recommendation + IBKR holdings diff + portfolio snapshot.
 - Crypto (Kraken) trades **24/7** — the Yield/Event legs can act at any checkpoint.
@@ -303,7 +304,7 @@ strip's equity figure likewise counts Kraken only. All read-only.
 ## 9. Open design questions / rationale
 
 **Why a few checkpoints a day and not constant trading?** The owner's mandate is
-growth-while-small with real risk tolerance, so the cadence is **4×/day** (up from 2×) —
+growth-while-small with real risk tolerance, so the cadence is **8×/day** (2026-08-05, up from 4×) —
 more shots for crypto while the account is tiny. But it is deliberately *not* a
 high-frequency churner, because:
 - Every round-trip pays **~0.5% in Kraken fees**; trading constantly turns fees into the
@@ -322,6 +323,25 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-08-05 (c)** — **Trade autopsy → targeted aggression.** One-time read of all
+  57 resolved trades: horizon exits made **+$27** (avg +2.6%) and the two real
+  take-profits **+$10.9**, while stop-losses lost **−$67.8** at an average −20.4% —
+  triple the 6% cap, because stops only evaluate at checkpoints and daily closes gap
+  through them. Repeat winners (KAITO 7/7 +$43, ZAMA 4/4 +$16) and repeat losers
+  (TRU 0/4 −$23, COTI 4/10 −$28) — but nothing remembered the ASSET, only the
+  division. And every crash ever (3) was a transient network failure. Changes:
+  (1) **checkpoints 8×/day** (every 3h, `CHECKPOINT_TIMES` default) — denser stop
+  evaluation shrinks gap risk AND doubles scan frequency; (2) **per-asset track-record
+  tilt** — each asset's realized net (≥2 resolutions) becomes a bounded score
+  multiplier (±0.6, code-computed each checkpoint), so proven coins outrank proven
+  losers — demoted, never banned; (3) **network retries** on Kraken public GETs and
+  idempotent private reads (3 attempts, backoff; AddOrder NEVER retries — a lost
+  response after a fill must not double-order); (4) knobs: `MIN_ORDER_PCT` 15%,
+  `MAX_FUNDINGS_PER_CHECKPOINT` 3, trail arms at 1.25R (+7.5%, profit floor ≈ +1.5%
+  once armed), `ROTATION_EDGE_MULTIPLE` 2.0 (rotations were 1-for-6, −$19.7 — demand
+  more edge before churning). Breakers/caps untouched. Operator: update
+  `CHECKPOINT_TIMES` in `.env` (or delete the line to take the new default) and
+  re-run `install_scheduler.ps1` so Task Scheduler registers the 8 triggers. 358 tests.
 - **2026-08-05 (b)** — **Percent-of-book conviction floor.** ("We're ready.") Every
   funded order had pinned at the $25 exchange minimum — post-shrinkage Kelly sizes
   are dollars, so `MIN_ORDER_CAD` was doing all the sizing and positions could

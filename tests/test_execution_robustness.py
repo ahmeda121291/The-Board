@@ -32,7 +32,7 @@ def _broker(monkeypatch, balances: dict) -> tuple[KrakenBroker, dict]:
     monkeypatch.setattr(broker, "_ticker_price", lambda pair: 1.5)
     sent: dict = {}
 
-    def private(method, data=None):
+    def private(method, data=None, retries=1):
         if method == "Balance":
             return dict(balances)
         if method == "AddOrder":
@@ -70,7 +70,7 @@ def test_sell_with_no_balance_raises_cleanly(monkeypatch):
 
 def test_sell_without_balance_read_trades_tracked_qty(monkeypatch):
     broker, sent = _broker(monkeypatch, {})
-    def private(method, data=None):
+    def private(method, data=None, retries=1):
         if method == "Balance":
             raise RuntimeError("boom")
         sent.update(data or {})

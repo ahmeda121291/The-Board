@@ -167,7 +167,7 @@ def test_usd_order_refuses_to_size_without_fx_rate(monkeypatch):
 def test_cash_counts_both_fiats_in_cad(monkeypatch):
     kb = KrakenBroker()
     monkeypatch.setattr(type(kb), "_has_creds", property(lambda self: True))
-    monkeypatch.setattr(kb, "_private", lambda m, d=None: {"ZCAD": "10.0", "ZUSD": "100.0"})
+    monkeypatch.setattr(kb, "_private", lambda m, d=None, retries=1: {"ZCAD": "10.0", "ZUSD": "100.0"})
     monkeypatch.setattr(
         "boardroom.brokers.kraken.quote_to_cad_rate", lambda q, **k: 1.35
     )

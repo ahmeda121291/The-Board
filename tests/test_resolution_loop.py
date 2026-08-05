@@ -143,9 +143,9 @@ def test_build_open_position_recovers_stop_and_band():
     )
     pos = build_open_position(pitch, decision)
     # raw stop = (max_loss - cost) / capital = (4.4 - 0.4) / 40 = 0.10, but the
-    # 2026-07-27 exit fix CAPS it at EXIT_STOP_CAP_PCT (6%) with TP at 1.5R.
+    # 2026-07-27 exit fix CAPS it at EXIT_STOP_CAP_PCT (6%); TP arms at 1.25R (2026-08-05).
     assert pos.stop_fraction == pytest.approx(0.06)
-    assert pos.take_profit == pytest.approx(0.09)
+    assert pos.take_profit == pytest.approx(0.075)
     # band = expected_return ± 2 * vol * sqrt(horizon) — Critic window unchanged
     half = 2.0 * 0.02 * (5.0 ** 0.5)
     assert pos.band_low == pytest.approx(0.03 - half)
@@ -259,11 +259,11 @@ def _pitch_for_exit(max_loss=5.0, cost=0.25, capital=25.0, expected=0.08, vol=0.
 
 def test_stop_is_capped_and_tp_is_r_multiple():
     # Raw stop would be (5.0-0.25)/25 = 19% — the old deep-stop shape. It must
-    # cap at 6% with the take-profit at 1.5R = 9%, not the ~+18% band top.
+    # cap at 6% with the trail arming at 1.25R = 7.5%, not the ~+18% band top.
     decision = Decision(decision_id="d-exit", kind=DecisionKind.FUND, size_cad=25.0)
     pos = build_open_position(_pitch_for_exit(), decision)
     assert pos.stop_fraction == pytest.approx(0.06)
-    assert pos.take_profit == pytest.approx(0.09)
+    assert pos.take_profit == pytest.approx(0.075)
     # The Critic's scoring band is untouched by the exit change.
     assert pos.band_high == pytest.approx(0.08 + 2 * 0.05 * (5.0 ** 0.5))
 

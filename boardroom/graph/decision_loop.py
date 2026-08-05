@@ -252,6 +252,27 @@ class Orchestrator:
             )
             self.engine.leashes[div.division.value] = 0.0 if st.retired else max(st.leash, floor)
 
+        # Per-ASSET track-record tilt (trade autopsy 2026-08-05): calibration
+        # only remembered the division, but the scoreboard shows repeat winners
+        # (KAITO 7/7) and repeat losers (TRU 0/4). Fold each asset's realized
+        # net into a bounded score multiplier — pure code on real outcomes,
+        # requires >= 2 resolutions so one lucky trade can't anoint a coin.
+        stats: dict[str, tuple[float, int]] = {}
+        try:
+            for o in self.repo.recent_outcomes(limit=1000):
+                if not o.symbol:
+                    continue
+                base = _base_asset(o.symbol).upper()
+                net, n = stats.get(base, (0.0, 0))
+                stats[base] = (net + o.pnl_cad - o.cost_cad, n + 1)
+        except Exception:  # noqa: BLE001 — tilts are an edge, never a blocker
+            stats = {}
+        self.engine.symbol_tilts = {
+            b: max(-0.6, min(0.6, net / 25.0))
+            for b, (net, n) in stats.items()
+            if n >= 2
+        }
+
     def load_model_params(self) -> None:
         """Apply persisted (re-fit) model coefficients to each division's model.
 

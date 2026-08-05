@@ -169,7 +169,9 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 ## Scheduling & market hours
 
 - **Checkpoints run several times a day** (`CHECKPOINT_TIMES`, default
-  `13:30,15:30,17:30,19:00` UTC ≈ 4× across the ET session — more shots for crypto while
+  `01:30,04:30,07:30,10:30,13:30,16:30,19:30,22:30` UTC = 8×/day, every 3h around the
+  clock (2026-08-05 autopsy: stops only evaluate at checkpoints, and daily-close gaps
+  blew −20% through the 6% cap — denser checkpoints tighten real stops AND add shots) while
   the account is small). Windows Task Scheduler runs `boardroom run --confirm-live --once`
   at each (installer registers one trigger per time); with `--once` the trigger time IS
   the execution time. Each checkpoint auto-trades crypto AND refreshes the advisory stock
@@ -233,6 +235,6 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   `Claude <noreply@anthropic.com>`.
 - **When behavior changes, update `docs/SCOPE.md` (+ changelog) in the same commit.**
 - Never commit secrets; `.env` is gitignored. Never echo secret values.
-- Cadence is 4×/day — more shots for crypto while small; the cost gate still blocks any
+- Cadence is 8×/day (every 3h) — more shots for crypto while small, tighter effective stops; the cost gate still blocks any
   trade that doesn't clear its fees, so frequency can't become fee-bleed churn. Future
   upgrade as the account grows: intraday **risk-only** crypto exit.

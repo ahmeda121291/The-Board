@@ -19,6 +19,17 @@ from boardroom.ceo.sizing import conviction_size
 from boardroom.config import RiskCaps
 from boardroom.schemas import Decision, DecisionKind, Division, Pitch
 
+_QUOTES = ("USDT", "USDC", "CAD", "USD")
+
+
+def _base_of(symbol: str) -> str:
+    """Base asset of a pair symbol (SOLUSD → SOL) — tilt keys are per-asset."""
+    s = symbol.upper()
+    for q in _QUOTES:
+        if s.endswith(q) and len(s) > len(q):
+            return s[: -len(q)]
+    return s
+
 
 @dataclass
 class RankedPitch:
@@ -61,6 +72,14 @@ class CEODecisionEngine:
     min_order_pct: float = 0.0
     posteriors: dict[str, CalibrationPosterior] = field(default_factory=dict)
     leashes: dict[str, float] = field(default_factory=dict)
+    #: Per-ASSET realized track record tilt (trade autopsy 2026-08-05: repeat
+    #: winners — KAITO 7/7 +$43 — and repeat losers — TRU 0/4 −$23 — but
+    #: nothing remembered the asset, only the division). A positive score is
+    #: multiplied by (1 + tilt), tilt in [-0.6, +0.6] computed by CODE from
+    #: resolved outcomes, so proven coins outrank proven losers at the margin.
+    #: A losing coin is demoted, never banned — a strong fresh signal can
+    #: still fund it and give it a chance to redeem.
+    symbol_tilts: dict[str, float] = field(default_factory=dict)
 
     def _ramp(self, equity: float, at_small: float, at_grown: float) -> float:
         """Linear aggression ramp: ``at_small`` while equity <= aggressive_below_cad,
@@ -134,6 +153,14 @@ class CEODecisionEngine:
         # 5. Risk-adjusted score (rank metric), computed on the trust-adjusted size.
         scored = pitch.model_copy(update={"capital_required": size}) if size > 0 else pitch
         score = risk_adjusted_score(scored, hurdle_rate) if size > 0 else -1.0
+        # 6. Per-asset track-record tilt: multiply a positive score by (1+tilt)
+        #    so coins that have actually made money outrank coins that have
+        #    actually lost it. Gates/caps/sizing are already settled — this
+        #    only reorders the queue.
+        if score > 0 and self.symbol_tilts:
+            tilt = self.symbol_tilts.get(_base_of(pitch.symbol), 0.0)
+            if tilt:
+                score *= 1.0 + tilt
         reason = None if size > 0 else "sized to zero after trust/caps"
         return RankedPitch(pitch, trust, trusted_conf, size, score, reason)
 

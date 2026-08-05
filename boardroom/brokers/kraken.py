@@ -93,6 +93,29 @@ def tradable_cad_pairs(timeout: float = 15.0) -> frozenset[str] | None:
     return tradable_pairs_for("CAD", timeout=timeout)
 
 
+def _get_json(url: str, params: dict | None = None, timeout: float = 20.0) -> dict:
+    """GET returning parsed JSON, retrying transient network failures.
+
+    Every live crash to date has been this class — an SSL bad-record-MAC, a
+    Cloudflare 522, a DNS blip — each one killing a whole checkpoint. Public
+    GETs are idempotent, so retry up to 3 times with a short backoff before
+    giving up. API-level errors (bad pair etc.) are NOT retried."""
+    import httpx
+
+    last: Exception | None = None
+    for attempt in range(3):
+        try:
+            resp = httpx.get(url, params=params, timeout=timeout)
+            if resp.status_code >= 500:
+                raise httpx.TransportError(f"server error {resp.status_code}")
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.TransportError as e:
+            last = e
+            time.sleep(0.5 * (2**attempt))
+    raise last  # type: ignore[misc]
+
+
 def quote_to_cad_rate(quote: str, timeout: float = 15.0) -> float | None:
     """CAD per 1 unit of ``quote`` (USDCAD ≈ 1.37). 1.0 for CAD; None on failure.
 
@@ -105,11 +128,7 @@ def quote_to_cad_rate(quote: str, timeout: float = 15.0) -> float | None:
     if q == "CAD":
         return 1.0
     try:
-        import httpx
-
-        resp = httpx.get(f"{_API}/0/public/Ticker", params={"pair": f"{q}CAD"}, timeout=timeout)
-        resp.raise_for_status()
-        payload = resp.json()
+        payload = _get_json(f"{_API}/0/public/Ticker", params={"pair": f"{q}CAD"}, timeout=timeout)
         result = payload.get("result") or {}
         if payload.get("error") or not result:
             return None
@@ -173,29 +192,40 @@ class KrakenBroker(Broker):
         return bool(live and self._settings.live_trading and self._has_creds)
 
     # ---- private REST --------------------------------------------------------
-    def _private(self, method: str, data: dict | None = None) -> dict:
+    def _private(self, method: str, data: dict | None = None, retries: int = 1) -> dict:
+        """Signed private call. ``retries`` > 1 re-attempts TRANSIENT network
+        failures (SSL hiccup, reset, 5xx) with fresh nonces — pass it ONLY for
+        idempotent reads (Balance, Earn). AddOrder must never retry: a lost
+        response after a real fill would place the order twice. API-level
+        errors are never retried."""
         import httpx
 
-        data = dict(data or {})
-        data["nonce"] = int(time.time() * 1000)
-        path = f"/0/private/{method}"
-        headers = {
-            "API-Key": self._settings.kraken_api_key.get_secret_value(),
-            "API-Sign": sign(path, data, self._settings.kraken_api_secret.get_secret_value()),
-        }
-        resp = httpx.post(_API + path, data=data, headers=headers, timeout=20.0)
-        resp.raise_for_status()
-        payload = resp.json()
-        if payload.get("error"):
-            raise RuntimeError(f"Kraken {method} error: {payload['error']}")
-        return payload["result"]
+        last: Exception | None = None
+        for attempt in range(max(1, retries)):
+            payload_data = dict(data or {})
+            payload_data["nonce"] = int(time.time() * 1000)
+            path = f"/0/private/{method}"
+            headers = {
+                "API-Key": self._settings.kraken_api_key.get_secret_value(),
+                "API-Sign": sign(path, payload_data, self._settings.kraken_api_secret.get_secret_value()),
+            }
+            try:
+                resp = httpx.post(_API + path, data=payload_data, headers=headers, timeout=20.0)
+                if resp.status_code >= 500:
+                    raise httpx.TransportError(f"server error {resp.status_code}")
+                resp.raise_for_status()
+            except httpx.TransportError as e:
+                last = e
+                time.sleep(0.5 * (2**attempt))
+                continue
+            payload = resp.json()
+            if payload.get("error"):
+                raise RuntimeError(f"Kraken {method} error: {payload['error']}")
+            return payload["result"]
+        raise last  # type: ignore[misc]
 
     def _ticker_price(self, pair: str) -> float:
-        import httpx
-
-        resp = httpx.get(f"{_API}/0/public/Ticker", params={"pair": pair}, timeout=20.0)
-        resp.raise_for_status()
-        payload = resp.json()
+        payload = _get_json(f"{_API}/0/public/Ticker", params={"pair": pair})
         # An unknown pair (e.g. a coin with no CAD market) comes back as an error
         # with an empty result — surface a clear message instead of KeyError.
         result = payload.get("result") or {}
@@ -207,11 +237,7 @@ class KrakenBroker(Broker):
     def _ticker_full(self, pair: str) -> tuple[float, float]:
         """(last_price, today_open) for a pair — used to value a holding and
         compute its intraday change. Raises on an unknown pair (caller skips)."""
-        import httpx
-
-        resp = httpx.get(f"{_API}/0/public/Ticker", params={"pair": pair}, timeout=20.0)
-        resp.raise_for_status()
-        payload = resp.json()
+        payload = _get_json(f"{_API}/0/public/Ticker", params={"pair": pair})
         result = payload.get("result") or {}
         if payload.get("error") or not result:
             raise RuntimeError(f"Kraken: no market for pair {pair} ({payload.get('error')})")
@@ -236,7 +262,7 @@ class KrakenBroker(Broker):
         if not self._has_creds:
             return []
         try:
-            balances = self._private("Balance")
+            balances = self._private("Balance", retries=3)
         except Exception:
             return []
         quote = self._quote_currency
@@ -287,7 +313,7 @@ class KrakenBroker(Broker):
         if not self._has_creds:
             return False
         try:
-            self._private("Balance")
+            self._private("Balance", retries=3)
             return True
         except Exception:
             return False
@@ -305,7 +331,7 @@ class KrakenBroker(Broker):
         never large."""
         if not self._has_creds:
             return 0.0
-        bal = self._private("Balance")
+        bal = self._private("Balance", retries=3)
         totals: dict[str, float] = {}
         for asset, amount in (bal or {}).items():
             cur = "CAD" if asset == self._cad_asset else _fiat_currency(asset)
@@ -340,7 +366,7 @@ class KrakenBroker(Broker):
                 base = base[: -len(q)]
                 break
         try:
-            balances = self._private("Balance")
+            balances = self._private("Balance", retries=3)
         except Exception:
             return None
         total = 0.0
