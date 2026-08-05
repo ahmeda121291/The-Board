@@ -142,10 +142,10 @@ def test_build_open_position_recovers_stop_and_band():
         pitch_id="p1", size_cad=40.0,
     )
     pos = build_open_position(pitch, decision)
-    # raw stop = (max_loss - cost) / capital = (4.4 - 0.4) / 40 = 0.10, but the
-    # 2026-07-27 exit fix CAPS it at EXIT_STOP_CAP_PCT (6%); TP arms at 1.25R (2026-08-05).
-    assert pos.stop_fraction == pytest.approx(0.06)
-    assert pos.take_profit == pytest.approx(0.075)
+    # raw stop = (max_loss - cost) / capital = (4.4 - 0.4) / 40 = 0.10, at the
+    # lotto-mandate EXIT_STOP_CAP_PCT (10%); the trail arms at 1.25R.
+    assert pos.stop_fraction == pytest.approx(0.10)
+    assert pos.take_profit == pytest.approx(0.125)
     # band = expected_return ± 2 * vol * sqrt(horizon) — Critic window unchanged
     half = 2.0 * 0.02 * (5.0 ** 0.5)
     assert pos.band_low == pytest.approx(0.03 - half)
@@ -259,11 +259,11 @@ def _pitch_for_exit(max_loss=5.0, cost=0.25, capital=25.0, expected=0.08, vol=0.
 
 def test_stop_is_capped_and_tp_is_r_multiple():
     # Raw stop would be (5.0-0.25)/25 = 19% — the old deep-stop shape. It must
-    # cap at 6% with the trail arming at 1.25R = 7.5%, not the ~+18% band top.
+    # cap at the lotto-mandate 10% with the trail arming at 1.25R = 12.5%.
     decision = Decision(decision_id="d-exit", kind=DecisionKind.FUND, size_cad=25.0)
     pos = build_open_position(_pitch_for_exit(), decision)
-    assert pos.stop_fraction == pytest.approx(0.06)
-    assert pos.take_profit == pytest.approx(0.075)
+    assert pos.stop_fraction == pytest.approx(0.10)
+    assert pos.take_profit == pytest.approx(0.125)
     # The Critic's scoring band is untouched by the exit change.
     assert pos.band_high == pytest.approx(0.08 + 2 * 0.05 * (5.0 ** 0.5))
 
@@ -271,12 +271,11 @@ def test_stop_is_capped_and_tp_is_r_multiple():
 def test_take_profit_arms_trail_at_r_multiple():
     decision = Decision(decision_id="d-tp", kind=DecisionKind.FUND, size_cad=25.0)
     pos = build_open_position(_pitch_for_exit(), decision, opened_at=_BASE)
-    # +10% crosses the 9% TP (far below the old ~18% band top) and ARMS the
-    # trail; the ride peaks at +18% and the first close giving back the 6% stop
-    # distance exits at +10%.
-    outcome = resolve_position(pos, _bars([100, 100, 110, 118, 110]))
+    # +13% crosses the 12.5% arm level and ARMS the trail; the ride peaks at
+    # +25% and the first close giving back the 10% stop distance exits at +12%.
+    outcome = resolve_position(pos, _bars([100, 100, 113, 125, 112]))
     assert outcome is not None
-    assert outcome.realized_return == pytest.approx(0.10)
+    assert outcome.realized_return == pytest.approx(0.12)
 
 
 def test_legacy_position_still_uses_band_top():

@@ -75,12 +75,13 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 ## Money & safety (non-negotiable)
 
-- **Caps are percent-of-portfolio** (scale with equity, owner-set 2026-08-05 max-aggression):
-  deployable 80%, per-trade 40%, per-asset aggregate 40%, daily-loss 12%,
-  max-drawdown 15%, fee-drag 5% (of equity). Sizing is FULL Kelly (`KELLY_FRACTION`
-  1.0, caps still clamp) with a softened shrinkage floor (model keeps ≥70% of its
-  voice); the gains ratchet is OFF (`RATCHET_CAPTURE_PCT` 0 — all profits compound,
-  existing reserve stays banked). Circuit breakers
+- **LOTTO MANDATE (owner, 2026-08-05 "BIG BIG BIG — zero is fine")**: caps opened to
+  the structural max — deployable 98%, per-trade/per-asset 100%, order floor 40% of
+  book, stops capped 10%, FULL Kelly, shrinkage floor 0.7, ratchet OFF. The whole
+  book can ride one idea. Breakers are MALFUNCTION TRIPWIRES only now (daily 50%,
+  drawdown 80%) — they halt a runaway bug, not a bad bet the owner accepted. The
+  lotto shape: cut losers at ~10% fast, ride winners on uncapped trails, re-roll up
+  to 3 ideas × 8 checkpoints/day. Circuit breakers
   on loss/drawdown. **Sizing resolves against the LIVE Kraken book** (cash + coins −
   reserve, `live_investable_cad`) so deposits flow in automatically at the next
   checkpoint — `STARTING_PORTFOLIO_CAD` is only the offline fallback + ratchet/P&L
@@ -93,8 +94,8 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   funds ANY surviving positive-net-edge crypto idea while tiny; (2) the **crypto Event position cap** is BOLD while
   small (up to the 20% per-trade max, `EVENT_HARD_CAP_PCT_SMALL`) tapering to 5% as equity
   grows. Tunable via `CEO_DEVIATION_THRESHOLD*` / `EVENT_HARD_CAP_PCT_SMALL` /
-  `AGGRESSIVE_BELOW_CAD` / `CONSERVATIVE_ABOVE_CAD`. The **daily-loss (12%) and drawdown
-  (15%) circuit breakers are NEVER scaled** — they're the "don't lose it all in one day"
+  `AGGRESSIVE_BELOW_CAD` / `CONSERVATIVE_ABOVE_CAD`. The **daily-loss (50%) and drawdown
+  (80%) malfunction tripwires are NEVER scaled** — they're the "don't lose it all in one day"
   backstop regardless of aggression.
 - **Leash floor + revive** (2026-08-04 go-big mandate): a non-retired division's leash
   floors at `LEASH_MIN` (0.15) — never zero (zero was an absorbing state that silently
