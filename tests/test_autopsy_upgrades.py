@@ -121,3 +121,56 @@ def test_autopsy_defaults():
     assert s.exit_tp_r_multiple == pytest.approx(1.25)
     assert s.rotation_edge_multiple == pytest.approx(2.0)
     assert len(s.checkpoint_times.split(",")) == 8      # every 3 hours
+
+
+# ---- volatility tilt: spot's honest substitute for leverage ------------------
+
+def _vol_pitch(symbol: str, vol: float):
+    p = _pitch(
+        division=Division.CRYPTO_TREND, venue=Venue.KRAKEN, symbol=symbol,
+        expected_return=0.05, capital=30.0, max_loss=2.0, expected_cost=0.02, confidence=0.7,
+    )
+    p.signals.features["volatility"] = vol
+    return p
+
+
+def test_wildest_mover_wins_at_equal_edge():
+    calm = _vol_pitch("XBTUSD", 0.02)    # majors-grade 2% daily vol
+    wild = _vol_pitch("PEPEUSD", 0.12)   # meme-grade 12% daily vol
+    eng = CEODecisionEngine(
+        caps=_caps(), deviation_threshold=0.0,
+        vol_tilt_strength=0.5, vol_tilt_ref=0.05,
+    )
+    decision, ranked = eng.decide(
+        [calm, wild], hurdle_rate=0.0002, deployed_cad=0.0, portfolio_value_cad=676.0
+    )
+    assert decision.pitch_id == wild.pitch_id
+    assert ranked[0].pitch.symbol == "PEPEUSD"
+    # wild multiplier capped at 1 + 0.5*2.0 = 2.0x; calm gets 1 + 0.5*0.4 = 1.2x
+    assert ranked[0].score / ranked[1].score == pytest.approx(2.0 / 1.2, rel=1e-6)
+
+
+def test_vol_tilt_disabled_is_neutral():
+    calm = _vol_pitch("XBTUSD", 0.02)
+    wild = _vol_pitch("PEPEUSD", 0.12)
+    eng = CEODecisionEngine(caps=_caps(), deviation_threshold=0.0, vol_tilt_strength=0.0)
+    _, ranked = eng.decide(
+        [calm, wild], hurdle_rate=0.0002, deployed_cad=0.0, portfolio_value_cad=676.0
+    )
+    assert ranked[0].score == pytest.approx(ranked[1].score)
+
+
+def test_vol_tilt_never_rescues_a_gated_pitch():
+    # A pitch that fails the cost gate stays dead no matter how wild the coin.
+    p = _vol_pitch("PEPEUSD", 0.20)
+    p.expected_cost = 100.0  # cost gate kills it
+    eng = CEODecisionEngine(caps=_caps(), deviation_threshold=0.0, vol_tilt_strength=0.5)
+    decision, ranked = eng.decide([p], hurdle_rate=0.0002, deployed_cad=0.0, portfolio_value_cad=676.0)
+    assert ranked[0].score <= 0
+    assert decision.kind != DecisionKind.FUND
+
+
+def test_vol_tilt_defaults_on():
+    s = Settings(_env_file=None)
+    assert s.vol_tilt_strength == pytest.approx(0.5)
+    assert s.vol_tilt_ref == pytest.approx(0.05)

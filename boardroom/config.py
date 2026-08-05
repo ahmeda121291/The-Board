@@ -95,6 +95,15 @@ class Settings(BaseSettings):
     # every result, so "full Kelly" can never exceed the per-trade/deployable
     # ceilings. Halve it (0.5) for the standard variance-tamed compromise.
     kelly_fraction: float = Field(default=1.0, alias="KELLY_FRACTION")
+    # Volatility tilt (lotto mandate 2026-08-05): spot's honest substitute for
+    # leverage (which the OSC restricted-dealer terms prohibit for Canadian
+    # accounts). At comparable edge the ranking prefers the WILDEST liquid
+    # movers — a coin whose good day is +25% over one whose good day is +4% —
+    # multiplying a positive score by up to (1 + strength × min(vol/ref, 2)).
+    # Same whole-book sizing, bigger per-ticket swings, zero liquidation risk.
+    # Strength 0 disables.
+    vol_tilt_strength: float = Field(default=0.5, alias="VOL_TILT_STRENGTH")
+    vol_tilt_ref: float = Field(default=0.05, alias="VOL_TILT_REF")
 
     # ---- Exit shape (2026-07-27 asymmetry fix) --------------------------------
     # A month of live outcomes showed inverted risk/reward: the take-profit sat

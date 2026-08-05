@@ -81,7 +81,11 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   book can ride one idea. Breakers are MALFUNCTION TRIPWIRES only now (daily 50%,
   drawdown 80%) — they halt a runaway bug, not a bad bet the owner accepted. The
   lotto shape: cut losers at ~10% fast, ride winners on uncapped trails, re-roll up
-  to 3 ideas × 8 checkpoints/day. Circuit breakers
+  to 3 ideas × 8 checkpoints/day. **Vol tilt** (`VOL_TILT_STRENGTH` 0.5 /
+  `VOL_TILT_REF` 5%): at comparable edge the ranking prefers the wildest liquid
+  movers (12%-vol coin scores 2.0×, 2%-vol major 1.2×) — leverage-like swings
+  from the asset itself; actual margin/leverage is PROHIBITED for this account
+  (OSC restricted-dealer terms, same regime as the BLESS CA:ON rejection). Circuit breakers
   on loss/drawdown. **Sizing resolves against the LIVE Kraken book** (cash + coins −
   reserve, `live_investable_cad`) so deposits flow in automatically at the next
   checkpoint — `STARTING_PORTFOLIO_CAD` is only the offline fallback + ratchet/P&L
