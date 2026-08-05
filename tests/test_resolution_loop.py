@@ -316,12 +316,14 @@ def test_expected_return_shrinks_toward_realized_mean():
 
     pitch = _pitch_for_exit(expected=0.08)
     adjusted = org._shrink_expected_return(pitch)
-    # w = max(5/(5+10), 0.3) = 1/3 → (1/3)*0.08 + (2/3)*(-0.05) ≈ -0.0067
-    w = 5.0 / 15.0
+    # w = max(5/(5+10), 0.7) = 0.7 (owner dial 2026-08-05: the model keeps at
+    # least 70% of its voice) → 0.7*0.08 + 0.3*(-0.05) = 0.041
+    w = 0.7
     assert adjusted.expected_return == pytest.approx(w * 0.08 + (1 - w) * -0.05)
     assert adjusted.signals.features["expected_return_model_raw"] == pytest.approx(0.08)
-    # A fantasy forecast against a losing record now fails the cost gate.
-    assert not adjusted.clears_cost()
+    # The record still pulls the forecast DOWN (0.08 -> 0.041); with the owner's
+    # softer floor the model keeps its voice instead of being silenced outright.
+    assert adjusted.expected_return < 0.08
 
 
 def test_no_history_means_no_shrink():

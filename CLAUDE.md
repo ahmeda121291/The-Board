@@ -75,8 +75,12 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
 
 ## Money & safety (non-negotiable)
 
-- **Caps are percent-of-portfolio** (scale with equity): deployable 80%, per-trade 20%,
-  Event 5%, daily-loss 6%, max-drawdown 15%, fee-drag 5% (of equity). Circuit breakers
+- **Caps are percent-of-portfolio** (scale with equity, owner-set 2026-08-05 max-aggression):
+  deployable 80%, per-trade 40%, per-asset aggregate 40%, daily-loss 12%,
+  max-drawdown 15%, fee-drag 5% (of equity). Sizing is FULL Kelly (`KELLY_FRACTION`
+  1.0, caps still clamp) with a softened shrinkage floor (model keeps ≥70% of its
+  voice); the gains ratchet is OFF (`RATCHET_CAPTURE_PCT` 0 — all profits compound,
+  existing reserve stays banked). Circuit breakers
   on loss/drawdown. **Sizing resolves against the LIVE Kraken book** (cash + coins −
   reserve, `live_investable_cad`) so deposits flow in automatically at the next
   checkpoint — `STARTING_PORTFOLIO_CAD` is only the offline fallback + ratchet/P&L
@@ -89,7 +93,7 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   funds ANY surviving positive-net-edge crypto idea while tiny; (2) the **crypto Event position cap** is BOLD while
   small (up to the 20% per-trade max, `EVENT_HARD_CAP_PCT_SMALL`) tapering to 5% as equity
   grows. Tunable via `CEO_DEVIATION_THRESHOLD*` / `EVENT_HARD_CAP_PCT_SMALL` /
-  `AGGRESSIVE_BELOW_CAD` / `CONSERVATIVE_ABOVE_CAD`. The **daily-loss (6%) and drawdown
+  `AGGRESSIVE_BELOW_CAD` / `CONSERVATIVE_ABOVE_CAD`. The **daily-loss (12%) and drawdown
   (15%) circuit breakers are NEVER scaled** — they're the "don't lose it all in one day"
   backstop regardless of aggression.
 - **Leash floor + revive** (2026-08-04 go-big mandate): a non-retired division's leash
@@ -159,7 +163,8 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   account-quote pair, on-exchange only, two-key live gate). **Circuit breakers are evaluated inside every run** and force
   a deterministic HOLD when tripped. NaN/Inf sanitized before every Supabase
   write (`_json_safe`). Poller writes `system_state.poller_seen_at` heartbeat.
-- **Gains ratchet** sweeps a fraction of new highs into an **untouchable reserve**.
+- **Gains ratchet** (`RATCHET_CAPTURE_PCT`, owner-set 0 = OFF): when enabled, sweeps a
+  fraction of new highs into an **untouchable reserve**; the existing reserve never releases.
 - **Withdrawals DISABLED on every venue** — no transfer code path exists. Keys are
   trade-only and per-venue isolated (Kraken ⟂ equities).
 - **Live gate**: a real order needs BOTH `LIVE_TRADING=true` AND per-call `--confirm-live`.

@@ -37,9 +37,9 @@ class Settings(BaseSettings):
     # See docs/RISK_MODEL.md.
     account_base_currency: str = Field(default="CAD", alias="ACCOUNT_BASE_CURRENCY")
     total_deployable_pct: float = Field(default=0.80, alias="TOTAL_DEPLOYABLE_PCT")
-    per_trade_max_pct: float = Field(default=0.20, alias="PER_TRADE_MAX_PCT")
+    per_trade_max_pct: float = Field(default=0.40, alias="PER_TRADE_MAX_PCT")
     event_hard_cap_pct: float = Field(default=0.05, alias="EVENT_HARD_CAP_PCT")
-    daily_loss_limit_pct: float = Field(default=0.06, alias="DAILY_LOSS_LIMIT_PCT")
+    daily_loss_limit_pct: float = Field(default=0.12, alias="DAILY_LOSS_LIMIT_PCT")
     max_drawdown_pct: float = Field(default=0.15, alias="MAX_DRAWDOWN_PCT")
     fee_drag_limit_pct: float = Field(default=0.05, alias="FEE_DRAG_LIMIT_PCT")
     # Reference portfolio value, used when live equity isn't supplied (CLI
@@ -67,9 +67,10 @@ class Settings(BaseSettings):
     # account is small it can size a single crypto bet up to ``event_hard_cap_pct_small``
     # (defaults to the per-trade max — bold while small), tapering to the
     # conservative ``event_hard_cap_pct`` as equity grows into the thousands. The
-    # daily-loss (6%) and drawdown (15%) circuit breakers are UNCHANGED — they
-    # remain the "don't lose it all in one day" backstop regardless of aggression.
-    event_hard_cap_pct_small: float = Field(default=0.20, alias="EVENT_HARD_CAP_PCT_SMALL")
+    # daily-loss and drawdown circuit breakers never ride the aggression ramp —
+    # they are the "don't lose it all in one day" backstop at every size
+    # (levels owner-set 2026-08-05: daily-loss 12%, drawdown 15%).
+    event_hard_cap_pct_small: float = Field(default=0.40, alias="EVENT_HARD_CAP_PCT_SMALL")
 
     # Exchange minimum-order floor (CAD). Kraken rejects orders below a per-coin
     # minimum; on a small account a weak-conviction size can fall under it. We
@@ -85,6 +86,11 @@ class Settings(BaseSettings):
     # per-trade cap (20%), deployable cap, and the never-scaled daily-loss /
     # drawdown breakers still bound everything. Set 0 to disable.
     min_order_pct: float = Field(default=0.15, alias="MIN_ORDER_PCT")
+    # Kelly fraction for conviction sizing (owner dial 2026-08-05: FULL Kelly).
+    # 1.0 sizes at the textbook growth-optimal bet; the caps above still clamp
+    # every result, so "full Kelly" can never exceed the per-trade/deployable
+    # ceilings. Halve it (0.5) for the standard variance-tamed compromise.
+    kelly_fraction: float = Field(default=1.0, alias="KELLY_FRACTION")
 
     # ---- Exit shape (2026-07-27 asymmetry fix) --------------------------------
     # A month of live outcomes showed inverted risk/reward: the take-profit sat
@@ -126,7 +132,7 @@ class Settings(BaseSettings):
     # rest on the record. min_weight keeps a floor under the model's voice so
     # a cold streak can't freeze trading forever.
     prediction_shrink_prior_n: float = Field(default=5.0, alias="PREDICTION_SHRINK_PRIOR_N")
-    prediction_shrink_min_weight: float = Field(default=0.3, alias="PREDICTION_SHRINK_MIN_WEIGHT")
+    prediction_shrink_min_weight: float = Field(default=0.7, alias="PREDICTION_SHRINK_MIN_WEIGHT")
 
     # ---- Crypto-first controls ------------------------------------------------
     # Equities are SUNSET by default (2026-07): no equity scans, no stock
@@ -152,7 +158,12 @@ class Settings(BaseSettings):
     # open positions. Not a "never rebuy" rule: the CEO may keep adding to a
     # winner until the asset reaches this share of the book, then the next-best
     # idea gets the capital. Prevents a single trending coin eating everything.
-    asset_max_exposure_pct: float = Field(default=0.20, alias="ASSET_MAX_EXPOSURE_PCT")
+    asset_max_exposure_pct: float = Field(default=0.40, alias="ASSET_MAX_EXPOSURE_PCT")
+    # Gains-ratchet sweep fraction (owner dial 2026-08-05: 0 = sweeps DISABLED,
+    # all profits stay invested and compound). Any positive fraction banks that
+    # share of each new realized high into the untouchable reserve; the existing
+    # reserve is never released either way.
+    ratchet_capture_pct: float = Field(default=0.0, alias="RATCHET_CAPTURE_PCT")
     # How many ideas the CEO may fund in ONE checkpoint (each must clear the bar
     # and every cap independently; same-asset repeats are excluded within a
     # checkpoint). >1 diversifies instead of winner-take-all.

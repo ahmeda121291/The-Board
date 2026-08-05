@@ -103,6 +103,7 @@ class Orchestrator:
                 event_cap_pct_small=self.settings.event_hard_cap_pct_small,
                 min_order_cad=self.settings.min_order_cad,
                 min_order_pct=self.settings.min_order_pct,
+                kelly_fraction=self.settings.kelly_fraction,
             )
         # Default to stub brokers; real Kraken/IBKR are injected at Milestone 6.
         self.brokers.setdefault(Venue.KRAKEN, StubBroker(Venue.KRAKEN))
@@ -177,7 +178,10 @@ class Orchestrator:
             reserve_cad=s.get("reserve_cad", 0.0),
             hwm_cad=max(s.get("hwm_cad", 0.0), baseline),
         )
-        new = ratchet_update(equity_cad=equity, state=state)
+        new = ratchet_update(
+            equity_cad=equity, state=state,
+            capture_fraction=max(0.0, self.settings.ratchet_capture_pct),
+        )
         if new.reserve_cad != s.get("reserve_cad", 0.0) or new.hwm_cad != s.get("hwm_cad", 0.0):
             self.repo.set_system_state(new.reserve_cad, new.hwm_cad)
             if new.reserve_cad > s.get("reserve_cad", 0.0):
