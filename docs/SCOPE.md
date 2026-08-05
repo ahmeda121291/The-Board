@@ -322,6 +322,15 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-08-05 (b)** — **Percent-of-book conviction floor.** ("We're ready.") Every
+  funded order had pinned at the $25 exchange minimum — post-shrinkage Kelly sizes
+  are dollars, so `MIN_ORDER_CAD` was doing all the sizing and positions could
+  never be a meaningful slice of the book. The floor is now
+  **max(`MIN_ORDER_CAD`, `MIN_ORDER_PCT` × portfolio)** (`MIN_ORDER_PCT` default
+  10%): ~$68 positions on today's $676 book, ~$4 at risk per trade with the
+  6%-capped stop, scaling automatically as equity grows. Clamped to the per-trade
+  cap (20%) and deployable headroom as before; breakers untouched; `MIN_ORDER_PCT=0`
+  restores the old fixed floor. 353 tests.
 - **2026-08-05** — **Execution robustness: sells clamp to reality, refused assets
   remembered.** First fully-live night surfaced two blockers. (1) **Sell clamp**:
   a tracked position can exceed the actually-sellable spot balance (in-kind fee
