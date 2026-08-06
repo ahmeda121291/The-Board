@@ -143,7 +143,7 @@ def _run(args: argparse.Namespace) -> int:
     --confirm-live; otherwise every run is dry-run.
     """
     import time as _time
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
 
     from boardroom.factory import build_default_org
     from boardroom.schedule import next_checkpoint_multi
@@ -173,9 +173,35 @@ def _run(args: argparse.Namespace) -> int:
             )
             console.print(f"[dim]next checkpoint: {nxt:%Y-%m-%d %H:%M UTC}[/dim]")
             if not args.once:
+                # Between checkpoints the EXIT WATCHER guards the held book:
+                # every EXIT_WATCH_MINUTES it prices open positions on intraday
+                # bars and executes any stop/take-profit/trailing exit — sells
+                # only, no LLM, no entries. The $969 LIT peak went unsold
+                # because nothing looked between checkpoints; this looks.
+                from boardroom.graph.exit_watch import watch_exits
+
+                next_watch = datetime.now(timezone.utc)
                 while datetime.now(timezone.utc) < nxt:
+                    now_ = datetime.now(timezone.utc)
+                    if s.exit_watch_enabled and now_ >= next_watch:
+                        next_watch = now_ + timedelta(minutes=max(1.0, s.exit_watch_minutes))
+                        exits = watch_exits(org)
+                        if exits:
+                            console.print(
+                                f"[bold]exit watch {now_:%H:%M UTC}[/bold] → "
+                                f"{len(exits)} position(s) closed"
+                            )
+                            if s.exit_reentry_enabled:
+                                # Freed capital is re-bet NOW, not at the next
+                                # scheduled checkpoint — sell the top, redeploy.
+                                result = org.run_once(trigger="exit_reentry")
+                                d = result.decision
+                                head = d.kind.value.upper() + (
+                                    f" {d.division.value} {d.size_cad:.2f} CAD" if d.division else ""
+                                )
+                                console.print(f"[bold]re-entry checkpoint[/bold] -> {head}")
                     remaining = (nxt - datetime.now(timezone.utc)).total_seconds()
-                    _time.sleep(max(1.0, min(60.0, remaining)))
+                    _time.sleep(max(1.0, min(30.0, remaining)))
             result = org.run_once(trigger="scheduled")
             d = result.decision
             head = d.kind.value.upper() + (f" {d.division.value} {d.size_cad:.2f} CAD" if d.division else "")
@@ -269,9 +295,10 @@ def _poll(args: argparse.Namespace) -> int:
     button click into a real checkpoint. Runs alongside the daily scheduler.
     """
     import time as _time
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
 
     from boardroom.factory import build_default_org
+    from boardroom.graph.exit_watch import watch_exits
 
     s = get_settings()
     if args.confirm_live and not s.live_trading:
@@ -293,6 +320,7 @@ def _poll(args: argparse.Namespace) -> int:
             console.print(f"[dim]could not set live_armed yet ({str(e)[:60]}); will retry.[/dim]")
 
     armed = False
+    next_watch = datetime.now(timezone.utc)
     try:
         while True:
             # The whole network section is guarded — transient DNS/connection
@@ -362,6 +390,37 @@ def _poll(args: argparse.Namespace) -> int:
                     except Exception:
                         pass  # if even the write-back fails (network), retry the row later
                 continue  # immediately check for more before sleeping
+            # The poller is the PC's always-on process (checkpoints fire as
+            # one-shot --once tasks), so the EXIT WATCHER lives here: every
+            # EXIT_WATCH_MINUTES it prices the held book on intraday bars and
+            # executes any stop/take-profit/trailing exit — sells only. The
+            # $969 LIT peak went unsold because nothing looked between
+            # checkpoints; this looks, around the clock.
+            if s.exit_watch_enabled and datetime.now(timezone.utc) >= next_watch:
+                next_watch = datetime.now(timezone.utc) + timedelta(
+                    minutes=max(1.0, s.exit_watch_minutes)
+                )
+                try:
+                    exits = watch_exits(org)
+                except Exception as e:  # noqa: BLE001 — never kill the poller
+                    exits = []
+                    console.print(f"[dim]exit watch skipped: {str(e)[:80]}[/dim]")
+                if exits:
+                    console.print(
+                        f"[bold]exit watch {datetime.now(timezone.utc):%H:%M UTC}[/bold] → "
+                        f"{len(exits)} position(s) closed"
+                    )
+                    if s.exit_reentry_enabled:
+                        # Freed capital is re-bet NOW — sell the top, redeploy.
+                        try:
+                            result = org.run_once(trigger="exit_reentry")
+                            d = result.decision
+                            head = d.kind.value.upper() + (
+                                f" {d.division.value} {d.size_cad:.2f} CAD" if d.division else ""
+                            )
+                            console.print(f"[bold]re-entry checkpoint[/bold] -> {head}")
+                        except Exception as e:  # noqa: BLE001
+                            console.print(f"[dim]re-entry skipped: {str(e)[:80]}[/dim]")
             if args.once:
                 return 0
             _time.sleep(max(2.0, args.interval))

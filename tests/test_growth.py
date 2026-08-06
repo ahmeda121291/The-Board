@@ -35,7 +35,9 @@ def test_tier_payload_points_at_next_unlock():
     assert p["tier"] == "seed"
     assert p["next_tier"] == "sapling"
     assert p["next_tier_at_cad"] == 1000.0
-    assert p["intraday_tick_exits_eligible"] is False
+    # The intraday exit engine is BUILT and live at every tier (2026-08-06 —
+    # the $969 LIT peak went unsold while this was gated at $2,500).
+    assert p["intraday_tick_exits_eligible"] is True
     assert p["surge_entries_eligible"] is False
     top = tier_payload(TIERS[-1], 9999.0)
     assert top["next_tier"] is None and top["next_tier_at_cad"] is None

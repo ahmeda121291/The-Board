@@ -202,9 +202,23 @@ human decision requiring code/scheduler changes.
 
 - **Several checkpoints per day** — `CHECKPOINT_TIMES`, default
   **`01:30,04:30,07:30,10:30,13:30,16:30,19:30,22:30` UTC** (8×/day, every 3h — crypto
-  is 24/7, and stops only evaluate at checkpoints, so density = tighter real stops — more shots for crypto
-  while the account is small). Each checkpoint auto-trades crypto AND refreshes the
-  advisory stock recommendation + IBKR holdings diff + portfolio snapshot.
+  is 24/7; more shots for crypto while the account is small). Each checkpoint
+  auto-trades crypto AND refreshes the advisory stock recommendation + IBKR
+  holdings diff + portfolio snapshot.
+- **The exit watcher runs BETWEEN checkpoints** (`EXIT_WATCH_ENABLED`, default on;
+  every `EXIT_WATCH_MINUTES`, default 15). It prices ONLY the held book on
+  **intraday bars** (`EXIT_BAR_MINUTES`, default 60 — the forming candle's close is
+  the live price) and executes any stop / take-profit / trailing exit immediately,
+  at any hour. Sells only — no LLM, no pitches, no new entries. Why it exists: on
+  2026-08-06 the book rode LIT +75% overnight to ~$969 and round-tripped to a
+  −14% stop-out while four checkpoints watched — exits evaluated on daily closes,
+  so the whole move lived inside one candle nothing could see. Trailing state
+  (fill-time entry price, peak-off-highs, armed flag) is persisted per position
+  (`open_positions.entry_price/peak_return/trail_armed`, migration 0004) so a
+  ride survives restarts and rolling bar windows. When the watcher frees capital
+  it convenes a **re-entry checkpoint** immediately (`EXIT_REENTRY_ENABLED`,
+  default on) — sell the top, re-bet the cash on the current best idea instead of
+  idling until the next scheduled slot.
 - Crypto (Kraken) trades **24/7** — the Yield/Event legs can act at any checkpoint.
 - Stocks are **advisory** — nothing auto-executes on IBKR, so there's no equity-fill
   timing concern. The recommendation is computed off the latest daily bars at each
@@ -323,6 +337,31 @@ fees. Pure frequency for its own sake is intentionally avoided.
 
 ## Changelog
 
+- **2026-08-06** — **Intraday exit engine — the $969 that never sold.** Post-mortem:
+  three LITUSD lots (~$372, TP 9–12.5%, stops 6–10%) rode +75% overnight to a
+  ~$969 book top and round-tripped to a −14.28% stop-out at 14:48 the next day,
+  tripping the drawdown breaker — while checkpoints at 01:30/04:30/07:30/10:30
+  watched equity print $869→$981→$894 in their own growth-tier audits. Three
+  structural causes, all fixed: **(1) daily-candle blindness** — resolution walked
+  1440-minute closes, so the entire pump-and-dump lived inside one candle; exits
+  now walk **intraday bars** (`EXIT_BAR_MINUTES`, 60) fetched per held symbol, and
+  the **exit watcher** re-checks the book every `EXIT_WATCH_MINUTES` (15) between
+  checkpoints — sells only, no LLM. **(2) amnesiac trail** — armed/peak state was
+  recomputed from each fetch's closes, so the intraday peak never registered;
+  the trail now **arms and rides off bar HIGHS** and persists
+  `entry_price`/`peak_return`/`trail_armed` per position (migration 0004), with the
+  entry price captured at **fill time** instead of recovered from a stale daily
+  close (all three LIT lots had "resolved" at an identical −14.28% because they
+  shared one daily entry bar). **(3) the tick-exit gate** — intraday exits were a
+  `requires_human` capability parked at the $2,500 tier; an exit that banks pumps
+  earns its fee at any size, so it is BUILT and always-on at every tier. Plus,
+  opportunist by design: a watcher exit triggers an immediate **re-entry
+  checkpoint** (`EXIT_REENTRY_ENABLED`) so freed cash is re-bet at once, and
+  phantom rows whose balance was already swept by a clamped sibling sell
+  (TRU/EUL, erroring at every checkpoint since 08-05) now book their outcome and
+  void (`exit_no_balance`) instead of retrying forever. Nothing got more
+  conservative: same stops, same uncapped trail upside, same caps — the system
+  just finally *sees* the moves it was already promising to act on. 376 tests.
 - **2026-08-05 (f)** — **Volatility tilt — spot's honest substitute for leverage.**
   Leverage is off the table structurally: Kraken's OSC restricted-dealer terms
   prohibit margin/leverage for Canadian clients (the same regime behind the

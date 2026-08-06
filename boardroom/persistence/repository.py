@@ -56,6 +56,16 @@ class OpenPosition:
     #: Exit trigger as a fractional return. 0 == legacy row: fall back to
     #: band_high (the pre-2026-07-27 behavior) so old open positions still resolve.
     take_profit: float = 0.0
+    #: Entry price in the ANALYSIS series' quote (USD pairs), captured at fill
+    #: time. 0 == legacy row: recovered from the series by timestamp instead.
+    entry_price: float = 0.0
+    #: Persisted trailing-exit state: the best post-entry return seen (off bar
+    #: HIGHS) and whether the take-profit has armed the trail. Persisted so the
+    #: ride survives checkpoint restarts and rolling intraday bar windows — the
+    #: 2026-08-06 LIT round-trip happened because this state lived only inside
+    #: one daily-bar walk and the intraday peak never registered anywhere.
+    peak_return: float = 0.0
+    trail_armed: bool = False
 
 
 class Repository(abc.ABC):
@@ -85,6 +95,12 @@ class Repository(abc.ABC):
 
     @abc.abstractmethod
     def close_position(self, decision_id: str) -> None: ...
+
+    def update_position_trail(
+        self, decision_id: str, *, entry_price: float, peak_return: float, trail_armed: bool
+    ) -> None:
+        """Persist a position's trailing-exit state (entry price backfill, best
+        post-entry return, armed flag) between checkpoints. Default: no-op."""
 
     @abc.abstractmethod
     def get_model_params(self, division: str) -> dict | None:
@@ -284,6 +300,15 @@ class InMemoryRepository(Repository):
 
     def close_position(self, decision_id: str) -> None:
         self.positions.pop(decision_id, None)
+
+    def update_position_trail(
+        self, decision_id: str, *, entry_price: float, peak_return: float, trail_armed: bool
+    ) -> None:
+        pos = self.positions.get(decision_id)
+        if pos is not None:
+            pos.entry_price = entry_price
+            pos.peak_return = peak_return
+            pos.trail_armed = trail_armed
 
     def get_model_params(self, division: str) -> dict | None:
         return self.model_params.get(division)

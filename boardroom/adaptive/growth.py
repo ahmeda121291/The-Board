@@ -13,14 +13,14 @@ each checkpoint audits a ``growth_tier`` event and the session carries the
 tier, so the audit trail and dashboard show which future capabilities the
 equity now justifies building/enabling:
 
-- ``intraday_tick_exits_eligible`` — exits currently evaluate on daily closes
-  at checkpoints; tick-level stop/take-profit monitoring is the flagged upgrade.
+- ``intraday_tick_exits_eligible`` — BUILT and always-on since 2026-08-06: the
+  exit watcher prices the held book on intraday bars every EXIT_WATCH_MINUTES
+  and executes stops/take-profits/trails between checkpoints at every tier.
+  (The $969 LIT peak went unsold while this was gated at $2,500 — an exit that
+  protects capital and banks pumps earns its fee at ANY account size.)
 - ``surge_entries_eligible`` — entries currently happen only at the scheduled
-  checkpoints; intraday surge-entry scanning is the flagged upgrade.
-
-Both need code/scheduler changes outside the agents' reach and are NEVER
-auto-enabled: crossing a threshold makes the feature worth the fee drag; it
-does not conjure it into existence.
+  checkpoints (plus the post-exit re-entry checkpoint); intraday surge-entry
+  SCANNING is still the flagged upgrade, never auto-enabled.
 """
 
 from __future__ import annotations
@@ -46,12 +46,12 @@ class GrowthTier:
 TIERS: tuple[GrowthTier, ...] = (
     GrowthTier(0, "seed", 0.0,
                "max aggression — ZERO CEO bar, bold Event cap, compounding the seed",
-               False, False),
+               True, False),
     GrowthTier(1, "sapling", 1000.0,
                "aggression taper begins — the CEO bar starts rising; caps resolve to meaningful CAD",
-               False, False),
+               True, False),
     GrowthTier(2, "grove", 2500.0,
-               "intraday tick-level exits are now worth their cost — human call to build",
+               "scaling with the intraday exit engine live at every tier",
                True, False),
     GrowthTier(3, "canopy", 5000.0,
                "fully conservative bar — intraday surge entries eligible, human call",

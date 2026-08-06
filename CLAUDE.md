@@ -111,10 +111,10 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   states / revives one (fresh flat prior, leash 0.5) — the only way back.
 - **Growth ladder** (`adaptive/growth.py`): every checkpoint maps total equity
   (investable + reserve) to a named tier — **signals only**, no behavior change.
-  Rungs align with the aggression ramp ($500/$5k); grove ($2.5k) flags intraday
-  tick-level exits and canopy ($5k) flags intraday surge entries as eligible —
-  `requires_human`, surfaced via the `growth_tier` audit event + session field,
-  never auto-enabled.
+  Rungs align with the aggression ramp ($1k/$5k). Intraday tick-level exits are
+  BUILT and always-on at every tier (2026-08-06 — the $969 LIT peak went unsold
+  while they were gated at $2.5k); canopy ($5k) still flags intraday surge
+  ENTRIES as eligible — `requires_human`, never auto-enabled.
 - **Conviction floor** (2026-08-05 "we're ready"): a funded order is bumped to
   **max(`MIN_ORDER_CAD` 25, `MIN_ORDER_PCT` 10% × book)** — positions are a real
   slice of equity (~$68 on a $676 book) and scale as it grows, clamped to the
@@ -144,8 +144,18 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   gate/ranking/sizing — the month-one failure was +7.9% predicted vs −0.8% realized.
   It sells the exact filled qty (`OpenPosition.qty`, migration 0011). A position is only
   finalized (P&L booked, tracking row deleted) when the sell actually executes — a rejected
-  sell leaves it open to retry, so the record never claims a sale that didn't happen.
-  Exits evaluate on daily closes (intraday-tick exits are a future upgrade). The exit
+  sell leaves it open to retry, so the record never claims a sale that didn't happen
+  (exception: `exit_no_balance` — the balance was already swept by a clamped sibling
+  sell, so the row books its outcome and voids instead of erroring forever).
+  **Exits evaluate on INTRADAY bars** (`EXIT_BAR_MINUTES` 60; 2026-08-06 — daily candles
+  hid the LIT +75% round-trip from four checkpoints): the trail arms and rides off bar
+  HIGHS, measures from the fill-time `entry_price`, and persists
+  `entry_price`/`peak_return`/`trail_armed` per position (migration 0004) so a ride
+  survives restarts and rolling windows. Between checkpoints the **exit watcher**
+  (`graph/exit_watch.py`, hosted in `boardroom poll` + the continuous `boardroom run`
+  loop; `EXIT_WATCH_MINUTES` 15) re-checks the held book and sells the moment a trigger
+  prints — then convenes an immediate re-entry checkpoint (`EXIT_REENTRY_ENABLED`) so
+  the freed cash is re-bet at once. The exit
   price lookup falls back through the base asset (SOLCAD position ↔ SOLUSD series),
   then — live mode only — fetches the HELD symbol's OHLC directly from Kraken's
   public endpoint (`resolution_fallback_fetch`) when the coin churned out of the
@@ -245,6 +255,8 @@ only writes narrative and adjudicates qualitative calls. Enforced in the schema 
   `Claude <noreply@anthropic.com>`.
 - **When behavior changes, update `docs/SCOPE.md` (+ changelog) in the same commit.**
 - Never commit secrets; `.env` is gitignored. Never echo secret values.
-- Cadence is 8×/day (every 3h) — more shots for crypto while small, tighter effective stops; the cost gate still blocks any
-  trade that doesn't clear its fees, so frequency can't become fee-bleed churn. Future
-  upgrade as the account grows: intraday **risk-only** crypto exit.
+- Cadence is 8×/day (every 3h) for ENTRIES — more shots for crypto while small; the cost
+  gate still blocks any trade that doesn't clear its fees, so frequency can't become
+  fee-bleed churn. EXITS are intraday and always-on (the exit watcher, every 15 min —
+  the "risk-only crypto exit" upgrade shipped 2026-08-06, plus an immediate re-entry
+  checkpoint whenever it frees capital).

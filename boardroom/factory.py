@@ -139,6 +139,16 @@ def build_default_org(
             orch_kwargs["resolution_fallback_fetch"] = (
                 lambda sym: fetch_kraken_ohlc(sym, 1440)
             )
+        # Intraday resolution series — what the exit engine walks. Daily candles
+        # hid the 2026-08-06 LIT pump-and-dump from four checkpoints; hourly
+        # bars (with the forming candle's close = live price) are what let the
+        # trail arm off the spike and the stop check in near-real-time.
+        if "resolution_fetch" not in orch_kwargs:
+            from boardroom.config import get_settings as _gs2
+            from boardroom.data.sources import fetch_kraken_ohlc as _fko
+
+            _interval = int((orch_kwargs.get("settings") or _gs2()).exit_bar_minutes)
+            orch_kwargs["resolution_fetch"] = lambda sym: _fko(sym, _interval)
     else:
         directional_fetchers, event_fetchers = _synthetic_fetchers()
         dir_syms, evt_syms = ["SPY", "QQQ"], ["XBTUSD", "ETHUSD"]
