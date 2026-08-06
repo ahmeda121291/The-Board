@@ -82,6 +82,13 @@ class Orchestrator:
     #: six coins sat like that on 2026-07-26). Wired to the public Kraken OHLC
     #: fetch in live data mode; left None in synthetic/test mode (no network).
     resolution_fallback_fetch: Any = None
+    #: symbol -> Bars at INTRADAY granularity (EXIT_BAR_MINUTES) — the primary
+    #: series exits evaluate on. Daily candles hid the 2026-08-06 LIT +75%
+    #: round-trip from every checkpoint; intraday bars are what let the trail
+    #: arm off the pump and the stop check against the live (forming-candle)
+    #: price. Wired to the public Kraken OHLC fetch in live data mode; left
+    #: None in synthetic/test mode so nothing touches the network.
+    resolution_fetch: Any = None
 
     @property
     def effective_live(self) -> bool:
@@ -427,8 +434,22 @@ class Orchestrator:
         #    must not prevent the decision itself from being saved by run_once).
         from boardroom.graph.resolution_loop import build_open_position
 
+        # Capture the ANALYSIS-series (USD pair) price at fill time so exits
+        # measure from where we actually got in, not from a stale daily close
+        # recovered later. Best-effort: 0 falls back to the legacy recovery.
+        entry_price = 0.0
+        if self.resolution_fetch is not None:
+            try:
+                bars = self.resolution_fetch(pitch.symbol)
+                if bars is not None:
+                    entry_price = float(bars.df["close"].iloc[-1])
+            except Exception:  # noqa: BLE001
+                entry_price = 0.0
+
         try:
-            self.repo.save_open_position(build_open_position(pitch, decision, qty=fill.filled_qty))
+            self.repo.save_open_position(
+                build_open_position(pitch, decision, qty=fill.filled_qty, entry_price=entry_price)
+            )
         except Exception as e:  # noqa: BLE001
             self.repo.audit(
                 "position_record_error",
@@ -744,11 +765,9 @@ class Orchestrator:
         self.repo.save_decision(decision, session)
         return fills
 
-    def _resolution_price_lookup(self):
-        """Position → fresh Bars, keyed by analysis symbol with a base-asset
-        fallback (a SOLCAD-era position resolves against the SOLUSD series).
-        The cache is built once per checkpoint and shared by the resolution
-        loop and the rotation path."""
+    def _division_price_cache(self) -> dict:
+        """symbol -> daily Bars from the divisions' own fetchers. Built lazily,
+        once per checkpoint — only when a position can't be priced intraday."""
         cache = getattr(self, "_price_cache", None)
         if cache is None:
             cache = {}
@@ -762,8 +781,36 @@ class Orchestrator:
                     if bars is not None:
                         cache[bars.symbol] = bars
             self._price_cache = cache
+        return cache
+
+    def _resolution_price_lookup(self):
+        """Position → fresh Bars, keyed by analysis symbol with a base-asset
+        fallback (a SOLCAD-era position resolves against the SOLUSD series).
+
+        Priority: (1) the INTRADAY series (``resolution_fetch``) — held symbols
+        only, so the exit watcher never triggers a 150-pair universe scan;
+        (2) the divisions' daily cache; (3) the direct daily fallback fetch.
+        Misses are cached as None so each symbol costs at most one try per pass.
+        """
+        fine: dict = getattr(self, "_fine_cache", None) or {}
+        self._fine_cache = fine
+
+        def _candidates(pos):
+            return dict.fromkeys([pos.symbol, f"{_base_asset(pos.symbol)}USD"])
 
         def lookup(pos):
+            # 1) Intraday bars — the exit engine's primary series.
+            if self.resolution_fetch is not None:
+                for sym in _candidates(pos):
+                    if sym not in fine:
+                        try:
+                            fine[sym] = self.resolution_fetch(sym)
+                        except Exception:  # noqa: BLE001
+                            fine[sym] = None
+                    if fine[sym] is not None:
+                        return fine[sym]
+            # 2) The divisions' daily series (dry-run/synthetic path).
+            cache = self._division_price_cache()
             bars = cache.get(pos.symbol)
             if bars is None:
                 base = _base_asset(pos.symbol)
@@ -771,11 +818,10 @@ class Orchestrator:
                     bars = cache.get(f"{base}{q}")
                     if bars is not None:
                         break
+            # 3) Direct daily fetch — the coin left the scanned universe but we
+            # still HOLD it; its stops/horizon must not go unmanaged.
             if bars is None and self.resolution_fallback_fetch is not None:
-                # The coin left the scanned universe but we still HOLD it — fetch
-                # its series directly so the position stays manageable. Misses are
-                # cached as None so each symbol costs at most one try per checkpoint.
-                for sym in dict.fromkeys([pos.symbol, f"{_base_asset(pos.symbol)}USD"]):
+                for sym in _candidates(pos):
                     if sym not in cache:
                         try:
                             cache[sym] = self.resolution_fallback_fetch(sym)
@@ -787,6 +833,22 @@ class Orchestrator:
             return bars
 
         return lookup
+
+    def _held_base_qty(self, pos) -> float:
+        """How much of a position's base asset the venue ACTUALLY holds right
+        now. Best-effort; an unreadable venue reads as 'plenty' so the caller
+        never voids a position on a flaky balance call."""
+        broker = self.brokers.get(Venue(pos.venue))
+        if broker is None or type(broker).__name__ == "StubBroker":
+            return float("inf")
+        base = _base_asset(pos.symbol).upper()
+        try:
+            for h in broker.get_positions() or []:
+                if str(h.get("symbol", "")).upper() == base:
+                    return float(h.get("qty", 0.0) or 0.0)
+            return 0.0
+        except Exception:  # noqa: BLE001
+            return float("inf")
 
     def _close_position_live(self, pos, outcome, exit_reason: str | None = None) -> bool:
         """Execute the EXIT for a resolved position: sell the held quantity on the
@@ -811,7 +873,30 @@ class Orchestrator:
             client_order_id=str(uuid.uuid4()),
             base_qty=pos.qty if pos.qty and pos.qty > 0 else None,
         )
-        fill = broker.place_order(order, live=self.effective_live)
+        try:
+            fill = broker.place_order(order, live=self.effective_live)
+        except Exception as e:  # noqa: BLE001
+            # "Insufficient funds" with (almost) none of the coin actually held
+            # means the balance was already sold — e.g. an earlier clamped sell
+            # on a sibling position swept the whole holding. The row would
+            # otherwise error at EVERY checkpoint forever (TRU/EUL, 2026-08-05).
+            # Book the outcome off the price series (the money did round-trip)
+            # and close the tracking row.
+            if "insufficient funds" in str(e).lower() and self._held_base_qty(pos) < max(
+                1e-8, 0.10 * (pos.qty or 0.0)
+            ):
+                self.repo.audit(
+                    "exit_no_balance",
+                    {
+                        "decision_id": pos.decision_id,
+                        "symbol": pos.symbol,
+                        "qty_tracked": round(pos.qty or 0.0, 8),
+                        "realized_return": round(outcome.realized_return, 5),
+                        "pnl_cad": round(outcome.pnl_cad, 2),
+                    },
+                )
+                return True
+            raise
         if not fill.is_live:
             return False  # dry-run can't close a real live position — keep it open
         # The sell filled — record it before anything else can fail.
@@ -898,6 +983,7 @@ class Orchestrator:
             portfolio = live_investable if live_investable is not None else baseline_investable
         growth = self.growth_tier(portfolio)
         self._price_cache = None  # fresh series each checkpoint (org is reused)
+        self._fine_cache = None
         # Resolve matured positions FIRST so today's decision uses the freshest
         # calibration/leashes the just-resolved outcomes produced.
         self.resolve_positions()

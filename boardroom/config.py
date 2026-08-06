@@ -120,6 +120,24 @@ class Settings(BaseSettings):
     # from the peak is bounded by the same capped stop distance. Flip false to
     # restore the hard R-multiple take-profit.
     exit_trail_enabled: bool = Field(default=True, alias="EXIT_TRAIL_ENABLED")
+    # ---- Intraday exit engine (2026-08-06 "$969 that never sold") -------------
+    # LIT pumped +75% overnight and round-tripped to a -14% stop-out while four
+    # checkpoints watched: exits evaluated on DAILY closes, so the whole move
+    # lived inside one candle the resolution walk could not see. Exits now run
+    # on intraday bars (EXIT_BAR_MINUTES) and a lightweight watcher checks the
+    # held book every EXIT_WATCH_MINUTES between checkpoints — sells only, no
+    # LLM, no new entries. Trail state (entry/peak/armed) is persisted per
+    # position so the ride survives checkpoint restarts and rolling bar windows.
+    exit_watch_enabled: bool = Field(default=True, alias="EXIT_WATCH_ENABLED")
+    exit_watch_minutes: float = Field(default=15.0, alias="EXIT_WATCH_MINUTES")
+    # Kraken OHLC granularity for RESOLUTION (1, 5, 15, 30, 60, 240, 1440).
+    # 60 gives ~30 days of history (720 bars) — hourly highs catch a pump, and
+    # the forming candle's close is the live price so stops check in real time.
+    exit_bar_minutes: int = Field(default=60, alias="EXIT_BAR_MINUTES")
+    # Opportunist re-entry: when the watcher sells (trail/stop/TP), convene a
+    # full checkpoint immediately so the freed cash is re-bet on the current
+    # best idea instead of idling until the next scheduled checkpoint.
+    exit_reentry_enabled: bool = Field(default=True, alias="EXIT_REENTRY_ENABLED")
 
     # ---- Adaptive leash floor + comeback path (owner mandate 2026-08-04) ------
     # The leash used to walk to ZERO on a losing streak — an absorbing state

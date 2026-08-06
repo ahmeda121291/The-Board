@@ -397,6 +397,9 @@ class SupabaseRepository(Repository):
                 "live": position.live,
                 "qty": _finite(position.qty),
                 "take_profit": _finite(position.take_profit),
+                "entry_price": _finite(position.entry_price),
+                "peak_return": _finite(position.peak_return),
+                "trail_armed": bool(position.trail_armed),
             }
         ).execute()
 
@@ -422,12 +425,26 @@ class SupabaseRepository(Repository):
                     live=bool(row.get("live", False)),
                     qty=float(row.get("qty", 0.0) or 0.0),
                     take_profit=float(row.get("take_profit", 0.0) or 0.0),
+                    entry_price=float(row.get("entry_price", 0.0) or 0.0),
+                    peak_return=float(row.get("peak_return", 0.0) or 0.0),
+                    trail_armed=bool(row.get("trail_armed", False)),
                 )
             )
         return out
 
     def close_position(self, decision_id: str) -> None:
         self._t("open_positions").delete().eq("decision_id", decision_id).execute()
+
+    def update_position_trail(
+        self, decision_id: str, *, entry_price: float, peak_return: float, trail_armed: bool
+    ) -> None:
+        self._t("open_positions").update(
+            {
+                "entry_price": _finite(entry_price),
+                "peak_return": _finite(peak_return),
+                "trail_armed": bool(trail_armed),
+            }
+        ).eq("decision_id", decision_id).execute()
 
     # ---- model params --------------------------------------------------------
     def get_model_params(self, division: str) -> dict | None:

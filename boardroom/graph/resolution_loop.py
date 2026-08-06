@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from boardroom.data.snapshot import Bars
@@ -36,7 +37,11 @@ PriceFetcher = Callable[[OpenPosition], "Bars | None"]
 
 
 def build_open_position(
-    pitch: Pitch, decision: Decision, opened_at: datetime | None = None, qty: float = 0.0
+    pitch: Pitch,
+    decision: Decision,
+    opened_at: datetime | None = None,
+    qty: float = 0.0,
+    entry_price: float = 0.0,
 ) -> OpenPosition:
     """Snapshot a funded pitch into an OpenPosition for later resolution.
 
@@ -76,6 +81,7 @@ def build_open_position(
         live=decision.live,
         qty=qty,
         take_profit=take_profit,
+        entry_price=entry_price,
     )
 
 
@@ -83,28 +89,44 @@ def _as_utc(ts: datetime) -> datetime:
     return ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts
 
 
-def resolve_position(
-    pos: OpenPosition, bars: Bars, *, now: datetime | None = None, force_now: bool = False
-) -> ResolvedOutcome | None:
-    """Resolve one open position against a fresh price series, or None if not yet.
+@dataclass
+class WalkResult:
+    """One resolution pass over a position: the outcome (if an exit triggered)
+    plus the trail state the caller persists when the position stays open."""
 
-    Long-only (the system only opens BUY): realized return is close-to-close from
-    the entry bar. Resolves (i.e. signals an EXIT) at the first post-entry close
-    that breaches the **stop-loss** (``-stop_fraction``) OR hits the **take-profit**
-    (``band_high`` — the top of the predicted move); else at the latest close once
-    the **horizon** has elapsed; otherwise it keeps waiting. The caller turns a
-    resolution into a real sell.
+    outcome: ResolvedOutcome | None
+    entry_price: float = 0.0
+    peak_return: float = 0.0
+    trail_armed: bool = False
+
+
+def walk_position(
+    pos: OpenPosition, bars: Bars, *, now: datetime | None = None, force_now: bool = False
+) -> WalkResult:
+    """Walk one open position over a fresh price series.
+
+    Long-only (the system only opens BUY): realized return is measured from the
+    entry price — the fill-time price when the position carries one
+    (``entry_price``), else recovered from the series by timestamp (legacy
+    rows). Signals an EXIT at the first post-entry close that breaches the
+    **stop-loss** (``-stop_fraction``) or — with trailing disabled — hits the
+    **take-profit**; else at the latest close once the **horizon** has elapsed;
+    otherwise it keeps waiting.
 
     ``force_now=True`` resolves at the latest close even before any trigger —
     the capital-rotation path uses it to close a weak position early when a
     better idea is waiting for the money.
 
     **Trailing exits** (``EXIT_TRAIL_ENABLED``, owner mandate 2026-08-04 "let
-    winners run"): when enabled, the take-profit level no longer sells — it
-    ARMS a trailing stop. The position then rides its peak close and exits
-    only when a close gives back the stop distance from that peak, even past
-    the horizon. Upside is uncapped; the give-back is bounded by the same
-    capped stop fraction. Disabled, the hard R-multiple take-profit applies.
+    winners run"): the take-profit printing ARMS a trailing stop instead of
+    selling. Arming and the peak ride off bar **HIGHS** — a pump is a wick
+    long before it is a close — while the exit itself fires on a CLOSE that
+    gives back the stop distance from the peak, even past the horizon. Upside
+    is uncapped; the give-back is bounded by the same capped stop fraction.
+    Armed/peak state is seeded from the position (persisted across
+    checkpoints) so a ride survives restarts and rolling bar windows — the
+    2026-08-06 LIT round-trip happened because this state lived only inside
+    one daily-bar walk.
     """
     from boardroom.config import get_settings
 
@@ -115,62 +137,82 @@ def resolve_position(
 
     times = df["time"]
     closes = df["close"].to_numpy(dtype=float)
-    # Entry = the last close at or before the open time.
-    entry_mask = [_as_utc(t.to_pydatetime() if hasattr(t, "to_pydatetime") else t) <= opened_at
-                  for t in times]
-    if not any(entry_mask):
-        return None  # series starts after the open — can't price the entry
-    entry_idx = max(i for i, m in enumerate(entry_mask) if m)
-    entry_price = closes[entry_idx]
+    # Arming/peak ride off HIGHS (a pump is a wick long before it's a close);
+    # a series without them (older tests/fixtures) degrades to close-only.
+    highs = df["high"].to_numpy(dtype=float) if "high" in df.columns else closes
+    bar_times = [
+        _as_utc(t.to_pydatetime() if hasattr(t, "to_pydatetime") else t) for t in times
+    ]
+
+    entry_price = float(getattr(pos, "entry_price", 0.0) or 0.0)
     if entry_price <= 0:
-        return None
+        # Legacy row: entry = the last close at or before the open time.
+        entry_idx = max((i for i, t in enumerate(bar_times) if t <= opened_at), default=None)
+        if entry_idx is None:
+            return WalkResult(None)  # series starts after the open — can't price the entry
+        entry_price = closes[entry_idx]
+        if entry_price <= 0:
+            return WalkResult(None)
+        start = entry_idx + 1
+    else:
+        start = next((i for i, t in enumerate(bar_times) if t > opened_at), len(closes))
 
     cost_fraction = pos.cost_cad / pos.size_cad if pos.size_cad > 0 else 0.0
 
-    # Walk post-entry closes; EXIT at the first stop-loss breach (down) or
-    # take-profit hit (up). Take-profit = the explicit R-multiple trigger;
-    # legacy rows (take_profit 0) fall back to the old band-top behavior.
+    # Take-profit = the explicit R-multiple trigger; legacy rows (take_profit 0)
+    # fall back to the old band-top behavior.
     tp_level = pos.take_profit if getattr(pos, "take_profit", 0.0) > 0 else pos.band_high
     take_profit = tp_level if tp_level and tp_level > 0 else None
     # Trail distance = the position's own (capped) stop fraction; fall back to
     # the take-profit distance if a legacy row carries no stop.
     trail_fraction = pos.stop_fraction if pos.stop_fraction > 0 else (take_profit or 0.0)
-    armed = False       # take-profit printed — trailing stop is live
-    peak_r = 0.0        # best post-arming close-to-close return
-    for i in range(entry_idx + 1, len(closes)):
+    armed = bool(getattr(pos, "trail_armed", False)) and trail_enabled and trail_fraction > 0
+    peak_r = max(0.0, float(getattr(pos, "peak_return", 0.0) or 0.0))
+
+    def _state(outcome: ResolvedOutcome | None) -> WalkResult:
+        return WalkResult(outcome, entry_price=entry_price, peak_return=peak_r, trail_armed=armed)
+
+    for i in range(start, len(closes)):
         r = closes[i] / entry_price - 1.0
+        r_high = highs[i] / entry_price - 1.0
         if not armed:
             if pos.stop_fraction > 0 and r <= -pos.stop_fraction:
-                resolved_time = times.iloc[i]
-                resolved_time = resolved_time.to_pydatetime() if hasattr(resolved_time, "to_pydatetime") else resolved_time
-                return _make_outcome(pos, r, cost_fraction, _as_utc(resolved_time))
-            if take_profit is not None and r >= take_profit:
+                return _state(_make_outcome(pos, r, cost_fraction, bar_times[i]))
+            if take_profit is not None and r_high >= take_profit:
                 if not (trail_enabled and trail_fraction > 0):
-                    resolved_time = times.iloc[i]
-                    resolved_time = resolved_time.to_pydatetime() if hasattr(resolved_time, "to_pydatetime") else resolved_time
-                    return _make_outcome(pos, r, cost_fraction, _as_utc(resolved_time))
+                    if r >= take_profit:  # hard TP fires on the close, as before
+                        return _state(_make_outcome(pos, r, cost_fraction, bar_times[i]))
+                    continue
                 armed = True
-                peak_r = r
-            continue
-        # Armed: ride the peak; exit when a close gives back the trail distance.
-        peak_r = max(peak_r, r)
+                peak_r = max(peak_r, r_high)
+            else:
+                continue
+        # Armed: ride the peak (highs); exit when a CLOSE gives back the trail
+        # distance — same-bar pump-and-dump included.
+        peak_r = max(peak_r, r_high)
         if (1.0 + r) <= (1.0 + peak_r) * (1.0 - trail_fraction):
-            resolved_time = times.iloc[i]
-            resolved_time = resolved_time.to_pydatetime() if hasattr(resolved_time, "to_pydatetime") else resolved_time
-            return _make_outcome(pos, r, cost_fraction, _as_utc(resolved_time))
+            return _state(_make_outcome(pos, r, cost_fraction, bar_times[i]))
 
     if armed and not force_now:
         # A winner still riding its trail is never cut by the clock — the
         # trailing stop (bounded give-back from the peak) is the exit.
-        return None
+        return _state(None)
 
     # No trigger — resolve on horizon elapse (or on demand for a rotation),
     # otherwise keep waiting.
     elapsed_days = (now - opened_at).total_seconds() / 86400.0
     if elapsed_days < pos.horizon_days and not force_now:
-        return None
+        return _state(None)
     realized = closes[-1] / entry_price - 1.0
-    return _make_outcome(pos, realized, cost_fraction, now)
+    return _state(_make_outcome(pos, realized, cost_fraction, now))
+
+
+def resolve_position(
+    pos: OpenPosition, bars: Bars, *, now: datetime | None = None, force_now: bool = False
+) -> ResolvedOutcome | None:
+    """Resolve one open position, or None if not yet — ``walk_position`` without
+    the trail-state plumbing, for callers that only need the outcome."""
+    return walk_position(pos, bars, now=now, force_now=force_now).outcome
 
 
 def _make_outcome(
@@ -222,15 +264,42 @@ def resolve_open_positions(
         if bars is None:
             continue
         try:
-            outcome = resolve_position(pos, bars, now=now)
+            walk = walk_position(pos, bars, now=now)
         except Exception:
             repo.audit("resolution_error", {"decision_id": pos.decision_id, "symbol": pos.symbol})
             continue
+        outcome = walk.outcome
         if outcome is None:
+            # Still riding — persist the trail state (entry backfill, peak off
+            # highs, armed flag) so the ride survives restarts and rolling
+            # intraday bar windows.
+            changed = (
+                walk.entry_price != (pos.entry_price or 0.0)
+                or walk.peak_return != (pos.peak_return or 0.0)
+                or walk.trail_armed != bool(pos.trail_armed)
+            )
+            if changed and walk.entry_price > 0:
+                try:
+                    repo.update_position_trail(
+                        pos.decision_id,
+                        entry_price=walk.entry_price,
+                        peak_return=walk.peak_return,
+                        trail_armed=walk.trail_armed,
+                    )
+                except Exception:  # noqa: BLE001 — state persistence is best-effort
+                    pass
             continue
         # Execute the real exit before booking the outcome. If the sell fails,
         # keep the position open and don't record a fictional realized P&L.
         if close_live is not None:
+            # Two processes can pass here now (a one-shot checkpoint and the
+            # poller's exit watcher): re-read just before selling so a row a
+            # concurrent pass already closed is never sold or booked twice.
+            try:
+                if all(p.decision_id != pos.decision_id for p in repo.open_positions()):
+                    continue
+            except Exception:  # noqa: BLE001 — an unreadable repo must not block the exit
+                pass
             try:
                 closed = close_live(pos, outcome)
             except Exception as e:  # noqa: BLE001
